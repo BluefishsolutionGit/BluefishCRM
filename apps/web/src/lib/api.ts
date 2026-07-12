@@ -303,6 +303,13 @@ export const api = {
   inboxMessages: (threadId: string) => request<import('@bluefish/shared').InboxMessageDto[]>(`/inbox/threads/${threadId}/messages`),
   sendInboxMessage: (threadId: string, text: string) =>
     request<import('@bluefish/shared').InboxMessageDto>(`/inbox/threads/${threadId}/messages`, { method: 'POST', body: JSON.stringify({ text }) }),
+  // ─────── FlowAccount ───────
+  flowaccountStatus: () => request<import('@bluefish/shared').FlowaccountStatusDto>('/integrations/flowaccount/status'),
+  flowaccountPush: (quotationId: string) =>
+    request<import('@bluefish/shared').FlowaccountPushResultDto>(`/integrations/flowaccount/quotations/${quotationId}/push`, { method: 'POST' }),
+  flowaccountSync: (quotationId: string) =>
+    request<import('@bluefish/shared').FlowaccountSyncResultDto>(`/integrations/flowaccount/quotations/${quotationId}/sync`, { method: 'POST' }),
+
   // ─────── Competitor Tracker ───────
   competitors: () => request<import('@bluefish/shared').CompetitorDto[]>('/competitors'),
   createCompetitor: (data: import('@bluefish/shared').CreateCompetitorDto) =>

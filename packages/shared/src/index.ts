@@ -365,6 +365,10 @@ export interface QuotationDto {
   versions: Array<{ id: string; versionNo: number; createdAt: string }>
   approvals: QuotationApprovalDto[]
   sentAt: string | null
+  flowaccountId: string | null
+  flowaccountDocumentNumber: string | null
+  flowaccountStatus: string | null
+  flowaccountLastSyncedAt: string | null
   createdAt: string
   updatedAt: string
 }
@@ -890,6 +894,36 @@ export interface ApiError {
   statusCode: number
   message: string
   error?: string
+}
+
+// ─── FlowAccount integration ────────────────────────────────────────
+export interface FlowaccountStatusDto {
+  configured: boolean
+  mode: 'stub' | 'live'
+  baseUrl: string
+  culture: string
+  lastTokenAcquiredAt: string | null
+  tokenExpiresAt: string | null
+}
+
+export interface FlowaccountPushResultDto {
+  quotationId: string
+  flowaccountId: string
+  flowaccountDocumentNumber: string | null
+  flowaccountStatus: string
+  contactCode: string | null
+  contactCreated: boolean
+  pushedAt: string
+  isStub: boolean
+}
+
+export interface FlowaccountSyncResultDto {
+  quotationId: string
+  flowaccountId: string
+  previousStatus: string | null
+  currentStatus: string
+  syncedAt: string
+  isStub: boolean
 }
 
 // ─── Competitor Tracker ─────────────────────────────────────────────

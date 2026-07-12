@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import type { CreateVersionDto, ProductDto, QuotationDto, QuotationStatus } from '@bluefish/shared'
 import { api, ApiError } from '../lib/api'
@@ -197,6 +197,8 @@ export default function QuoteDetail() {
         </div>
       </div>
 
+      <FlowaccountPanel q={q} canWrite={canWrite} onChanged={reload} />
+
       {showEmailBox && (
         <div style={{ ...card, padding: '14px 18px', marginBottom: 14, background: '#F4F1FD', borderColor: '#DCD4F6' }}>
           <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 8 }}>Send quotation by email</div>
@@ -315,6 +317,106 @@ export default function QuoteDetail() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+const FA_STATUS_STYLE: Record<string, { bg: string; fg: string }> = {
+  draft:     { bg: '#F2F3F9', fg: '#5C5C74' },
+  sent:      { bg: '#E4EDFC', fg: '#2A6FDB' },
+  accepted:  { bg: '#E5F8ED', fg: '#0E6E4E' },
+  rejected:  { bg: '#FDECEA', fg: '#C0392B' },
+  converted: { bg: '#EAE7F7', fg: '#5B3FC4' },
+  cancelled: { bg: '#ECECF1', fg: '#6B6B7B' },
+}
+
+function FlowaccountPanel({ q, canWrite, onChanged }: { q: QuotationDto; canWrite: boolean; onChanged: () => void }) {
+  const [status, setStatus] = useState<{ configured: boolean; mode: 'stub' | 'live' } | null>(null)
+  const [busy, setBusy] = useState<'push' | 'sync' | null>(null)
+  const toast = useToast()
+
+  useEffect(() => {
+    api.flowaccountStatus().then((s) => setStatus({ configured: s.configured, mode: s.mode })).catch(() => {})
+  }, [])
+
+  const canPush = canWrite && ['Approved', 'Sent', 'Accepted'].includes(q.status)
+  const pushed = q.flowaccountId != null
+
+  const push = async () => {
+    setBusy('push')
+    try {
+      const r = await api.flowaccountPush(q.id)
+      toast(r.contactCreated ? `Pushed · contact created (${r.contactCode})` : 'Pushed to FlowAccount')
+      onChanged()
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : 'Push failed')
+    } finally { setBusy(null) }
+  }
+
+  const sync = async () => {
+    setBusy('sync')
+    try {
+      const r = await api.flowaccountSync(q.id)
+      toast(r.previousStatus === r.currentStatus ? `Still ${r.currentStatus}` : `Status: ${r.previousStatus ?? '—'} → ${r.currentStatus}`)
+      onChanged()
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : 'Sync failed')
+    } finally { setBusy(null) }
+  }
+
+  const faStatus = q.flowaccountStatus ?? 'draft'
+  const faStyle = FA_STATUS_STYLE[faStatus] ?? { bg: '#F2F3F9', fg: '#5C5C74' }
+
+  return (
+    <div style={{ ...card, padding: '14px 18px', marginBottom: 14, borderColor: pushed ? '#B7CFF3' : '#E5E7F0', background: pushed ? '#F4F8FE' : '#fff' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 190 }}>
+          <div style={{ width: 32, height: 32, borderRadius: 8, background: '#0055FF', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Space Grotesk'", fontSize: 13, fontWeight: 800 }}>FA</div>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700 }}>FlowAccount</div>
+            <div style={{ fontSize: 10.5, color: '#5C5C74' }}>
+              {status ? (status.configured ? 'Live mode' : status.mode === 'stub' ? 'Stub mode (no credentials)' : 'Not configured') : 'Checking…'}
+            </div>
+          </div>
+        </div>
+
+        {pushed ? (
+          <div style={{ display: 'flex', gap: 14, alignItems: 'center', flex: 1, flexWrap: 'wrap' }}>
+            <MetaItem label="Doc no." value={q.flowaccountDocumentNumber ?? '—'} mono />
+            <MetaItem label="Ext id" value={q.flowaccountId!} mono small />
+            <MetaItem label="Status" value={<span style={{ background: faStyle.bg, color: faStyle.fg, padding: '2px 8px', borderRadius: 999, fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase' }}>{faStatus}</span>} />
+            <MetaItem label="Last sync" value={q.flowaccountLastSyncedAt ? new Date(q.flowaccountLastSyncedAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'} />
+          </div>
+        ) : (
+          <div style={{ flex: 1, fontSize: 12, color: '#5C5C74' }}>
+            {canPush
+              ? 'Quotation is ready — push to FlowAccount to create the accounting document.'
+              : `Push available when quotation is Approved/Sent (currently ${q.status}).`}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 8 }}>
+          {pushed && (
+            <div onClick={busy ? undefined : sync} style={{ ...outlineBtn, opacity: busy ? 0.5 : 1 }}>
+              {busy === 'sync' ? 'Syncing…' : 'Sync status'}
+            </div>
+          )}
+          {canPush && (
+            <div onClick={busy ? undefined : push} style={{ ...primaryBtn, background: '#0055FF', opacity: busy ? 0.5 : 1 }}>
+              {busy === 'push' ? 'Pushing…' : pushed ? 'Re-push' : 'Push to FlowAccount'}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function MetaItem({ label, value, mono, small }: { label: string; value: ReactNode; mono?: boolean; small?: boolean }) {
+  return (
+    <div>
+      <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '.06em', color: '#8888A0', textTransform: 'uppercase' }}>{label}</div>
+      <div style={{ fontFamily: mono ? "'IBM Plex Mono', monospace" : undefined, fontSize: small ? 11 : 12.5, fontWeight: 600, color: '#1E1E30', marginTop: 2 }}>{value}</div>
     </div>
   )
 }

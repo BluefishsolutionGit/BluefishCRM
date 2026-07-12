@@ -204,6 +204,8 @@ export class QuotationsService {
   private toDto = (row: {
     id: string; no: string; customerId: string; opportunityId: string | null; ownerId: string
     status: string; approvalStep: number; sentAt: Date | null; createdAt: Date; updatedAt: Date
+    flowaccountId: string | null; flowaccountDocumentNumber: string | null
+    flowaccountStatus: string | null; flowaccountLastSyncedAt: Date | null
     customer: { name: string }
     opportunity: { title: string } | null
     owner: { name: string }
@@ -247,6 +249,10 @@ export class QuotationsService {
         comment: a.comment,
       })),
       sentAt: row.sentAt?.toISOString() ?? null,
+      flowaccountId: row.flowaccountId,
+      flowaccountDocumentNumber: row.flowaccountDocumentNumber,
+      flowaccountStatus: row.flowaccountStatus,
+      flowaccountLastSyncedAt: row.flowaccountLastSyncedAt?.toISOString() ?? null,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
     }

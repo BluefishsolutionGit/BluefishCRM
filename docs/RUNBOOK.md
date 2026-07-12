@@ -78,6 +78,18 @@ Purpose: give on-call engineers the fastest possible path from "something's wron
 2. `ReportSchedulesService` runs via `@nestjs/schedule` cron — check the API process is running (a crashed process misses fires).
 3. Manually trigger with `POST /api/report-schedules/:id/run`.
 
+### FlowAccount push is failing
+
+1. `GET /api/integrations/flowaccount/status` — is `mode: "live"`?
+   - If `mode: "stub"` the API is running without credentials — check `FLOWACCOUNT_CLIENT_ID` / `FLOWACCOUNT_CLIENT_SECRET` in the env, then restart.
+2. If live but pushes 401 — token endpoint rejected credentials. Re-check ID/secret; contact FlowAccount if the token itself succeeds but resource calls 401 (their portal → Connection → App status).
+3. If pushes 400 — inspect `AuditLog` for `flowaccount.quotation.push` → `metadata` shows the request context. Common: `contactTaxId` must be 13 digits, `contactBranch` cannot be empty (defaults to "สำนักงานใหญ่").
+4. Poll cron runs every 30 min. Fires only in `live` mode. Skips terminal statuses (`accepted`, `rejected`, `converted`, `cancelled`).
+5. Manual re-sync: `POST /api/integrations/flowaccount/quotations/:id/sync` — updates `flowaccountStatus` + `flowaccountLastSyncedAt`.
+6. Docs referenced when writing this integration:
+   - OpenAPI spec: https://raw.githubusercontent.com/flowaccount/open-api/main/libs/api-spec/src/api-spec.openapi.json
+   - Portal: https://developers.flowaccount.com/
+
 ### AI generation is failing
 
 1. `ANTHROPIC_API_KEY` set? If not, the service falls back to deterministic stubs — that's expected in dev.

@@ -311,15 +311,15 @@ export default function Login() {
               ))}
             </g>
 
-            {/* big fish in the center (uploaded AI-circuit fish) */}
+            {/* big fish in the center (Bluefish.png — cropped AI-circuit fish) */}
             <g style={{ animation: 'floaty 6s ease-in-out infinite' }}>
               <image
-                href="/aimage.png"
-                x="183"
-                y="187"
-                width="114"
-                height="90"
-                style={{ mixBlendMode: 'multiply' }}
+                href="/Bluefish.png"
+                x="170"
+                y="188"
+                width="140"
+                height="93"
+                preserveAspectRatio="xMidYMid meet"
               />
             </g>
 

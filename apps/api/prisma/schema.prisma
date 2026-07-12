@@ -67,6 +67,7 @@ model Customer {
   openValue    Int       @default(0)
   wonValue     Int       @default(0)
   lastActivity String
+  flowaccountContactCode String?
   deletedAt    DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
@@ -226,6 +227,10 @@ model Quotation {
   approvalStep     Int      @default(0)
   currentVersionId String?  @unique
   sentAt           DateTime?
+  flowaccountId               String?
+  flowaccountDocumentNumber   String?
+  flowaccountStatus           String?
+  flowaccountLastSyncedAt     DateTime?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 

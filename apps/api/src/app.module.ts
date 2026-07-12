@@ -23,6 +23,7 @@ import { DashboardsModule } from './dashboards/dashboards.module'
 import { ReportsModule } from './reports/reports.module'
 import { InboxModule } from './inbox/inbox.module'
 import { IntegrationsModule } from './integrations/integrations.module'
+import { FlowaccountModule } from './integrations/flowaccount/flowaccount.module'
 import { HealthController } from './health.controller'
 
 @Module({
@@ -53,6 +54,7 @@ import { HealthController } from './health.controller'
     ReportsModule,
     InboxModule,
     IntegrationsModule,
+    FlowaccountModule,
   ],
   controllers: [HealthController],
   providers: process.env.THROTTLE_DISABLE === '1' ? [] : [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
