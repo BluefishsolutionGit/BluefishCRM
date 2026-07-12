@@ -891,3 +891,88 @@ export interface ApiError {
   message: string
   error?: string
 }
+
+// ─── Competitor Tracker ─────────────────────────────────────────────
+export type CompetitorContractStatus =
+  | 'Prospect'
+  | 'Contract Identified'
+  | 'Monitoring'
+  | 'Renewal Window'
+  | 'Proposal Submitted'
+  | 'Negotiation'
+  | 'Auto Renewed'
+  | 'Won'
+  | 'Lost'
+
+export type CompetitorConfidence = 'Low' | 'Med' | 'High'
+
+export interface CompetitorDto {
+  id: string
+  name: string
+  logo: string
+  color: string
+  notes: string | null
+  metrics: {
+    activeContracts: number
+    expiringIn90Days: number
+    renewedByThem: number
+    inNegotiationVsUs: number
+    totalDealValue: number
+  }
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CompetitorContractDto {
+  id: string
+  competitorId: string
+  competitorName: string
+  competitorLogo: string
+  competitorColor: string
+  customerId: string | null
+  customerName: string
+  service: string
+  endDate: string
+  daysUntilEnd: number
+  status: CompetitorContractStatus
+  probability: number
+  dealValue: number
+  ownerId: string | null
+  ownerName: string | null
+  ownerInitials: string | null
+  confidence: CompetitorConfidence
+  notes: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CreateCompetitorDto {
+  name: string
+  logo?: string
+  color?: string
+  notes?: string
+}
+
+export interface UpdateCompetitorDto {
+  name?: string
+  logo?: string
+  color?: string
+  notes?: string | null
+}
+
+export interface CreateCompetitorContractDto {
+  competitorId: string
+  customerId?: string | null
+  customerName: string
+  service: string
+  endDate: string
+  status?: CompetitorContractStatus
+  probability?: number
+  dealValue?: number
+  ownerId?: string | null
+  confidence?: CompetitorConfidence
+  notes?: string
+}
+
+export interface UpdateCompetitorContractDto extends Partial<CreateCompetitorContractDto> {}
+

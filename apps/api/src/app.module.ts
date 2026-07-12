@@ -17,6 +17,7 @@ import { ActivitiesModule } from './activities/activities.module'
 import { QuotationsModule } from './quotations/quotations.module'
 import { DocumentsModule } from './documents/documents.module'
 import { ContractsModule } from './contracts/contracts.module'
+import { CompetitorsModule } from './competitors/competitors.module'
 import { AiModule } from './ai/ai.module'
 import { DashboardsModule } from './dashboards/dashboards.module'
 import { ReportsModule } from './reports/reports.module'
@@ -46,6 +47,7 @@ import { HealthController } from './health.controller'
     QuotationsModule,
     DocumentsModule,
     ContractsModule,
+    CompetitorsModule,
     AiModule,
     DashboardsModule,
     ReportsModule,

@@ -303,6 +303,26 @@ export const api = {
   inboxMessages: (threadId: string) => request<import('@bluefish/shared').InboxMessageDto[]>(`/inbox/threads/${threadId}/messages`),
   sendInboxMessage: (threadId: string, text: string) =>
     request<import('@bluefish/shared').InboxMessageDto>(`/inbox/threads/${threadId}/messages`, { method: 'POST', body: JSON.stringify({ text }) }),
+  // ─────── Competitor Tracker ───────
+  competitors: () => request<import('@bluefish/shared').CompetitorDto[]>('/competitors'),
+  createCompetitor: (data: import('@bluefish/shared').CreateCompetitorDto) =>
+    request<import('@bluefish/shared').CompetitorDto>('/competitors', { method: 'POST', body: JSON.stringify(data) }),
+  updateCompetitor: (id: string, data: import('@bluefish/shared').UpdateCompetitorDto) =>
+    request<import('@bluefish/shared').CompetitorDto>(`/competitors/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteCompetitor: (id: string) => request<void>(`/competitors/${id}`, { method: 'DELETE' }),
+  competitorContracts: (filter: { competitorId?: string; status?: string } = {}) => {
+    const qs = new URLSearchParams()
+    if (filter.competitorId) qs.set('competitorId', filter.competitorId)
+    if (filter.status) qs.set('status', filter.status)
+    const s = qs.toString()
+    return request<import('@bluefish/shared').CompetitorContractDto[]>(`/competitor-contracts${s ? `?${s}` : ''}`)
+  },
+  createCompetitorContract: (data: import('@bluefish/shared').CreateCompetitorContractDto) =>
+    request<import('@bluefish/shared').CompetitorContractDto>('/competitor-contracts', { method: 'POST', body: JSON.stringify(data) }),
+  updateCompetitorContract: (id: string, data: import('@bluefish/shared').UpdateCompetitorContractDto) =>
+    request<import('@bluefish/shared').CompetitorContractDto>(`/competitor-contracts/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteCompetitorContract: (id: string) => request<void>(`/competitor-contracts/${id}`, { method: 'DELETE' }),
+
   markInboxRead: (threadId: string) =>
     request<import('@bluefish/shared').InboxThreadDto>(`/inbox/threads/${threadId}/read`, { method: 'PATCH' }),
   assignInboxThread: (threadId: string, ownerId: string | null) =>

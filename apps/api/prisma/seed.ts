@@ -488,6 +488,56 @@ Penalties apply per Section 5 for missed SLAs. Governing law: Thailand.`,
     })
   }
 
+  // ── Competitor Tracker seed ──────────────────────────────────────
+  const competitors = [
+    { name: 'AlphaSoft ERP',      logo: 'A', color: '#2A6FDB' },
+    { name: 'CloudNine Systems',  logo: 'C', color: '#7C3AED' },
+    { name: 'MetricStream Co.',   logo: 'M', color: '#0E9C7E' },
+    { name: 'Legacy IT (local)',  logo: 'L', color: '#D2601A' },
+  ]
+  const compMap = new Map<string, string>()
+  for (const c of competitors) {
+    const row = await prisma.competitor.upsert({
+      where: { name: c.name },
+      update: { logo: c.logo, color: c.color },
+      create: c,
+    })
+    compMap.set(c.name, row.id)
+  }
+
+  const ownerMap: Record<string, string> = { KS: krit.id, NP: nattaya.id, PW: ploy.id, ST: somchai.id }
+  const compContracts = [
+    { customerName: 'Bangkok General Hospital',    competitor: 'AlphaSoft ERP',      service: 'Hospital ERP',        endDate: '2026-09-12', status: 'Renewal Window',     probability: 65, dealValue: 8200000, ownerI: 'KS', confidence: 'High' },
+    { customerName: 'Metro Rail Facilities',       competitor: 'CloudNine Systems',  service: 'Asset Mgmt SaaS',     endDate: '2026-08-28', status: 'Proposal Submitted', probability: 55, dealValue: 5400000, ownerI: 'NP', confidence: 'Med'  },
+    { customerName: 'Phuket Marina Resort',        competitor: 'Legacy IT (local)',  service: 'PMS + POS',           endDate: '2026-08-02', status: 'Negotiation',        probability: 72, dealValue: 3100000, ownerI: 'PW', confidence: 'High' },
+    { customerName: 'Rimping Retail Group',        competitor: 'CloudNine Systems',  service: 'Retail ERP',          endDate: '2026-07-30', status: 'Negotiation',        probability: 60, dealValue: 4200000, ownerI: 'PW', confidence: 'High' },
+    { customerName: 'Chiang Mai Logistics',        competitor: 'MetricStream Co.',   service: 'Transport Mgmt (TMS)',endDate: '2026-09-05', status: 'Renewal Window',     probability: 52, dealValue: 3700000, ownerI: 'NP', confidence: 'Med'  },
+    { customerName: 'Hatyai Municipality',         competitor: 'Legacy IT (local)',  service: 'e-Gov portal',        endDate: '2026-10-10', status: 'Proposal Submitted', probability: 48, dealValue: 6800000, ownerI: 'KS', confidence: 'Med'  },
+    { customerName: 'Udon Agro Industry',          competitor: 'MetricStream Co.',   service: 'Compliance suite',    endDate: '2026-11-15', status: 'Monitoring',         probability: 35, dealValue: 2600000, ownerI: 'ST', confidence: 'Med'  },
+    { customerName: 'Siam Data Center',            competitor: 'AlphaSoft ERP',      service: 'DCIM platform',       endDate: '2027-01-20', status: 'Contract Identified',probability: 25, dealValue: 9500000, ownerI: 'ST', confidence: 'Low'  },
+    { customerName: 'Eastern Seaboard Port',       competitor: 'CloudNine Systems',  service: 'Port ops platform',   endDate: '2027-03-22', status: 'Monitoring',         probability: 30, dealValue: 7300000, ownerI: 'KS', confidence: 'Med'  },
+    { customerName: 'Nakhon Grand Plaza',          competitor: 'AlphaSoft ERP',      service: 'Retail suite',        endDate: '2027-09-18', status: 'Prospect',           probability: 15, dealValue: 5200000, ownerI: 'PW', confidence: 'Low'  },
+    { customerName: 'Korat Sugar Mill',            competitor: 'Legacy IT (local)',  service: 'Plant MES',           endDate: '2026-06-20', status: 'Auto Renewed',       probability:  0, dealValue: 2900000, ownerI: 'ST', confidence: 'High' },
+  ]
+
+  // Wipe + re-seed to keep dev DB deterministic
+  await prisma.competitorContract.deleteMany({ where: { customerName: { in: compContracts.map((c) => c.customerName) } } })
+  for (const c of compContracts) {
+    await prisma.competitorContract.create({
+      data: {
+        competitorId: compMap.get(c.competitor)!,
+        customerName: c.customerName,
+        service:      c.service,
+        endDate:      new Date(c.endDate),
+        status:       c.status,
+        probability:  c.probability,
+        dealValue:    c.dealValue,
+        ownerId:      ownerMap[c.ownerI] ?? null,
+        confidence:   c.confidence,
+      },
+    })
+  }
+
   console.log('Seed complete.')
   console.log('Login credentials (all password: demo1234):')
   console.log('  nattaya@bluefishsolution.com  (sales_manager)')

@@ -48,6 +48,7 @@ model User {
   refreshTokens       RefreshToken[]
   resetTokens         PasswordResetToken[]
   authProviders       AuthProvider[]
+  competitorContracts CompetitorContract[]
 }
 
 model Customer {
@@ -78,6 +79,7 @@ model Customer {
   contracts    Contract[]
   documents    Document[]
   inboxThreads InboxThread[]
+  competitorContracts CompetitorContract[]
 
   @@index([status])
   @@index([ownerId])
@@ -762,4 +764,43 @@ model AuthProvider {
 
   @@unique([provider, providerId])
   @@index([userId])
+}
+
+model Competitor {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  logo      String   // short badge string (e.g. "A", "IG")
+  color     String   // hex for charts / badge background
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  contracts CompetitorContract[]
+}
+
+model CompetitorContract {
+  id            String    @id @default(cuid())
+  competitorId  String
+  customerId    String?
+  customerName  String
+  service       String
+  endDate       DateTime
+  status        String    @default("Monitoring")
+  probability   Int       @default(0)
+  dealValue     Int       @default(0)
+  ownerId       String?
+  confidence    String    @default("Med")
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  competitor    Competitor @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+  customer      Customer?  @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  owner         User?      @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+
+  @@index([competitorId])
+  @@index([customerId])
+  @@index([ownerId])
+  @@index([endDate])
+  @@index([status])
 }

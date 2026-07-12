@@ -1,20 +1,23 @@
 import { useEffect, useMemo, useState, type CSSProperties, type FormEvent } from 'react'
 import type {
+  CompetitorContractDto, CompetitorContractStatus, CompetitorDto,
   ContractDashboardDto, ContractDto, ContractStatus, ContractTemplateDto,
-  CustomerDto, ObligationDto,
+  CreateCompetitorContractDto, CreateCompetitorDto, CustomerDto, ObligationDto,
+  UpdateCompetitorContractDto,
 } from '@bluefish/shared'
 import { api, ApiError } from '../lib/api'
 import { icons } from '../lib/icons'
 import { useToast } from '../lib/ToastContext'
 import { useAuth } from '../lib/AuthContext'
 
-type Sub = 'dashboard' | 'repository' | 'calendar' | 'approvals' | 'obligations'
+type Sub = 'dashboard' | 'repository' | 'calendar' | 'approvals' | 'obligations' | 'competitors'
 const SUB_DEFS: { id: Sub; label: string; icon: string }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: icons.home },
   { id: 'repository', label: 'Repository', icon: icons.contract },
   { id: 'calendar', label: 'Calendar', icon: icons.cal },
   { id: 'approvals', label: 'Approvals', icon: icons.check },
   { id: 'obligations', label: 'Obligations', icon: icons.target },
+  { id: 'competitors', label: 'Competitor Tracker', icon: icons.versus },
 ]
 
 const STATUS_STYLE: Record<ContractStatus, { bg: string; fg: string }> = {
@@ -75,6 +78,7 @@ export default function Contracts() {
           {sub === 'calendar' && <CalendarTab />}
           {sub === 'approvals' && <ApprovalsTab onToast={toast} />}
           {sub === 'obligations' && <ObligationsTab onToast={toast} />}
+          {sub === 'competitors' && <CompetitorTrackerTab onToast={toast} />}
         </div>
       </div>
 
@@ -579,6 +583,430 @@ function NewFromTemplateModal({ onClose, onCreated }: { onClose: () => void; onC
     </div>
   )
 }
+
+// ─── Competitor Tracker ───
+const COMP_STATUSES: CompetitorContractStatus[] = ['Prospect', 'Contract Identified', 'Monitoring', 'Renewal Window', 'Proposal Submitted', 'Negotiation', 'Auto Renewed', 'Won', 'Lost']
+const COMP_STATUS_STYLE: Record<CompetitorContractStatus, { bg: string; fg: string }> = {
+  Prospect:               { bg: '#F2F3F9', fg: '#5C5C74' },
+  'Contract Identified':  { bg: '#EEF0FA', fg: '#4A3AB8' },
+  Monitoring:             { bg: '#E4EDFC', fg: '#2A6FDB' },
+  'Renewal Window':       { bg: '#FEF3E2', fg: '#B4650A' },
+  'Proposal Submitted':   { bg: '#EAE7F7', fg: '#5B3FC4' },
+  Negotiation:            { bg: '#F7EBD9', fg: '#D2601A' },
+  'Auto Renewed':         { bg: '#FDECEA', fg: '#C0392B' },
+  Won:                    { bg: '#E5F8ED', fg: '#06A94A' },
+  Lost:                   { bg: '#ECECF1', fg: '#6B6B7B' },
+}
+const CONFIDENCE_STYLE: Record<'Low'|'Med'|'High', { bg: string; fg: string }> = {
+  High: { bg: '#E5F8ED', fg: '#0E6E4E' },
+  Med:  { bg: '#FEF3E2', fg: '#B4650A' },
+  Low:  { bg: '#FDECEA', fg: '#C0392B' },
+}
+const compGrid: CSSProperties = { display: 'grid', gridTemplateColumns: '1.5fr 150px 1fr 110px 130px 100px 120px 80px 80px', gap: 10, alignItems: 'center' }
+
+function CompetitorTrackerTab({ onToast }: { onToast: (m: string) => void }) {
+  const [competitors, setCompetitors] = useState<CompetitorDto[]>([])
+  const [contracts, setContracts] = useState<CompetitorContractDto[]>([])
+  const [compFilter, setCompFilter] = useState<string>('all')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [loading, setLoading] = useState(true)
+  const [newOpen, setNewOpen] = useState(false)
+  const [addCompOpen, setAddCompOpen] = useState(false)
+  const [editing, setEditing] = useState<CompetitorContractDto | null>(null)
+
+  const refresh = async () => {
+    try {
+      const [cs, cn] = await Promise.all([api.competitors(), api.competitorContracts()])
+      setCompetitors(cs)
+      setContracts(cn)
+    } catch (e) {
+      onToast(e instanceof ApiError ? e.message : 'Failed to load competitor data')
+    } finally { setLoading(false) }
+  }
+  useEffect(() => { refresh() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [])
+
+  const filtered = useMemo(() => contracts.filter((c) => {
+    if (compFilter !== 'all' && c.competitorId !== compFilter) return false
+    if (statusFilter !== 'all' && c.status !== statusFilter) return false
+    return true
+  }), [contracts, compFilter, statusFilter])
+
+  const totals = useMemo(() => {
+    const totalDeals = filtered.reduce((s, c) => s + c.dealValue, 0)
+    const weighted = filtered.reduce((s, c) => s + c.dealValue * (c.probability / 100), 0)
+    return { count: filtered.length, totalDeals, weighted }
+  }, [filtered])
+
+  if (loading) return <div style={{ color: '#8888A0' }}>Loading…</div>
+
+  return (
+    <>
+      {/* Competitor summary cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.max(competitors.length, 1)},1fr)`, gap: 12, marginBottom: 16 }}>
+        {competitors.map((c) => (
+          <div key={c.id} onClick={() => setCompFilter(compFilter === c.id ? 'all' : c.id)} style={{ ...card, padding: '14px 16px', cursor: 'pointer', outline: compFilter === c.id ? `2px solid ${c.color}` : 'none' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ width: 34, height: 34, borderRadius: 10, background: c.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, flex: 'none' }}>{c.logo}</div>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name}</div>
+                <div style={{ fontSize: 11, color: '#8888A0', marginTop: 1 }}>{c.metrics.activeContracts} contracts tracked</div>
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginTop: 12 }}>
+              <MetricCell label="Expiring 90d" value={String(c.metrics.expiringIn90Days)} tone={c.metrics.expiringIn90Days > 0 ? 'warn' : 'muted'} />
+              <MetricCell label="In neg." value={String(c.metrics.inNegotiationVsUs)} tone="ok" />
+              <MetricCell label="Auto renew" value={String(c.metrics.renewedByThem)} tone={c.metrics.renewedByThem > 0 ? 'bad' : 'muted'} />
+              <MetricCell label="Pool value" value={fmt(c.metrics.totalDealValue)} tone="muted" />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Filters + Actions */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
+        <select value={compFilter} onChange={(e) => setCompFilter(e.target.value)} style={selectSm}>
+          <option value="all">All competitors</option>
+          {competitors.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={selectSm}>
+          <option value="all">All statuses</option>
+          {COMP_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <div style={{ flex: 1 }} />
+        <div style={{ fontSize: 12, color: '#5C5C74' }}>
+          <b style={{ color: '#1E1E30' }}>{totals.count}</b> contracts · pool <b style={{ color: '#1E1E30' }}>{fmt(totals.totalDeals)}</b> · weighted <b style={{ color: '#2A6FDB' }}>{fmt(totals.weighted)}</b>
+        </div>
+        <div onClick={() => setAddCompOpen(true)} style={outlineBtn}>+ Competitor</div>
+        <div onClick={() => setNewOpen(true)} style={primaryBtn}>+ Track contract</div>
+      </div>
+
+      {/* Contract table */}
+      <div style={{ ...card, padding: '14px 16px' }}>
+        <div style={{ ...compGrid, fontSize: 11, fontWeight: 700, color: '#8888A0', textTransform: 'uppercase', letterSpacing: '.06em', paddingBottom: 8, borderBottom: '1px solid #E5E7F0' }}>
+          <div>Customer</div><div>Held by</div><div>Service</div><div>Ends</div><div>Status</div><div>Prob</div><div>Value</div><div>Conf</div><div>Owner</div>
+        </div>
+        {filtered.length === 0 && (
+          <div style={{ padding: 30, textAlign: 'center', color: '#8888A0', fontSize: 13 }}>No competitor contracts match this filter.</div>
+        )}
+        {filtered.map((c) => {
+          const days = c.daysUntilEnd
+          const dayColor = days < 0 ? '#C0392B' : days <= 30 ? '#D2601A' : days <= 90 ? '#B4650A' : '#5C5C74'
+          return (
+            <div key={c.id} onClick={() => setEditing(c)} style={{ ...compGrid, padding: '11px 0', borderBottom: '1px solid #F1F1F5', fontSize: 12.5, cursor: 'pointer' }}>
+              <div style={{ fontWeight: 700, color: '#1E1E30' }}>{c.customerName}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ width: 22, height: 22, borderRadius: 6, background: c.competitorColor, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10.5, fontWeight: 800 }}>{c.competitorLogo}</div>
+                <div style={{ color: '#5C5C74' }}>{c.competitorName}</div>
+              </div>
+              <div style={{ color: '#5C5C74' }}>{c.service}</div>
+              <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11.5, color: dayColor }}>
+                {new Date(c.endDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                <div style={{ fontSize: 10, color: dayColor, opacity: 0.85 }}>{days < 0 ? `${-days}d ago` : `${days}d left`}</div>
+              </div>
+              <div><StatusPill status={c.status} /></div>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div style={{ width: 40, height: 5, background: '#F1F1F5', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{ width: `${c.probability}%`, height: '100%', background: c.probability >= 60 ? '#0E9C7E' : c.probability >= 30 ? '#D2601A' : '#8888A0' }} />
+                  </div>
+                  <div style={{ fontSize: 11, color: '#5C5C74', fontFamily: "'IBM Plex Mono', monospace" }}>{c.probability}%</div>
+                </div>
+              </div>
+              <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12 }}>{fmt(c.dealValue)}</div>
+              <div><ConfPill c={c.confidence} /></div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                {c.ownerInitials ? (
+                  <>
+                    <div style={{ width: 22, height: 22, borderRadius: '50%', background: '#EEF3FC', color: '#2A6FDB', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, border: '1px solid #D6E2F7' }}>{c.ownerInitials}</div>
+                    <div style={{ fontSize: 11, color: '#5C5C74' }}>{c.ownerName?.split(' ')[0]}</div>
+                  </>
+                ) : (
+                  <div style={{ fontSize: 11, color: '#8888A0' }}>Unassigned</div>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {newOpen && (
+        <NewCompetitorContractModal
+          competitors={competitors}
+          onClose={() => setNewOpen(false)}
+          onCreated={() => { setNewOpen(false); onToast('Competitor contract tracked'); refresh() }}
+          onToast={onToast}
+        />
+      )}
+      {addCompOpen && (
+        <NewCompetitorModal
+          onClose={() => setAddCompOpen(false)}
+          onCreated={() => { setAddCompOpen(false); onToast('Competitor added'); refresh() }}
+          onToast={onToast}
+        />
+      )}
+      {editing && (
+        <EditCompetitorContractModal
+          contract={editing}
+          competitors={competitors}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); onToast('Updated'); refresh() }}
+          onDeleted={() => { setEditing(null); onToast('Deleted'); refresh() }}
+          onToast={onToast}
+        />
+      )}
+    </>
+  )
+}
+
+function MetricCell({ label, value, tone }: { label: string; value: string; tone: 'ok' | 'warn' | 'bad' | 'muted' }) {
+  const c = tone === 'ok' ? '#0E9C7E' : tone === 'warn' ? '#B4650A' : tone === 'bad' ? '#C0392B' : '#5C5C74'
+  return (
+    <div>
+      <div style={{ fontSize: 10, color: '#8888A0', letterSpacing: '.04em' }}>{label}</div>
+      <div style={{ fontFamily: "'Space Grotesk'", fontSize: 15, fontWeight: 700, color: c }}>{value}</div>
+    </div>
+  )
+}
+
+function StatusPill({ status }: { status: CompetitorContractStatus }) {
+  const s = COMP_STATUS_STYLE[status]
+  return <span style={{ display: 'inline-block', background: s.bg, color: s.fg, fontSize: 10.5, fontWeight: 700, padding: '3px 8px', borderRadius: 999 }}>{status}</span>
+}
+
+function ConfPill({ c }: { c: 'Low' | 'Med' | 'High' }) {
+  const s = CONFIDENCE_STYLE[c]
+  return <span style={{ display: 'inline-block', background: s.bg, color: s.fg, fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 6 }}>{c}</span>
+}
+
+function NewCompetitorModal({ onClose, onCreated, onToast }: { onClose: () => void; onCreated: () => void; onToast: (m: string) => void }) {
+  const [name, setName] = useState('')
+  const [logo, setLogo] = useState('')
+  const [color, setColor] = useState('#2A6FDB')
+  const [saving, setSaving] = useState(false)
+
+  const save = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!name.trim()) return
+    setSaving(true)
+    try {
+      const body: CreateCompetitorDto = { name: name.trim(), logo: logo.trim() || undefined, color }
+      await api.createCompetitor(body)
+      onCreated()
+    } catch (err) {
+      onToast(err instanceof ApiError ? err.message : 'Save failed')
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <div style={backdrop} onClick={onClose}>
+      <form onSubmit={save} onClick={(e) => e.stopPropagation()} style={{ ...dialog, maxWidth: 440, padding: 22 }}>
+        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Add competitor</div>
+        <div style={{ marginBottom: 12 }}>
+          <div style={fieldLabel}>Name *</div>
+          <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Oracle Netsuite" style={inp} />
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+          <div>
+            <div style={fieldLabel}>Badge (1–3 chars)</div>
+            <input value={logo} onChange={(e) => setLogo(e.target.value.slice(0, 3).toUpperCase())} placeholder="ON" style={inp} maxLength={3} />
+          </div>
+          <div>
+            <div style={fieldLabel}>Color</div>
+            <input type="color" value={color} onChange={(e) => setColor(e.target.value)} style={{ ...inp, padding: 3, height: 40 }} />
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button type="button" onClick={onClose} style={btnGhost}>Cancel</button>
+          <button type="submit" disabled={saving} style={btnPrimary}>{saving ? 'Saving…' : 'Add'}</button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
+function NewCompetitorContractModal({ competitors, onClose, onCreated, onToast }: { competitors: CompetitorDto[]; onClose: () => void; onCreated: () => void; onToast: (m: string) => void }) {
+  const { user } = useAuth()
+  const [form, setForm] = useState<CreateCompetitorContractDto>({
+    competitorId: competitors[0]?.id ?? '',
+    customerName: '',
+    service: '',
+    endDate: new Date(Date.now() + 90 * 24 * 3600 * 1000).toISOString().slice(0, 10),
+    status: 'Monitoring',
+    probability: 0,
+    dealValue: 0,
+    confidence: 'Med',
+    ownerId: user?.id,
+  })
+  const [saving, setSaving] = useState(false)
+
+  const set = <K extends keyof CreateCompetitorContractDto>(k: K, v: CreateCompetitorContractDto[K]) => setForm((f) => ({ ...f, [k]: v }))
+
+  const save = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!form.competitorId || !form.customerName.trim() || !form.service.trim()) return
+    setSaving(true)
+    try {
+      await api.createCompetitorContract({ ...form, endDate: new Date(form.endDate).toISOString() })
+      onCreated()
+    } catch (err) {
+      onToast(err instanceof ApiError ? err.message : 'Save failed')
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <div style={backdrop} onClick={onClose}>
+      <form onSubmit={save} onClick={(e) => e.stopPropagation()} style={{ ...dialog, maxWidth: 560, padding: 22 }}>
+        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Track competitor contract</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+          <div>
+            <div style={fieldLabel}>Competitor *</div>
+            <select value={form.competitorId} onChange={(e) => set('competitorId', e.target.value)} style={inp}>
+              {competitors.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <div style={fieldLabel}>Customer (they hold) *</div>
+            <input value={form.customerName} onChange={(e) => set('customerName', e.target.value)} placeholder="Company name" style={inp} />
+          </div>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <div style={fieldLabel}>Service *</div>
+            <input value={form.service} onChange={(e) => set('service', e.target.value)} placeholder="e.g. Hospital ERP" style={inp} />
+          </div>
+          <div>
+            <div style={fieldLabel}>Contract ends *</div>
+            <input type="date" value={form.endDate.slice(0, 10)} onChange={(e) => set('endDate', e.target.value)} style={inp} />
+          </div>
+          <div>
+            <div style={fieldLabel}>Status</div>
+            <select value={form.status} onChange={(e) => set('status', e.target.value as CompetitorContractStatus)} style={inp}>
+              {COMP_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div>
+            <div style={fieldLabel}>Deal value (฿)</div>
+            <input type="number" min={0} value={form.dealValue ?? 0} onChange={(e) => set('dealValue', Number(e.target.value))} style={inp} />
+          </div>
+          <div>
+            <div style={fieldLabel}>Probability we win</div>
+            <input type="number" min={0} max={100} value={form.probability ?? 0} onChange={(e) => set('probability', Number(e.target.value))} style={inp} />
+          </div>
+          <div>
+            <div style={fieldLabel}>Confidence</div>
+            <select value={form.confidence} onChange={(e) => set('confidence', e.target.value as 'Low'|'Med'|'High')} style={inp}>
+              <option value="Low">Low</option><option value="Med">Med</option><option value="High">High</option>
+            </select>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button type="button" onClick={onClose} style={btnGhost}>Cancel</button>
+          <button type="submit" disabled={saving} style={btnPrimary}>{saving ? 'Saving…' : 'Track'}</button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
+function EditCompetitorContractModal({ contract, competitors, onClose, onSaved, onDeleted, onToast }: {
+  contract: CompetitorContractDto; competitors: CompetitorDto[]
+  onClose: () => void; onSaved: () => void; onDeleted: () => void; onToast: (m: string) => void
+}) {
+  const [form, setForm] = useState<UpdateCompetitorContractDto>({
+    competitorId: contract.competitorId,
+    customerName: contract.customerName,
+    service: contract.service,
+    endDate: contract.endDate.slice(0, 10),
+    status: contract.status,
+    probability: contract.probability,
+    dealValue: contract.dealValue,
+    confidence: contract.confidence,
+    notes: contract.notes ?? undefined,
+  })
+  const [saving, setSaving] = useState(false)
+  const set = <K extends keyof UpdateCompetitorContractDto>(k: K, v: UpdateCompetitorContractDto[K]) => setForm((f) => ({ ...f, [k]: v }))
+
+  const save = async (e: FormEvent) => {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      const body = { ...form, endDate: form.endDate ? new Date(form.endDate).toISOString() : undefined }
+      await api.updateCompetitorContract(contract.id, body)
+      onSaved()
+    } catch (err) {
+      onToast(err instanceof ApiError ? err.message : 'Save failed')
+    } finally { setSaving(false) }
+  }
+
+  const remove = async () => {
+    if (!confirm('Delete this tracked contract?')) return
+    try {
+      await api.deleteCompetitorContract(contract.id)
+      onDeleted()
+    } catch (err) {
+      onToast(err instanceof ApiError ? err.message : 'Delete failed')
+    }
+  }
+
+  return (
+    <div style={backdrop} onClick={onClose}>
+      <form onSubmit={save} onClick={(e) => e.stopPropagation()} style={{ ...dialog, maxWidth: 560, padding: 22 }}>
+        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Edit tracked contract</div>
+        <div style={{ fontSize: 11, color: '#8888A0', marginBottom: 14 }}>{contract.customerName} · {contract.competitorName}</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+          <div>
+            <div style={fieldLabel}>Competitor</div>
+            <select value={form.competitorId} onChange={(e) => set('competitorId', e.target.value)} style={inp}>
+              {competitors.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <div style={fieldLabel}>Customer</div>
+            <input value={form.customerName ?? ''} onChange={(e) => set('customerName', e.target.value)} style={inp} />
+          </div>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <div style={fieldLabel}>Service</div>
+            <input value={form.service ?? ''} onChange={(e) => set('service', e.target.value)} style={inp} />
+          </div>
+          <div>
+            <div style={fieldLabel}>Contract ends</div>
+            <input type="date" value={(form.endDate ?? '').slice(0, 10)} onChange={(e) => set('endDate', e.target.value)} style={inp} />
+          </div>
+          <div>
+            <div style={fieldLabel}>Status</div>
+            <select value={form.status} onChange={(e) => set('status', e.target.value as CompetitorContractStatus)} style={inp}>
+              {COMP_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div>
+            <div style={fieldLabel}>Deal value (฿)</div>
+            <input type="number" min={0} value={form.dealValue ?? 0} onChange={(e) => set('dealValue', Number(e.target.value))} style={inp} />
+          </div>
+          <div>
+            <div style={fieldLabel}>Probability we win</div>
+            <input type="number" min={0} max={100} value={form.probability ?? 0} onChange={(e) => set('probability', Number(e.target.value))} style={inp} />
+          </div>
+          <div>
+            <div style={fieldLabel}>Confidence</div>
+            <select value={form.confidence} onChange={(e) => set('confidence', e.target.value as 'Low'|'Med'|'High')} style={inp}>
+              <option value="Low">Low</option><option value="Med">Med</option><option value="High">High</option>
+            </select>
+          </div>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <div style={fieldLabel}>Notes</div>
+            <textarea rows={2} value={form.notes ?? ''} onChange={(e) => set('notes', e.target.value)} style={{ ...inp, resize: 'vertical' }} placeholder="Intel, decision maker, timing hints…" />
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button type="button" onClick={remove} style={{ ...btnGhost, color: '#C0392B', borderColor: '#F5C7C0' }}>Delete</button>
+          <div style={{ flex: 1 }} />
+          <button type="button" onClick={onClose} style={btnGhost}>Cancel</button>
+          <button type="submit" disabled={saving} style={btnPrimary}>{saving ? 'Saving…' : 'Save'}</button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
+const selectSm: CSSProperties = { border: '1px solid #E5E7F0', borderRadius: 8, padding: '7px 10px', fontSize: 12.5, background: '#fff', color: '#1E1E30', outline: 'none' }
 
 // ─── styles ───
 function subItemStyle(active: boolean): CSSProperties {
