@@ -26,6 +26,7 @@ export default function Login() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [flash, setFlash] = useState<string | null>(null)
+  const [ssoConfigured, setSsoConfigured] = useState<boolean>(false)
   const navigate = useNavigate()
   const [params] = useSearchParams()
   const { login, handleSsoOutcome } = useAuth()
@@ -33,12 +34,24 @@ export default function Login() {
   useEffect(() => {
     if (params.get('reset') === '1') setFlash('Password updated — please sign in with your new password.')
     const ssoError = params.get('sso_error')
-    if (ssoError) setError(`Microsoft sign-in failed: ${ssoError}`)
+    if (ssoError) {
+      const map: Record<string, string> = {
+        not_configured: 'Microsoft SSO is not configured on this server. Ask your admin to set MICROSOFT_CLIENT_ID / SECRET / TENANT_ID.',
+        state_mismatch: 'Microsoft sign-in failed: security token mismatch. Please try again.',
+        missing_code:   'Microsoft sign-in was cancelled or blocked. Please try again.',
+        sso_failed:     'Microsoft sign-in failed. Your account may not exist in this CRM — ask your admin.',
+      }
+      setError(map[ssoError] ?? `Microsoft sign-in failed: ${ssoError}`)
+    }
     if (window.location.hash.startsWith('#token=')) {
       const token = window.location.hash.slice('#token='.length)
       window.history.replaceState(null, '', '/login')
       handleSsoOutcome(token).then(() => navigate('/dashboard')).catch(() => setError('SSO login failed'))
     }
+    fetch(`${API_BASE}/auth/sso/microsoft/status`)
+      .then((r) => r.ok ? r.json() : { configured: false })
+      .then((d) => setSsoConfigured(Boolean(d?.configured)))
+      .catch(() => {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -582,7 +595,9 @@ export default function Login() {
               type="button"
               className="social-btn"
               onClick={() => { window.location.href = `${API_BASE}/auth/sso/microsoft` }}
-              style={{ width: '100%' }}
+              disabled={!ssoConfigured}
+              title={ssoConfigured ? undefined : 'Microsoft SSO is not configured on this server'}
+              style={{ width: '100%', opacity: ssoConfigured ? 1 : 0.5, cursor: ssoConfigured ? 'pointer' : 'not-allowed' }}
             >
               <svg width="18" height="18" viewBox="0 0 23 23">
                 <path fill="#f25022" d="M0 0h11v11H0z" />
@@ -590,7 +605,7 @@ export default function Login() {
                 <path fill="#00a4ef" d="M0 12h11v11H0z" />
                 <path fill="#ffb900" d="M12 12h11v11H12z" />
               </svg>
-              Sign in with Microsoft
+              Sign in with Microsoft{ssoConfigured ? '' : ' (not configured)'}
             </button>
           </div>
 

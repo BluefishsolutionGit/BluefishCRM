@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Req, UseGuards } from '@nestjs/common'
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common'
 import { IsInt, IsOptional, IsString, MinLength } from 'class-validator'
 import { JwtAuthGuard } from '../auth/jwt.guard'
 import { PermissionsGuard } from '../auth/permissions.guard'
@@ -58,8 +58,8 @@ export class LeadsController {
 
   @Get()
   @RequirePermissions(PERMISSIONS.LEAD_READ)
-  list(): Promise<LeadDto[]> {
-    return this.leads.list()
+  list(@Query('q') q?: string, @Query('status') status?: string): Promise<LeadDto[]> {
+    return this.leads.list({ q, status })
   }
 
   @Get(':id')

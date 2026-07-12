@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import type { GlobalSearchResultDto } from '@bluefish/shared'
+import { api } from '../lib/api'
 import { icons } from '../lib/icons'
 import { ToastProvider } from '../lib/ToastContext'
 import { useAuth } from '../lib/AuthContext'
@@ -25,6 +27,7 @@ const NAV: NavDef[] = [
   { path: '/reports', label: 'Reports', icon: icons.kanban },
   { path: '/ai', label: 'AI', icon: icons.spark },
   { path: '/mobile', label: 'Mobile', icon: icons.phone },
+  { path: '/audit', label: 'Audit', icon: icons.check },
 ]
 
 const ROLE_LABELS: Record<string, string> = {
@@ -50,6 +53,7 @@ const CRUMB_MAP: Record<string, string> = {
   reports: 'Reports',
   ai: 'AI Workspace',
   mobile: 'Mobile',
+  audit: 'Audit trail',
   settings: 'Settings',
 }
 
@@ -57,6 +61,14 @@ export default function AppLayout() {
   const location = useLocation()
   const navigate = useNavigate()
   const [notifOpen, setNotifOpen] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
+
+  useEffect(() => {
+    const loadCount = () => api.notifications().then((rows) => setUnreadCount(rows.filter((r) => r.unread).length)).catch(() => {})
+    loadCount()
+    const iv = setInterval(loadCount, 60_000)
+    return () => clearInterval(iv)
+  }, [])
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const userMenuRef = useRef<HTMLDivElement | null>(null)
   const { user, logout } = useAuth()
@@ -111,15 +123,8 @@ export default function AppLayout() {
 
             <div style={{ flex: 1 }} />
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#3A2A7A', border: '1px solid #4A3AB8', borderRadius: 9, padding: '7px 12px', width: 320 }}>
-              <svg viewBox="0 0 24 24" width="15" height="15">
-                <path d={icons.search} fill="none" stroke="#CDBFF9" strokeWidth={1.8} strokeLinecap="round" />
-              </svg>
-              <input
-                placeholder="Search customers, deals, quotes…  ( / )"
-                style={{ border: 'none', background: 'transparent', fontSize: 12.5, flex: 1, color: '#fff', outline: 'none' }}
-              />
-            </div>
+            <GlobalSearch />
+
 
             <div style={{ position: 'relative' }}>
               <div
@@ -140,7 +145,9 @@ export default function AppLayout() {
                 <svg viewBox="0 0 24 24" width="17" height="17">
                   <path d={icons.bell} fill="none" stroke="#EAE7F7" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
-                <div style={{ position: 'absolute', top: 7, right: 8, width: 7, height: 7, borderRadius: '50%', background: '#FF5A4D', border: '1.5px solid #2E1A6B' }} />
+                {unreadCount > 0 && (
+                  <div style={{ position: 'absolute', top: -2, right: -2, background: '#FF5A4D', color: '#fff', fontSize: 9.5, fontWeight: 800, borderRadius: 999, padding: unreadCount > 9 ? '1px 5px' : '1px 4px', border: '1.5px solid #2E1A6B', minWidth: 16, textAlign: 'center', lineHeight: 1.3 }}>{unreadCount > 99 ? '99+' : unreadCount}</div>
+                )}
               </div>
               {notifOpen && <NotifPanel onClose={() => setNotifOpen(false)} />}
             </div>
@@ -246,21 +253,123 @@ const menuItem: CSSProperties = {
   fontWeight: 500,
 }
 
-function NotifPanel({ onClose: _onClose }: { onClose: () => void }) {
-  const rows = [
-    { c: '#6C55E0', text: (<>Quotation <b>QT-2026-0142</b> is waiting for your approval</>), sub: '10 min ago' },
-    { c: '#06C755', text: (<>New LINE message from <b>คุณพิมพ์ชนก</b> (Thonburi Medical)</>), sub: '25 min ago' },
-    { c: '#B4650A', text: (<>Deal <b>Cold-chain Fleet Tracking</b> idle for 9 days — auto follow-up scheduled</>), sub: '1 hr ago' },
-  ]
+const TONE_COLOR: Record<string, string> = { ok: '#06C755', warn: '#B4650A', bad: '#C0392B', info: '#6C55E0' }
+
+function NotifPanel({ onClose }: { onClose: () => void }) {
+  const navigate = useNavigate()
+  const [rows, setRows] = useState<import('@bluefish/shared').NotificationDto[] | null>(null)
+
+  useEffect(() => {
+    api.notifications().then(setRows).catch(() => setRows([]))
+  }, [])
+
+  const timeAgo = (iso: string): string => {
+    const diff = Date.now() - new Date(iso).getTime()
+    const abs = Math.abs(diff)
+    const min = Math.round(abs / 60000)
+    const hr = Math.round(abs / 3600000)
+    const d = Math.round(abs / 86400000)
+    const sign = diff < 0 ? 'in ' : ''
+    const suffix = diff < 0 ? '' : ' ago'
+    if (abs < 60000) return diff < 0 ? 'in a moment' : 'just now'
+    if (min < 60) return `${sign}${min} min${suffix}`
+    if (hr < 24) return `${sign}${hr} hr${suffix}`
+    return `${sign}${d} d${suffix}`
+  }
+
+  const go = (link: string) => { onClose(); navigate(link) }
+
   return (
-    <div style={{ position: 'absolute', right: 0, top: 44, width: 320, background: '#fff', color: '#1E1E30', border: '1px solid #E5E7F0', borderRadius: 13, boxShadow: '0 12px 32px rgba(14,31,25,.14)', padding: 8, zIndex: 20 }}>
+    <div style={{ position: 'absolute', right: 0, top: 44, width: 340, background: '#fff', color: '#1E1E30', border: '1px solid #E5E7F0', borderRadius: 13, boxShadow: '0 12px 32px rgba(14,31,25,.14)', padding: 8, zIndex: 20, maxHeight: 460, overflow: 'auto' }}>
       <div style={{ fontSize: 12, fontWeight: 700, padding: '6px 10px', color: '#5C5C74', textTransform: 'uppercase', letterSpacing: '.06em' }}>Notifications</div>
-      {rows.map((r, i) => (
-        <div key={i} style={{ padding: '9px 10px', borderRadius: 9, display: 'flex', gap: 9, cursor: 'pointer' }}>
-          <div style={{ width: 8, height: 8, borderRadius: '50%', background: r.c, marginTop: 5, flex: 'none' }} />
-          <div style={{ fontSize: 12.5, lineHeight: 1.45 }}>
-            {r.text}
-            <div style={{ color: '#8888A0', fontSize: 11 }}>{r.sub}</div>
+      {rows === null && <div style={{ padding: 16, textAlign: 'center', color: '#8888A0', fontSize: 12 }}>Loading…</div>}
+      {rows?.length === 0 && <div style={{ padding: 20, textAlign: 'center', color: '#8888A0', fontSize: 12 }}>You're all caught up.</div>}
+      {rows?.map((r) => (
+        <div key={r.id} onClick={() => go(r.link)} style={{ padding: '9px 10px', borderRadius: 9, display: 'flex', gap: 9, cursor: 'pointer', background: r.unread ? '#F7FAFF' : 'transparent' }}>
+          <div style={{ width: 8, height: 8, borderRadius: '50%', background: TONE_COLOR[r.tone] ?? '#8888A0', marginTop: 5, flex: 'none' }} />
+          <div style={{ fontSize: 12.5, lineHeight: 1.45, minWidth: 0, flex: 1 }}>
+            <div style={{ fontWeight: r.unread ? 700 : 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.title}</div>
+            <div style={{ color: '#8888A0', fontSize: 11, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.sub} · {timeAgo(r.at)}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function GlobalSearch() {
+  const navigate = useNavigate()
+  const [q, setQ] = useState('')
+  const [open, setOpen] = useState(false)
+  const [results, setResults] = useState<GlobalSearchResultDto | null>(null)
+  const [loading, setLoading] = useState(false)
+  const rootRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    const onDoc = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [])
+
+  useEffect(() => {
+    if (q.trim().length < 2) { setResults(null); return }
+    setLoading(true)
+    const t = setTimeout(() => {
+      api.globalSearch(q.trim())
+        .then((r) => { setResults(r); setOpen(true) })
+        .catch(() => {})
+        .finally(() => setLoading(false))
+    }, 250)
+    return () => clearTimeout(t)
+  }, [q])
+
+  const go = (path: string) => { setOpen(false); setQ(''); setResults(null); navigate(path) }
+
+  const totalHits = results ? results.customers.length + results.leads.length + results.opportunities.length + results.quotations.length + results.contracts.length : 0
+
+  return (
+    <div ref={rootRef} style={{ position: 'relative', width: 320 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#3A2A7A', border: '1px solid #4A3AB8', borderRadius: 9, padding: '7px 12px' }}>
+        <svg viewBox="0 0 24 24" width="15" height="15">
+          <path d={icons.search} fill="none" stroke="#CDBFF9" strokeWidth={1.8} strokeLinecap="round" />
+        </svg>
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onFocus={() => q.trim().length >= 2 && setOpen(true)}
+          placeholder="Search customers, deals, quotes…"
+          style={{ border: 'none', background: 'transparent', fontSize: 12.5, flex: 1, color: '#fff', outline: 'none' }}
+        />
+        {loading && <span style={{ fontSize: 10, color: '#CDBFF9' }}>…</span>}
+      </div>
+      {open && results && (
+        <div style={{ position: 'absolute', top: 44, left: 0, right: 0, background: '#fff', color: '#1E1E30', border: '1px solid #E5E7F0', borderRadius: 11, boxShadow: '0 12px 32px rgba(14,31,25,.14)', padding: 6, zIndex: 30, maxHeight: 480, overflow: 'auto' }}>
+          {totalHits === 0 && <div style={{ padding: 14, fontSize: 12, color: '#8888A0', textAlign: 'center' }}>No matches for "{results.query}"</div>}
+
+          <SearchGroup label="Customers" items={results.customers.map((c) => ({ id: c.id, primary: c.name, secondary: `${c.code} · ${c.industry}`, path: `/customers/${c.id}` }))} onPick={go} color="#2A6FDB" />
+          <SearchGroup label="Leads" items={results.leads.map((l) => ({ id: l.id, primary: l.name, secondary: `${l.companyName} · ${l.status} · score ${l.score}`, path: `/leads` }))} onPick={go} color="#B4650A" />
+          <SearchGroup label="Opportunities" items={results.opportunities.map((o) => ({ id: o.id, primary: o.title, secondary: `${o.customerName} · ${o.stage} · ฿${(o.value / 1e6).toFixed(1)}M`, path: `/pipeline` }))} onPick={go} color="#6C55E0" />
+          <SearchGroup label="Quotations" items={results.quotations.map((q2) => ({ id: q2.id, primary: q2.no, secondary: `${q2.customerName} · ${q2.status}`, path: `/quotations/${q2.id}` }))} onPick={go} color="#7C3AED" />
+          <SearchGroup label="Contracts" items={results.contracts.map((c) => ({ id: c.id, primary: c.no, secondary: `${c.customerName} · ${c.status}`, path: `/contracts` }))} onPick={go} color="#2E1A6B" />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SearchGroup({ label, items, onPick, color }: { label: string; items: Array<{ id: string; primary: string; secondary: string; path: string }>; onPick: (p: string) => void; color: string }) {
+  if (items.length === 0) return null
+  return (
+    <div style={{ padding: '4px 0' }}>
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.07em', color: '#8888A0', textTransform: 'uppercase', padding: '6px 10px' }}>{label}</div>
+      {items.map((it) => (
+        <div key={it.id} onClick={() => onPick(it.path)} style={{ display: 'flex', gap: 8, padding: '7px 10px', borderRadius: 8, cursor: 'pointer', alignItems: 'center' }} className="search-hit">
+          <div style={{ width: 4, height: 24, borderRadius: 2, background: color, flex: 'none' }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.primary}</div>
+            <div style={{ fontSize: 10.5, color: '#8888A0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.secondary}</div>
           </div>
         </div>
       ))}

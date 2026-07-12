@@ -20,9 +20,12 @@ const stats = new Map<string, RouteStats>()
 
 function keyFor(method: string, path: string): string {
   const family = path
-    .replace(/\/[0-9a-f]{20,}(?=$|\/)/gi, '/:id')
-    .replace(/\/\d+(?=$|\/)/g, '/:id')
+    // UUID
     .replace(/\/[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}/gi, '/:id')
+    // CUID-style: lowercase alnum, 20+ chars
+    .replace(/\/[a-z0-9]{20,}(?=$|\/)/g, '/:id')
+    // numeric id
+    .replace(/\/\d+(?=$|\/)/g, '/:id')
   return `${method} ${family}`
 }
 

@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build & test
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: bluefish
+          POSTGRES_PASSWORD: bluefish
+          POSTGRES_DB: bluefish_crm
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bluefish"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://bluefish:bluefish@localhost:5432/bluefish_crm?schema=public
+      JWT_SECRET: ci-secret-not-for-prod
+      PORT: 4000
+      CORS_ORIGINS: http://localhost:5173
+      FLOWACCOUNT_MODE: stub
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build shared package
+        run: npm --workspace @bluefish/shared run build
+
+      - name: Type-check API
+        run: cd apps/api && npx tsc --noEmit
+
+      - name: Type-check web
+        run: cd apps/web && npx tsc --noEmit
+
+      - name: Apply Prisma migrations
+        run: cd apps/api && npx prisma migrate deploy
+
+      - name: Generate Prisma client
+        run: cd apps/api && npx prisma generate
+
+      - name: Seed database
+        run: cd apps/api && npx prisma db seed
+
+      - name: Build API
+        run: npm --workspace @bluefish/api run build
+
+      - name: Build web
+        run: npm --workspace @bluefish/web run build
+
+      - name: Test — shared
+        run: npm --workspace @bluefish/shared run test --if-present
+
+      - name: Test — API
+        run: npm --workspace @bluefish/api run test --if-present
+
+      - name: Test — web
+        run: npm --workspace @bluefish/web run test --if-present

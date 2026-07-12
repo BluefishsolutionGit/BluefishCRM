@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Req, Res, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common'
+import { Controller, Get, Query, Req, Res, UnauthorizedException } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import * as crypto from 'crypto'
 import { SsoService } from './sso.service'
@@ -27,7 +27,8 @@ export class SsoController {
   @Get('microsoft')
   microsoft(@Res({ passthrough: true }) res: Response) {
     if (!this.sso.isConfigured()) {
-      throw new ServiceUnavailableException('Microsoft SSO is not configured. Add MICROSOFT_CLIENT_ID/SECRET/TENANT_ID to apps/api/.env')
+      const webBase = this.cfg.get<string>('WEB_BASE_URL') ?? 'http://localhost:5173'
+      return res.redirect(`${webBase}/login?sso_error=not_configured`)
     }
     const state = crypto.randomBytes(16).toString('base64url')
     res.cookie(STATE_COOKIE, state, {
@@ -36,6 +37,11 @@ export class SsoController {
       maxAge: 5 * 60 * 1000, path: '/api/auth/sso',
     })
     return res.redirect(this.sso.authorizeUrl(state))
+  }
+
+  @Get('microsoft/status')
+  microsoftStatus(): { configured: boolean } {
+    return { configured: this.sso.isConfigured() }
   }
 
   @Get('microsoft/callback')

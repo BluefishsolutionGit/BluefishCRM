@@ -1,0 +1,89 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 0,
+  "id": null,
+  "title": "Bluefish CRM — API Overview",
+  "tags": ["bluefish", "crm"],
+  "timezone": "Asia/Bangkok",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "route",
+        "label": "Route",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "query": "label_values(bluefish_http_requests_total, route)",
+        "includeAll": true,
+        "multi": true,
+        "refresh": 2
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Uptime",
+      "gridPos": { "x": 0, "y": 0, "w": 4, "h": 4 },
+      "targets": [{ "expr": "bluefish_uptime_seconds", "legendFormat": "seconds" }],
+      "fieldConfig": { "defaults": { "unit": "s", "color": { "mode": "thresholds" } } }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Requests / min",
+      "gridPos": { "x": 4, "y": 0, "w": 5, "h": 4 },
+      "targets": [{ "expr": "sum(rate(bluefish_http_requests_total[1m])) * 60", "legendFormat": "rpm" }]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Error rate (5xx)",
+      "gridPos": { "x": 9, "y": 0, "w": 5, "h": 4 },
+      "targets": [{ "expr": "sum(rate(bluefish_http_errors_total[5m])) / clamp_min(sum(rate(bluefish_http_requests_total[5m])), 0.001)", "legendFormat": "5xx %" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 0.01 }, { "color": "red", "value": 0.05 }] }
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "p95 latency by route",
+      "gridPos": { "x": 0, "y": 4, "w": 14, "h": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (route, le) (rate(bluefish_http_duration_seconds_bucket{route=~\"$route\"}[5m])))",
+          "legendFormat": "{{route}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Requests/sec by route",
+      "gridPos": { "x": 14, "y": 0, "w": 10, "h": 6 },
+      "targets": [
+        {
+          "expr": "sum by (route) (rate(bluefish_http_requests_total{route=~\"$route\"}[1m]))",
+          "legendFormat": "{{route}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "5xx totals per route (last hour)",
+      "gridPos": { "x": 14, "y": 6, "w": 10, "h": 6 },
+      "targets": [{ "expr": "sum by (route) (increase(bluefish_http_errors_total[1h]))", "instant": true }]
+    }
+  ]
+}

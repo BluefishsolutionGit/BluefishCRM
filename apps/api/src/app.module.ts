@@ -18,6 +18,8 @@ import { QuotationsModule } from './quotations/quotations.module'
 import { DocumentsModule } from './documents/documents.module'
 import { ContractsModule } from './contracts/contracts.module'
 import { CompetitorsModule } from './competitors/competitors.module'
+import { SearchModule } from './search/search.module'
+import { NotificationsModule } from './notifications/notifications.module'
 import { AiModule } from './ai/ai.module'
 import { DashboardsModule } from './dashboards/dashboards.module'
 import { ReportsModule } from './reports/reports.module'
@@ -49,6 +51,8 @@ import { HealthController } from './health.controller'
     DocumentsModule,
     ContractsModule,
     CompetitorsModule,
+    SearchModule,
+    NotificationsModule,
     AiModule,
     DashboardsModule,
     ReportsModule,

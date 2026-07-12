@@ -27,6 +27,7 @@ import Settings from './pages/Settings'
 import Products from './pages/Products'
 import Documents from './pages/Documents'
 import Reports from './pages/Reports'
+import AuditLog from './pages/AuditLog'
 import ForgotPassword from './pages/ForgotPassword'
 import ResetPassword from './pages/ResetPassword'
 import MfaChallenge from './pages/MfaChallenge'
@@ -65,6 +66,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="/products" element={<Products />} />
             <Route path="/documents" element={<Documents />} />
             <Route path="/reports" element={<Reports />} />
+            <Route path="/audit" element={<AuditLog />} />
           </Route>
           <Route
             path="/m"

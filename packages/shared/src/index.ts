@@ -896,6 +896,31 @@ export interface ApiError {
   error?: string
 }
 
+// ─── Notifications ──────────────────────────────────────────────────
+export type NotificationKind = 'activity_upcoming' | 'activity_overdue' | 'quotation_approval' | 'inbox_message' | 'flowaccount_status'
+export type NotificationTone = 'ok' | 'warn' | 'bad' | 'info'
+
+export interface NotificationDto {
+  id: string
+  kind: NotificationKind
+  title: string
+  sub: string
+  tone: NotificationTone
+  link: string
+  at: string
+  unread: boolean
+}
+
+// ─── Global search ──────────────────────────────────────────────────
+export interface GlobalSearchResultDto {
+  query: string
+  customers: Array<{ id: string; code: string; name: string; industry: string }>
+  leads: Array<{ id: string; name: string; companyName: string; status: string; score: number }>
+  opportunities: Array<{ id: string; title: string; stage: string; value: number; customerName: string }>
+  quotations: Array<{ id: string; no: string; status: string; customerName: string }>
+  contracts: Array<{ id: string; no: string; status: string; customerName: string }>
+}
+
 // ─── FlowAccount integration ────────────────────────────────────────
 export interface FlowaccountStatusDto {
   configured: boolean

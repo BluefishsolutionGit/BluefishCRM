@@ -1,3 +1,4 @@
+import { describe, expect, it, vi } from 'vitest'
 import { Reflector } from '@nestjs/core'
 import { ForbiddenException } from '@nestjs/common'
 import { PermissionsGuard } from './permissions.guard'
@@ -5,7 +6,7 @@ import { PERMISSIONS } from './permissions'
 
 function makeContext(role: string | undefined, required: string[] | undefined) {
   const reflector = new Reflector()
-  ;(reflector.getAllAndOverride as unknown as jest.Mock) = jest.fn().mockReturnValue(required)
+  ;(reflector.getAllAndOverride as unknown as (...args: unknown[]) => unknown) = vi.fn(() => required)
   const guard = new PermissionsGuard(reflector)
   const ctx = {
     switchToHttp: () => ({ getRequest: () => ({ user: role ? { role } : undefined }) }),

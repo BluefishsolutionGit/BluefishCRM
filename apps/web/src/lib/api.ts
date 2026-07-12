@@ -164,6 +164,12 @@ export const api = {
 
   // ─────── Leads ───────
   leads: () => request<LeadDto[]>('/leads'),
+  importLeads: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return request<ImportResultDto>('/leads/import', { method: 'POST', body: form })
+  },
+  leadsImportTemplateUrl: () => `${API_BASE}/leads/import-template`,
   lead: (id: string) => request<LeadDto>(`/leads/${id}`),
   createLead: (data: CreateLeadDto) => request<LeadDto>('/leads', { method: 'POST', body: JSON.stringify(data) }),
   updateLead: (id: string, data: UpdateLeadDto) => request<LeadDto>(`/leads/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
@@ -303,6 +309,13 @@ export const api = {
   inboxMessages: (threadId: string) => request<import('@bluefish/shared').InboxMessageDto[]>(`/inbox/threads/${threadId}/messages`),
   sendInboxMessage: (threadId: string, text: string) =>
     request<import('@bluefish/shared').InboxMessageDto>(`/inbox/threads/${threadId}/messages`, { method: 'POST', body: JSON.stringify({ text }) }),
+  // ─────── Notifications ───────
+  notifications: () => request<import('@bluefish/shared').NotificationDto[]>('/notifications'),
+
+  // ─────── Global search ───────
+  globalSearch: (q: string) =>
+    request<import('@bluefish/shared').GlobalSearchResultDto>(`/search?q=${encodeURIComponent(q)}`),
+
   // ─────── FlowAccount ───────
   flowaccountStatus: () => request<import('@bluefish/shared').FlowaccountStatusDto>('/integrations/flowaccount/status'),
   flowaccountPush: (quotationId: string) =>

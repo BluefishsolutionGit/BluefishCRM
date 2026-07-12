@@ -1,3 +1,4 @@
+import { describe, expect, it } from 'vitest'
 import * as OTPAuth from 'otpauth'
 import { MfaService } from './mfa.service'
 

@@ -22,8 +22,15 @@ export class LeadsService {
     private assignment: AssignmentService,
   ) {}
 
-  async list(): Promise<LeadDto[]> {
+  async list(filter: { q?: string; status?: string } = {}): Promise<LeadDto[]> {
+    const insensitive = filter.q ? { contains: filter.q, mode: 'insensitive' as const } : undefined
     const rows = await this.prisma.lead.findMany({
+      where: {
+        status: filter.status,
+        ...(insensitive
+          ? { OR: [{ name: insensitive }, { companyName: insensitive }, { email: insensitive }] }
+          : {}),
+      },
       include: { owner: true },
       orderBy: [{ score: 'desc' }, { createdAt: 'desc' }],
     })
