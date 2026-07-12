@@ -1,0 +1,20 @@
+{
+  "name": "Bluefish CRM",
+  "short_name": "Bluefish",
+  "description": "Sales CRM for Bluefish Solution",
+  "start_url": "/m",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#EEF2FA",
+  "theme_color": "#2E1A6B",
+  "icons": [
+    { "src": "/logo.jpg", "sizes": "192x192", "type": "image/jpeg", "purpose": "any" },
+    { "src": "/logo.jpg", "sizes": "512x512", "type": "image/jpeg", "purpose": "any" }
+  ],
+  "shortcuts": [
+    { "name": "New activity",  "short_name": "New",   "url": "/m/task/new" },
+    { "name": "Inbox",         "short_name": "Inbox", "url": "/inbox" },
+    { "name": "Pipeline",      "short_name": "Deals", "url": "/m/opportunities" }
+  ]
+}

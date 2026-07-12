@@ -1,0 +1,71 @@
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: #eef2fa;
+  color: #1e1e30;
+  font-family: 'IBM Plex Sans Thai', system-ui, sans-serif;
+}
+* {
+  box-sizing: border-box;
+}
+a {
+  color: #2a6fdb;
+  text-decoration: none;
+}
+a:hover {
+  color: #1e52c0;
+}
+input,
+button {
+  font-family: inherit;
+}
+
+@keyframes floaty {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+@keyframes floaty2 {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(8px);
+  }
+}
+@keyframes spinDash {
+  to {
+    stroke-dashoffset: -40;
+  }
+}
+@keyframes spinSchool {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes bubbleUp {
+  0% {
+    transform: translateY(0);
+    opacity: 0.7;
+  }
+  100% {
+    transform: translateY(-90px);
+    opacity: 0;
+  }
+}
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}

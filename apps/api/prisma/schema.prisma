@@ -1,0 +1,765 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String
+  createdAt   DateTime @default(now())
+
+  users       User[]
+}
+
+model User {
+  id             String     @id @default(cuid())
+  email          String     @unique
+  passwordHash   String
+  name           String
+  roleId         String
+  mfaSecret      String?
+  mfaEnabled     Boolean    @default(false)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  role                Role       @relation(fields: [roleId], references: [id])
+  ownedCustomers      Customer[]
+  ownedLeads          Lead[]
+  ownedOpportunities  Opportunity[]
+  ownedActivities     Activity[]
+  ownedQuotations     Quotation[]
+  createdVersions     QuotationVersion[]
+  quotationApprovals  QuotationApproval[]
+  uploadedDocuments   Document[]
+  uploadedVersions    DocumentVersion[]
+  ownedContracts      Contract[]
+  createdContractVersions ContractVersion[]
+  contractApprovals   ContractApproval[]
+  aiRuns              AiRun[]
+  inboxThreads        InboxThread[]
+  pushSubscriptions   PushSubscription[]
+  calendarAccounts    CalendarSyncAccount[]
+  auditLogs           AuditLog[]
+  refreshTokens       RefreshToken[]
+  resetTokens         PasswordResetToken[]
+  authProviders       AuthProvider[]
+}
+
+model Customer {
+  id           String    @id @default(cuid())
+  code         String    @unique
+  name         String
+  nameTh       String?
+  industry     String
+  status       String    @default("Prospect")
+  ownerId      String
+  city         String
+  address      String
+  taxId        String
+  phone        String
+  terms        String
+  openValue    Int       @default(0)
+  wonValue     Int       @default(0)
+  lastActivity String
+  deletedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  owner        User      @relation(fields: [ownerId], references: [id])
+  contacts     Contact[]
+  opportunities Opportunity[]
+  activities   Activity[]
+  quotations   Quotation[]
+  contracts    Contract[]
+  documents    Document[]
+  inboxThreads InboxThread[]
+
+  @@index([status])
+  @@index([ownerId])
+  @@index([deletedAt])
+}
+
+model Contact {
+  id         String   @id @default(cuid())
+  customerId String
+  name       String
+  role       String
+  phone      String
+  email      String
+  isPrimary  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+}
+
+model Lead {
+  id            String    @id @default(cuid())
+  name          String
+  companyName   String
+  email         String?
+  phone         String?
+  source        String
+  score         Int       @default(50)
+  ownerId       String?
+  status        String    @default("New")
+  estValue      Int?
+  notes         String?
+  convertedAt   DateTime?
+  convertedOpportunityId String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  owner         User?     @relation(fields: [ownerId], references: [id])
+  convertedTo   Opportunity? @relation(fields: [convertedOpportunityId], references: [id])
+
+  @@index([status])
+  @@index([ownerId])
+  @@index([phone])
+  @@index([email])
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  description String?
+  unitPrice   Int
+  currency    String   @default("THB")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  opportunityLines OpportunityLine[]
+  quotationLines   QuotationLine[]
+}
+
+model Opportunity {
+  id           String    @id @default(cuid())
+  title        String
+  customerId   String
+  ownerId      String
+  stage        String    @default("Qualification")
+  value        Int       @default(0)
+  probability  Int       @default(20)
+  closeDate    DateTime?
+  competitor   String?
+  lostReason   String?
+  wonReason    String?
+  aiHint       String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  customer         Customer @relation(fields: [customerId], references: [id])
+  owner            User     @relation(fields: [ownerId], references: [id])
+  lines            OpportunityLine[]
+  activities       Activity[]
+  originatedLeads  Lead[]
+  quotations       Quotation[]
+  contracts        Contract[]
+  documents        Document[]
+
+  @@index([customerId])
+  @@index([ownerId])
+  @@index([stage])
+}
+
+model OpportunityLine {
+  id            String   @id @default(cuid())
+  opportunityId String
+  productId     String
+  quantity      Int      @default(1)
+  unitPrice     Int
+  discount      Int      @default(0)
+
+  opportunity   Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  product       Product     @relation(fields: [productId], references: [id])
+
+  @@index([opportunityId])
+}
+
+model Activity {
+  id            String    @id @default(cuid())
+  type          String
+  title         String
+  description   String?
+  scheduledAt   DateTime
+  durationMin   Int?
+  ownerId       String
+  customerId    String?
+  opportunityId String?
+  status        String    @default("scheduled")
+  notes         String?
+  reminderSentAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  owner         User      @relation(fields: [ownerId], references: [id])
+  customer      Customer? @relation(fields: [customerId], references: [id])
+  opportunity   Opportunity? @relation(fields: [opportunityId], references: [id])
+
+  @@index([ownerId])
+  @@index([customerId])
+  @@index([opportunityId])
+  @@index([scheduledAt])
+  @@index([status])
+}
+
+// ─────── Quotations ───────
+
+model Quotation {
+  id               String   @id @default(cuid())
+  no               String   @unique
+  customerId       String
+  opportunityId    String?
+  ownerId          String
+  status           String   @default("Draft")
+  approvalStep     Int      @default(0)
+  currentVersionId String?  @unique
+  sentAt           DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  customer         Customer      @relation(fields: [customerId], references: [id])
+  opportunity      Opportunity?  @relation(fields: [opportunityId], references: [id])
+  owner            User          @relation(fields: [ownerId], references: [id])
+  versions         QuotationVersion[] @relation("QuotationVersions")
+  currentVersion   QuotationVersion? @relation("QuotationCurrentVersion", fields: [currentVersionId], references: [id])
+  approvals        QuotationApproval[]
+  documents        Document[]
+
+  @@index([customerId])
+  @@index([ownerId])
+  @@index([status])
+}
+
+model QuotationVersion {
+  id              String   @id @default(cuid())
+  quotationId     String
+  versionNo       Int
+  subtotal        Int      @default(0)
+  discountPct     Int      @default(0)
+  discountAmt     Int      @default(0)
+  vatPct          Int      @default(7)
+  vatAmt          Int      @default(0)
+  grandTotal      Int      @default(0)
+  terms           String   @default("Validity 30 days · Payment 30/40/30 · Delivery 16 weeks from PO")
+  notes           String?
+  createdById     String
+  createdAt       DateTime @default(now())
+
+  quotation       Quotation      @relation("QuotationVersions", fields: [quotationId], references: [id], onDelete: Cascade)
+  createdBy       User           @relation(fields: [createdById], references: [id])
+  lines           QuotationLine[]
+  isCurrentOf     Quotation?     @relation("QuotationCurrentVersion")
+
+  @@unique([quotationId, versionNo])
+}
+
+model QuotationLine {
+  id                 String   @id @default(cuid())
+  quotationVersionId String
+  productId          String?
+  itemName           String
+  description        String?
+  quantity           Int      @default(1)
+  unitPrice          Int
+  discountPct        Int      @default(0)
+  amount             Int
+  ordering           Int      @default(0)
+
+  version            QuotationVersion @relation(fields: [quotationVersionId], references: [id], onDelete: Cascade)
+  product            Product?         @relation(fields: [productId], references: [id])
+
+  @@index([quotationVersionId])
+}
+
+model QuotationApproval {
+  id           String    @id @default(cuid())
+  quotationId  String
+  step         Int
+  stepName     String
+  approverId   String?
+  decision     String    @default("pending")
+  decidedAt    DateTime?
+  comment      String?
+  createdAt    DateTime  @default(now())
+
+  quotation    Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  approver     User?     @relation(fields: [approverId], references: [id])
+
+  @@index([quotationId])
+}
+
+// ─────── Documents ───────
+
+model Document {
+  id               String   @id @default(cuid())
+  name             String
+  customerId       String?
+  opportunityId    String?
+  quotationId      String?
+  contractId       String?
+  category         String   @default("other")
+  currentVersionId String?  @unique
+  uploadedById     String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  customer         Customer?    @relation(fields: [customerId], references: [id])
+  opportunity      Opportunity? @relation(fields: [opportunityId], references: [id])
+  quotation        Quotation?   @relation(fields: [quotationId], references: [id])
+  contract         Contract?    @relation(fields: [contractId], references: [id])
+  uploadedBy       User         @relation(fields: [uploadedById], references: [id])
+  versions         DocumentVersion[] @relation("DocVersions")
+  currentVersion   DocumentVersion?  @relation("DocCurrentVersion", fields: [currentVersionId], references: [id])
+
+  @@index([customerId])
+  @@index([opportunityId])
+  @@index([quotationId])
+  @@index([contractId])
+  @@index([category])
+}
+
+// ─────── Contracts ───────
+
+model Contract {
+  id                String    @id @default(cuid())
+  no                String    @unique
+  customerId        String
+  opportunityId     String?
+  ownerId           String
+  type              String
+  status            String    @default("Draft")
+  approvalStep      Int       @default(0)
+  currentVersionId  String?   @unique
+  startDate         DateTime?
+  endDate           DateTime?
+  value             Int       @default(0)
+  currency          String    @default("THB")
+  risk              String    @default("Low")
+  parentContractId  String?
+  signedAt          DateTime?
+  terminatedAt      DateTime?
+  autoRenew         Boolean   @default(false)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  customer          Customer      @relation(fields: [customerId], references: [id])
+  opportunity       Opportunity?  @relation(fields: [opportunityId], references: [id])
+  owner             User          @relation(fields: [ownerId], references: [id])
+  parentContract    Contract?     @relation("ContractRenewals", fields: [parentContractId], references: [id])
+  renewals          Contract[]    @relation("ContractRenewals")
+  versions          ContractVersion[]  @relation("ContractVersions")
+  currentVersion    ContractVersion?   @relation("ContractCurrentVersion", fields: [currentVersionId], references: [id])
+  approvals         ContractApproval[]
+  obligations       Obligation[]
+  riskFindings      ContractRiskFinding[]
+  documents         Document[]
+
+  @@index([customerId])
+  @@index([ownerId])
+  @@index([status])
+  @@index([endDate])
+  @@index([type])
+}
+
+model ContractVersion {
+  id            String    @id @default(cuid())
+  contractId    String
+  versionNo     Int
+  title         String
+  body          String
+  templateId    String?
+  createdById   String
+  createdAt     DateTime  @default(now())
+
+  contract      Contract          @relation("ContractVersions", fields: [contractId], references: [id], onDelete: Cascade)
+  template      ContractTemplate? @relation(fields: [templateId], references: [id])
+  createdBy     User              @relation(fields: [createdById], references: [id])
+  isCurrentOf   Contract?         @relation("ContractCurrentVersion")
+
+  @@unique([contractId, versionNo])
+}
+
+model ContractTemplate {
+  id          String    @id @default(cuid())
+  code        String    @unique
+  name        String
+  type        String
+  body        String
+  variables   Json?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  versions    ContractVersion[]
+}
+
+model ContractApproval {
+  id           String    @id @default(cuid())
+  contractId   String
+  step         Int
+  stepName     String
+  approverId   String?
+  decision     String    @default("pending")
+  decidedAt    DateTime?
+  comment      String?
+  createdAt    DateTime  @default(now())
+
+  contract     Contract  @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  approver     User?     @relation(fields: [approverId], references: [id])
+
+  @@index([contractId])
+}
+
+model Obligation {
+  id             String    @id @default(cuid())
+  contractId     String
+  kind           String
+  title          String
+  dueDate        DateTime
+  amount         Int?
+  status         String    @default("pending")
+  completedAt    DateTime?
+  reminderSentAt DateTime?
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  contract       Contract  @relation(fields: [contractId], references: [id], onDelete: Cascade)
+
+  @@index([contractId])
+  @@index([dueDate])
+  @@index([status])
+  @@index([kind])
+}
+
+model ContractRiskFinding {
+  id           String    @id @default(cuid())
+  contractId   String
+  severity     String
+  category     String
+  message      String
+  snippet      String?
+  createdAt    DateTime  @default(now())
+
+  contract     Contract  @relation(fields: [contractId], references: [id], onDelete: Cascade)
+
+  @@index([contractId])
+}
+
+model DocumentVersion {
+  id            String   @id @default(cuid())
+  documentId    String
+  versionNo     Int
+  filename      String
+  storageKey    String
+  mimeType      String
+  sizeBytes     Int
+  uploadedById  String
+  createdAt     DateTime @default(now())
+
+  document      Document @relation("DocVersions", fields: [documentId], references: [id], onDelete: Cascade)
+  uploadedBy    User     @relation(fields: [uploadedById], references: [id])
+  extraction    DocumentExtraction?
+  isCurrentOf   Document? @relation("DocCurrentVersion")
+
+  @@unique([documentId, versionNo])
+}
+
+model DocumentExtraction {
+  id                String    @id @default(cuid())
+  documentVersionId String    @unique
+  status            String    @default("pending")
+  classification    String?
+  extractedText     String?
+  fields            Json?
+  processedAt       DateTime?
+
+  version           DocumentVersion @relation(fields: [documentVersionId], references: [id], onDelete: Cascade)
+}
+
+// ─────── Assignment / Audit / Auth ───────
+
+model AssignmentRule {
+  id                 String   @id @default(cuid())
+  entityType         String   @unique
+  method             String   @default("round_robin")
+  lastAssignedUserId String?
+  updatedAt          DateTime @updatedAt
+}
+
+// ─────── AI Suite ───────
+
+model AiPromptVersion {
+  id            String   @id @default(cuid())
+  agentKey      String
+  version       Int
+  systemPrompt  String
+  userTemplate  String
+  model         String   @default("claude-haiku-4-5-20251001")
+  temperature   Float    @default(0.4)
+  isActive      Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  @@unique([agentKey, version])
+  @@index([agentKey, isActive])
+}
+
+model AiRun {
+  id            String    @id @default(cuid())
+  agentKey      String
+  userId        String?
+  input         Json?
+  status        String    @default("pending")
+  startedAt     DateTime  @default(now())
+  completedAt   DateTime?
+  model         String?
+  tokensIn      Int       @default(0)
+  tokensOut     Int       @default(0)
+  costUsd       Float     @default(0)
+  isDryRun      Boolean   @default(false)
+  error         String?
+  summary       String?
+  promptVersion Int?
+
+  user          User?     @relation(fields: [userId], references: [id])
+  results       AiResult[]
+
+  @@index([agentKey])
+  @@index([userId])
+  @@index([startedAt])
+}
+
+model AiResult {
+  id             String    @id @default(cuid())
+  runId          String
+  kind           String
+  title          String
+  payload        Json
+  reviewStatus   String    @default("pending")
+  reviewedAt     DateTime?
+  reviewedById   String?
+  createdCrmId   String?
+  createdCrmType String?
+  createdAt      DateTime  @default(now())
+
+  run            AiRun     @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId])
+  @@index([reviewStatus])
+}
+
+// ─────── Inbox (Omnichannel) ───────
+
+model InboxThread {
+  id            String     @id @default(cuid())
+  channel       String
+  externalId    String
+  name          String
+  companyName   String?
+  customerId    String?
+  ownerId       String?
+  tag           String?
+  lastMessageAt DateTime   @default(now())
+  unread        Int        @default(0)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  customer      Customer?  @relation(fields: [customerId], references: [id])
+  owner         User?      @relation(fields: [ownerId], references: [id])
+  messages      InboxMessage[]
+
+  @@unique([channel, externalId])
+  @@index([customerId])
+  @@index([ownerId])
+  @@index([channel])
+}
+
+model InboxMessage {
+  id                String   @id @default(cuid())
+  threadId          String
+  direction         String
+  text              String
+  authorName        String?
+  externalMessageId String?
+  sentAt            DateTime @default(now())
+  createdAt         DateTime @default(now())
+
+  thread            InboxThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@index([threadId])
+  @@index([sentAt])
+}
+
+// ─────── API keys + Webhook framework ───────
+
+model ApiKey {
+  id           String    @id @default(cuid())
+  name         String
+  keyHash      String    @unique
+  prefix       String    @unique
+  scopes       String
+  createdById  String
+  createdAt    DateTime  @default(now())
+  lastUsedAt   DateTime?
+  revokedAt    DateTime?
+
+  @@index([revokedAt])
+}
+
+model WebhookSubscription {
+  id             String    @id @default(cuid())
+  url            String
+  secret         String
+  events         String
+  isActive       Boolean   @default(true)
+  createdById    String
+  lastDeliveryAt DateTime?
+  lastError      String?
+  createdAt      DateTime  @default(now())
+
+  @@index([isActive])
+}
+
+model PushSubscription {
+  id           String    @id @default(cuid())
+  userId       String
+  endpoint     String    @unique
+  p256dh       String
+  auth         String
+  userAgent    String?
+  createdAt    DateTime  @default(now())
+
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ─────── e-Signature ───────
+
+model EsignEnvelope {
+  id             String    @id @default(cuid())
+  contractId     String
+  provider       String    @default("stub")
+  externalId     String    @unique
+  signerEmail    String
+  signerName     String
+  status         String    @default("sent")
+  sentAt         DateTime  @default(now())
+  completedAt    DateTime?
+  callbackToken  String    @unique
+  createdById    String
+  createdAt      DateTime  @default(now())
+
+  @@index([contractId])
+  @@index([status])
+}
+
+// ─────── Calendar sync ───────
+
+model CalendarSyncAccount {
+  id           String    @id @default(cuid())
+  userId       String
+  provider     String
+  externalId   String
+  email        String
+  accessToken  String
+  refreshToken String?
+  expiresAt    DateTime?
+  lastSyncedAt DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, externalId])
+  @@index([userId])
+}
+
+model ReportSchedule {
+  id             String    @id @default(cuid())
+  reportKey      String
+  filters        Json?
+  cron           String
+  format         String    @default("xlsx")
+  recipients     String
+  lastRunAt      DateTime?
+  lastError      String?
+  isActive       Boolean   @default(true)
+  createdById    String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([reportKey])
+  @@index([isActive])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  action     String
+  entity     String?
+  entityId   String?
+  before     Json?
+  after      Json?
+  ip         String?
+  userAgent  String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  user       User?    @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([entity, entityId])
+  @@index([createdAt])
+  @@index([action])
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model AuthProvider {
+  id         String   @id @default(cuid())
+  userId     String
+  provider   String
+  providerId String
+  email      String
+  createdAt  DateTime @default(now())
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerId])
+  @@index([userId])
+}

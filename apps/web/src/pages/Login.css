@@ -1,0 +1,106 @@
+.login-page {
+  width: 100vw;
+  height: 100vh;
+  min-height: 600px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(1200px 700px at 20% 10%, #f4f8ff, #e7edf8 70%);
+  padding: 28px;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 1120px;
+  height: 100%;
+  max-height: 720px;
+  background: #fff;
+  border-radius: 26px;
+  box-shadow: 0 30px 80px -30px rgba(30, 26, 48, 0.35);
+  display: flex;
+  overflow: hidden;
+  animation: fadeUp 0.5s ease both;
+}
+
+.login-graphic {
+  flex: 1.05;
+  position: relative;
+  background: linear-gradient(180deg, #eaf7ff 0%, #c4e4fa 35%, #6fa5ee 72%, #2a5fcb 100%);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-form-panel {
+  flex: 1;
+  min-width: 400px;
+  padding: 56px 60px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  background-color: #ffffff;
+}
+
+.login-submit {
+  width: 100%;
+  height: 52px;
+  border: none;
+  border-radius: 13px;
+  background: linear-gradient(135deg, #2a6fdb, #4c86e8);
+  color: #fff;
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 600;
+  font-size: 16px;
+  cursor: pointer;
+  box-shadow: 0 12px 24px -8px rgba(42, 111, 219, 0.6);
+  transition: transform 0.12s;
+}
+.login-submit:hover {
+  transform: translateY(-1px);
+}
+.login-submit:active {
+  transform: translateY(0);
+}
+
+.social-btn {
+  flex: 1;
+  height: 48px;
+  border: 1.5px solid #e4e7ef;
+  border-radius: 12px;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  color: #3b3b55;
+  transition: background 0.12s;
+}
+.social-btn:hover {
+  background: #f7f9fc;
+}
+
+.pw-toggle {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  color: #9aa0b2;
+}
+.pw-toggle:hover {
+  color: #6a6f82;
+}
+
+.forgot-link {
+  font-size: 13px;
+  font-weight: 600;
+  color: #2a6fdb;
+}
+.signup-link {
+  color: #e0533d;
+  font-weight: 700;
+}

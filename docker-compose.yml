@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: bluefish-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bluefish
+      POSTGRES_PASSWORD: bluefish
+      POSTGRES_DB: bluefish_crm
+    ports:
+      - '5439:5432'
+    volumes:
+      - bluefish-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U bluefish -d bluefish_crm']
+      interval: 5s
+      retries: 5
+
+volumes:
+  bluefish-pgdata:
