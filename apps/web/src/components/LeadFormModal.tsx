@@ -8,7 +8,7 @@ const STATUSES: LeadStatus[] = ['New', 'Contacted', 'Qualified', 'AI Sourced', '
 
 export default function LeadFormModal({ open, initial, onClose, onSaved }: Props) {
   const [form, setForm] = useState<CreateLeadDto>({
-    name: '', companyName: '', email: '', phone: '', source: 'Website', estValue: undefined, notes: '',
+    name: '', companyName: '', email: '', phone: '', source: 'Website', estValue: undefined, serviceOrProduct: '', notes: '',
   })
   const [users, setUsers] = useState<UserDto[]>([])
   const [dupes, setDupes] = useState<DuplicateCheckResult['duplicates']>([])
@@ -27,10 +27,12 @@ export default function LeadFormModal({ open, initial, onClose, onSaved }: Props
         email: initial.email ?? '', phone: initial.phone ?? '',
         source: initial.source, status: initial.status,
         ownerId: initial.ownerId ?? undefined,
-        estValue: initial.estValue ?? undefined, notes: initial.notes ?? '',
+        estValue: initial.estValue ?? undefined,
+        serviceOrProduct: initial.serviceOrProduct ?? '',
+        notes: initial.notes ?? '',
       })
     } else if (open) {
-      setForm({ name: '', companyName: '', email: '', phone: '', source: 'Website', notes: '' })
+      setForm({ name: '', companyName: '', email: '', phone: '', source: 'Website', serviceOrProduct: '', notes: '' })
     }
     setError(null); setDupes([])
   }, [initial, open])
@@ -80,6 +82,9 @@ export default function LeadFormModal({ open, initial, onClose, onSaved }: Props
               </select>
             </Field>
             <Field label="Estimated value (฿)"><input type="number" min={0} value={form.estValue ?? ''} onChange={(e) => change('estValue', e.target.value ? Number(e.target.value) : undefined)} style={inp} /></Field>
+            <Field label="Service / Product" span2>
+              <input value={form.serviceOrProduct ?? ''} onChange={(e) => change('serviceOrProduct', e.target.value)} placeholder="e.g. Cloud Migration, Managed IT, ERP Consulting" style={inp} />
+            </Field>
             {initial && (
               <Field label="Status">
                 <select value={form.status ?? 'New'} onChange={(e) => change('status', e.target.value as LeadStatus)} style={inp}>

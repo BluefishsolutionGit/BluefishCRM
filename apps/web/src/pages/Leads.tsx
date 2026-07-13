@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { LeadDto } from '@bluefish/shared'
 import { api, ApiError } from '../lib/api'
@@ -58,13 +58,39 @@ export default function Leads() {
     catch (e) { toast(e instanceof ApiError ? e.message : 'Delete failed') }
   }
 
+  const fileRef = useRef<HTMLInputElement | null>(null)
+  const [importing, setImporting] = useState(false)
+  const [scoreInfoOpen, setScoreInfoOpen] = useState(false)
+
+  const onImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    setImporting(true)
+    try {
+      const res = await api.importLeads(file)
+      toast(`Imported ${res.imported} · skipped ${res.skipped}${res.errors.length ? ` · ${res.errors.length} error(s)` : ''}`)
+      await reload()
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : 'Import failed')
+    } finally { setImporting(false) }
+  }
+
   return (
     <div style={{ height: '100%', overflow: 'auto', padding: '24px 28px', animation: 'fadeUp .3s ease' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
         <div style={{ fontFamily: "'Space Grotesk'", fontSize: 21, fontWeight: 600 }}>Leads</div>
         <div style={{ background: '#F2F3F9', borderRadius: 8, fontSize: 12, fontWeight: 600, color: '#5C5C74', padding: '4px 10px' }}>{leads.length} total</div>
         <div style={{ flex: 1 }} />
-        {canWrite && <div onClick={openNew} style={primaryBtn}>+ Add lead</div>}
+        <a href={api.leadsImportTemplateUrl()} target="_blank" rel="noopener noreferrer" style={ghostBtn}>Template</a>
+        <a href={api.leadsExportUrl()} style={ghostBtn}>Export ↓</a>
+        {canWrite && (
+          <>
+            <input ref={fileRef} type="file" accept=".xlsx,.xls" onChange={onImport} style={{ display: 'none' }} />
+            <div onClick={() => fileRef.current?.click()} style={{ ...ghostBtn, opacity: importing ? 0.5 : 1 }}>{importing ? 'Importing…' : 'Import ↑'}</div>
+            <div onClick={openNew} style={primaryBtn}>+ Add lead</div>
+          </>
+        )}
       </div>
 
       <div style={{ borderRadius: 13, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 13, marginBottom: 14, color: '#EAE7F7', background: '#1A236B' }}>
@@ -80,7 +106,12 @@ export default function Leads() {
 
       <div style={{ background: '#fff', border: '1px solid #E5E7F0', borderRadius: 14, overflow: 'hidden' }}>
         <div style={{ ...gridCols, padding: '11px 18px', borderBottom: '1px solid #E5E7F0', fontSize: 10.5, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: '#8888A0' }}>
-          <div>Lead</div><div>Source</div><div>Score</div><div>Owner</div><div>Status</div><div>Est. value</div><div style={{ textAlign: 'right' }}>Actions</div>
+          <div>Lead</div><div>Source</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            Score
+            <span onClick={() => setScoreInfoOpen(true)} title="How is the score calculated?" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 15, height: 15, borderRadius: '50%', background: '#EEF0FA', color: '#2A6FDB', fontSize: 10, fontWeight: 700, cursor: 'pointer', textTransform: 'none' }}>?</span>
+          </div>
+          <div>Owner</div><div>Status</div><div>Est. value</div><div style={{ textAlign: 'right' }}>Actions</div>
         </div>
         {loading && <div style={{ padding: 24, textAlign: 'center', color: '#8888A0', fontSize: 13 }}>Loading…</div>}
         {!loading && leads.length === 0 && !error && <div style={{ padding: 24, textAlign: 'center', color: '#8888A0', fontSize: 13 }}>No leads yet.</div>}
@@ -93,8 +124,10 @@ export default function Leads() {
           return (
             <div key={l.id} style={{ ...gridCols, padding: '12px 18px', borderBottom: '1px solid #F2F3F9', alignItems: 'center' }}>
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 700 }}>{l.name}</div>
-                <div style={{ fontSize: 11.5, color: '#5C5C74', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{l.companyName}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{l.companyName}</div>
+                <div style={{ fontSize: 11.5, fontWeight: 400, color: '#5C5C74', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {l.name}{l.serviceOrProduct ? <span style={{ color: '#8888A0' }}> · {l.serviceOrProduct}</span> : null}
+                </div>
               </div>
               <div><span style={srcStyle(l.source)}>{l.source}</span></div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -118,10 +151,86 @@ export default function Leads() {
       </div>
 
       <LeadFormModal open={modalOpen} initial={editing} onClose={() => setModalOpen(false)} onSaved={onSaved} />
+      {scoreInfoOpen && <ScoreInfoModal onClose={() => setScoreInfoOpen(false)} />}
     </div>
   )
 }
 
+function ScoreInfoModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(30,26,48,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 20 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', width: 560, maxHeight: '85vh', borderRadius: 14, overflow: 'auto', padding: '20px 24px' }}>
+        <div style={{ fontSize: 16, fontWeight: 700 }}>How the lead score is calculated</div>
+        <div style={{ fontSize: 12.5, color: '#5C5C74', marginTop: 4, marginBottom: 14 }}>
+          Score is 0–100. Higher is hotter. Recomputed on every create / edit — no manual override.
+        </div>
+
+        <ScoreSection title="1. Source (base)" total="+5 … +30">
+          <ScoreRow label="e-GP Tender" value="+30" />
+          <ScoreRow label="Referral" value="+25" />
+          <ScoreRow label="LINE OA" value="+20" />
+          <ScoreRow label="Facebook Ads" value="+15" />
+          <ScoreRow label="Website" value="+10" />
+          <ScoreRow label="Instagram" value="+5" />
+          <ScoreRow label="anything else" value="+10 (default)" />
+        </ScoreSection>
+
+        <ScoreSection title="2. Contactability" total="+0 … +30">
+          <ScoreRow label="Has email" value="+15" />
+          <ScoreRow label="Has phone" value="+15" />
+        </ScoreSection>
+
+        <ScoreSection title="3. Estimated deal value" total="+0 … +25">
+          <ScoreRow label="≥ ฿5,000,000" value="+25" />
+          <ScoreRow label="≥ ฿1,000,000" value="+20" />
+          <ScoreRow label="≥ ฿500,000" value="+12" />
+          <ScoreRow label="any positive value" value="+5" />
+        </ScoreSection>
+
+        <ScoreSection title="4. Company signal" total="+0 … +5">
+          <ScoreRow label="Company name ≥ 10 chars" value="+5" />
+        </ScoreSection>
+
+        <div style={{ fontSize: 12.5, color: '#5C5C74', marginTop: 14, background: '#F7FAFF', border: '1px solid #E4EDFC', borderRadius: 9, padding: '10px 12px' }}>
+          <b>Final:</b> sum of all bands, clamped to 0–100.<br />
+          <b>Example:</b> e-GP Tender (+30) + email (+15) + phone (+15) + ฿2M (+20) + long name (+5) = <b style={{ color: '#2A6FDB' }}>85</b>.<br />
+          <b>Color:</b> ≥80 blue (hot), 65–79 amber (warm), &lt;65 grey (cold).
+        </div>
+
+        <div style={{ fontSize: 11, color: '#8888A0', marginTop: 10 }}>Source: <code>apps/api/src/leads/lead-scoring.ts</code></div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+          <button type="button" onClick={onClose} style={primaryBtn}>Got it</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ScoreSection({ title, total, children }: { title: string; total: string; children: React.ReactNode }) {
+  return (
+    <div style={{ borderTop: '1px solid #F1F1F5', padding: '12px 0' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+        <div style={{ fontSize: 13, fontWeight: 700 }}>{title}</div>
+        <div style={{ fontSize: 11, color: '#8888A0', fontFamily: "'IBM Plex Mono', monospace" }}>{total}</div>
+      </div>
+      <div style={{ marginTop: 6, display: 'grid', gridTemplateColumns: '1fr auto', gap: '4px 12px' }}>
+        {children}
+      </div>
+    </div>
+  )
+}
+
+function ScoreRow({ label, value }: { label: string; value: string }) {
+  return (
+    <>
+      <div style={{ fontSize: 12, color: '#3B3B52' }}>{label}</div>
+      <div style={{ fontSize: 12, color: '#2A6FDB', fontFamily: "'IBM Plex Mono', monospace", fontWeight: 600 }}>{value}</div>
+    </>
+  )
+}
+
 const gridCols: CSSProperties = { display: 'grid', gridTemplateColumns: '1.9fr 130px 150px 130px 110px 90px 260px', gap: 10 }
-const primaryBtn: CSSProperties = { background: '#2A6FDB', color: '#fff', borderRadius: 9, padding: '8px 16px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }
+const primaryBtn: CSSProperties = { background: '#2A6FDB', color: '#fff', borderRadius: 9, padding: '8px 16px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', border: 'none' }
+const ghostBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid #E5E7F0', background: '#fff', borderRadius: 9, padding: '7px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: '#3B3B52', textDecoration: 'none' }
 const smallBtn: CSSProperties = { border: '1px solid #E5E7F0', background: '#fff', borderRadius: 8, fontSize: 11.5, fontWeight: 600, padding: '5px 11px', cursor: 'pointer' }

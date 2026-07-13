@@ -136,6 +136,7 @@ model Lead {
   ownerId       String?
   status        String    @default("New")
   estValue      Int?
+  serviceOrProduct String?
   notes         String?
   convertedAt   DateTime?
   convertedOpportunityId String?

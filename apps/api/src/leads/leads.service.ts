@@ -68,7 +68,9 @@ export class LeadsService {
         email: input.email ?? null, phone: input.phone ?? null,
         source: input.source, score,
         ownerId, status: input.status ?? 'New',
-        estValue: input.estValue ?? null, notes: input.notes ?? null,
+        estValue: input.estValue ?? null,
+        serviceOrProduct: input.serviceOrProduct ?? null,
+        notes: input.notes ?? null,
       },
       include: { owner: true },
     })
@@ -161,7 +163,7 @@ export class LeadsService {
   private toDto(row: {
     id: string; name: string; companyName: string; email: string | null; phone: string | null
     source: string; score: number; ownerId: string | null; status: string
-    estValue: number | null; notes: string | null
+    estValue: number | null; serviceOrProduct: string | null; notes: string | null
     convertedAt: Date | null; convertedOpportunityId: string | null; createdAt: Date
     owner: { name: string } | null
   }): LeadDto {
@@ -170,7 +172,7 @@ export class LeadsService {
       email: row.email, phone: row.phone, source: row.source, score: row.score,
       ownerId: row.ownerId, ownerName: row.owner?.name ?? null,
       status: row.status as LeadStatus,
-      estValue: row.estValue, notes: row.notes,
+      estValue: row.estValue, serviceOrProduct: row.serviceOrProduct, notes: row.notes,
       convertedAt: row.convertedAt?.toISOString() ?? null,
       convertedOpportunityId: row.convertedOpportunityId,
       createdAt: row.createdAt.toISOString(),

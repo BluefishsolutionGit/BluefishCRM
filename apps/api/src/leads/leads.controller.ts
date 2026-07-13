@@ -18,6 +18,7 @@ class CreateLeadBody {
   @IsOptional() @IsString() ownerId?: string | null
   @IsOptional() @IsString() status?: 'New' | 'Contacted' | 'Qualified' | 'AI Sourced' | 'Converted' | 'Lost'
   @IsOptional() @IsInt() estValue?: number
+  @IsOptional() @IsString() serviceOrProduct?: string
   @IsOptional() @IsString() notes?: string
 }
 
@@ -29,6 +30,7 @@ class UpdateLeadBody {
   @IsOptional() @IsString() source?: string
   @IsOptional() @IsString() status?: 'New' | 'Contacted' | 'Qualified' | 'AI Sourced' | 'Converted' | 'Lost'
   @IsOptional() @IsInt() estValue?: number
+  @IsOptional() @IsString() serviceOrProduct?: string
   @IsOptional() @IsString() notes?: string
 }
 

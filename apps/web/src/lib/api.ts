@@ -185,6 +185,7 @@ export const api = {
     return request<ImportResultDto>('/leads/import', { method: 'POST', body: form })
   },
   leadsImportTemplateUrl: () => `${API_BASE}/leads/import-template`,
+  leadsExportUrl: () => `${API_BASE}/leads/export`,
   lead: (id: string) => request<LeadDto>(`/leads/${id}`),
   createLead: (data: CreateLeadDto) => request<LeadDto>('/leads', { method: 'POST', body: JSON.stringify(data) }),
   updateLead: (id: string, data: UpdateLeadDto) => request<LeadDto>(`/leads/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),

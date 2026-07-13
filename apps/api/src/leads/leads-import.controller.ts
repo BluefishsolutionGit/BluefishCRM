@@ -20,6 +20,7 @@ const COLUMNS: { key: string; header: string; required?: boolean }[] = [
   { key: 'phone', header: 'Phone' },
   { key: 'source', header: 'Source', required: true },
   { key: 'estValue', header: 'Est. Value' },
+  { key: 'serviceOrProduct', header: 'Service / Product' },
   { key: 'status', header: 'Status' },
   { key: 'ownerEmail', header: 'Owner Email' },
   { key: 'notes', header: 'Notes' },
@@ -42,6 +43,7 @@ export class LeadsImportController {
       name: 'Somchai P.', companyName: 'Acme Manufacturing Co., Ltd.',
       email: 'somchai@acme.example', phone: '+66 2 000 0000',
       source: 'Website form', estValue: 500000,
+      serviceOrProduct: 'ERP Consulting',
       status: 'New', ownerEmail: 'nattaya@bluefishsolution.com',
       notes: 'Interested in ERP upgrade Q3.',
     })
@@ -134,6 +136,7 @@ export class LeadsImportController {
           phone: value('phone') || undefined,
           source: value('source'),
           estValue: numValue('estValue'),
+          serviceOrProduct: value('serviceOrProduct') || undefined,
           status: status as LeadStatus,
           ownerId,
           notes: value('notes') || undefined,
@@ -146,5 +149,52 @@ export class LeadsImportController {
     }
 
     return { imported, skipped, errors }
+  }
+
+  @Get('export')
+  @RequirePermissions(PERMISSIONS.LEAD_READ)
+  async exportXlsx(@Res() res: Response): Promise<void> {
+    const rows = await this.prisma.lead.findMany({
+      include: { owner: { select: { email: true, name: true } } },
+      orderBy: [{ score: 'desc' }, { createdAt: 'desc' }],
+    })
+    const wb = new ExcelJS.Workbook()
+    const sheet = wb.addWorksheet('leads')
+    const cols = [
+      { header: 'Contact Name', key: 'name', width: 22 },
+      { header: 'Company', key: 'companyName', width: 32 },
+      { header: 'Email', key: 'email', width: 24 },
+      { header: 'Phone', key: 'phone', width: 18 },
+      { header: 'Source', key: 'source', width: 16 },
+      { header: 'Est. Value', key: 'estValue', width: 14 },
+      { header: 'Service / Product', key: 'serviceOrProduct', width: 22 },
+      { header: 'Status', key: 'status', width: 14 },
+      { header: 'Score', key: 'score', width: 8 },
+      { header: 'Owner Email', key: 'ownerEmail', width: 26 },
+      { header: 'Owner Name', key: 'ownerName', width: 20 },
+      { header: 'Notes', key: 'notes', width: 40 },
+      { header: 'Created', key: 'createdAt', width: 20 },
+      { header: 'Converted', key: 'convertedAt', width: 20 },
+    ]
+    sheet.columns = cols
+    sheet.getRow(1).font = { bold: true }
+    for (const r of rows) {
+      sheet.addRow({
+        name: r.name, companyName: r.companyName,
+        email: r.email ?? '', phone: r.phone ?? '',
+        source: r.source, estValue: r.estValue ?? '',
+        serviceOrProduct: r.serviceOrProduct ?? '',
+        status: r.status, score: r.score,
+        ownerEmail: r.owner?.email ?? '', ownerName: r.owner?.name ?? '',
+        notes: r.notes ?? '',
+        createdAt: r.createdAt.toISOString(),
+        convertedAt: r.convertedAt?.toISOString() ?? '',
+      })
+    }
+    const stamp = new Date().toISOString().slice(0, 10)
+    const buf = await wb.xlsx.writeBuffer()
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    res.setHeader('Content-Disposition', `attachment; filename="leads-${stamp}.xlsx"`)
+    res.send(Buffer.from(buf as ArrayBuffer))
   }
 }

@@ -191,6 +191,7 @@ export interface LeadDto {
   ownerName: string | null
   status: LeadStatus
   estValue: number | null
+  serviceOrProduct: string | null
   notes: string | null
   convertedAt: string | null
   convertedOpportunityId: string | null
@@ -206,6 +207,7 @@ export interface CreateLeadDto {
   ownerId?: string | null
   status?: LeadStatus
   estValue?: number
+  serviceOrProduct?: string
   notes?: string
 }
 
