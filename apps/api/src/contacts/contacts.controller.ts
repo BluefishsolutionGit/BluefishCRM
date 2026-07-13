@@ -12,17 +12,33 @@ import type { ContactDto } from '@bluefish/shared'
 interface JwtRequest extends Request { user?: { sub: string; email: string; role: string } }
 
 class CreateContactBody {
-  @IsString() @MinLength(1) name!: string
-  @IsString() role!: string
-  @IsString() phone!: string
+  @IsOptional() @IsString() name?: string
+  @IsOptional() @IsString() firstName?: string
+  @IsOptional() @IsString() lastName?: string
+  @IsOptional() @IsString() nickname?: string
+  @IsOptional() @IsString() role?: string
+  @IsOptional() @IsString() position?: string
+  @IsOptional() @IsString() department?: string
   @IsEmail() email!: string
+  @IsString() @MinLength(1) phone!: string
+  @IsOptional() @IsString() telephone?: string
+  @IsOptional() @IsString() lineId?: string
+  @IsOptional() @IsString() notes?: string
   @IsOptional() @IsBoolean() isPrimary?: boolean
 }
 class UpdateContactBody {
   @IsOptional() @IsString() name?: string
+  @IsOptional() @IsString() firstName?: string
+  @IsOptional() @IsString() lastName?: string
+  @IsOptional() @IsString() nickname?: string
   @IsOptional() @IsString() role?: string
-  @IsOptional() @IsString() phone?: string
+  @IsOptional() @IsString() position?: string
+  @IsOptional() @IsString() department?: string
   @IsOptional() @IsEmail() email?: string
+  @IsOptional() @IsString() phone?: string
+  @IsOptional() @IsString() telephone?: string
+  @IsOptional() @IsString() lineId?: string
+  @IsOptional() @IsString() notes?: string
   @IsOptional() @IsBoolean() isPrimary?: boolean
 }
 

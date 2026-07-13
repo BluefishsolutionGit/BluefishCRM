@@ -81,19 +81,41 @@ model Customer {
   documents    Document[]
   inboxThreads InboxThread[]
   competitorContracts CompetitorContract[]
+  tags         Tag[]     @relation("CustomerTags")
 
   @@index([status])
   @@index([ownerId])
   @@index([deletedAt])
 }
 
+model Tag {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  color       String   @default("#5C5C74")
+  /// department | priority | industry | custom
+  kind        String   @default("department")
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  customers   Customer[] @relation("CustomerTags")
+}
+
 model Contact {
   id         String   @id @default(cuid())
   customerId String
-  name       String
-  role       String
-  phone      String
+  name       String   // full display name — auto-derived from first+last when empty
+  firstName  String?
+  lastName   String?
+  nickname   String?
+  role       String   // kept for backward compat; new UI uses `position`
+  position   String?
+  department String?
   email      String
+  phone      String   // primary mobile number
+  telephone  String?  // landline / office number
+  lineId     String?
+  notes      String?
   isPrimary  Boolean  @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt

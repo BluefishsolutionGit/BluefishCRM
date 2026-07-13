@@ -1,20 +1,25 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
 import { AuditService } from '../audit/audit.service'
-import type { CreateCustomerDto, CustomerDto, CustomerStatus, UpdateCustomerDto } from '@bluefish/shared'
+import type { CreateCustomerDto, CustomerDto, CustomerStatus, TagDto, TagKind, UpdateCustomerDto } from '@bluefish/shared'
 import type { AuditRequestContext } from '../common/request-context'
 
+type TagRow = { id: string; name: string; color: string; kind: string; description: string | null }
 type CustomerRow = {
   id: string; code: string; name: string; nameTh: string | null; industry: string; status: string
   ownerId: string; city: string; address: string; taxId: string; phone: string; terms: string
-  openValue: number; wonValue: number; lastActivity: string; owner: { name: string }
+  openValue: number; wonValue: number; lastActivity: string
+  owner: { name: string }
+  tags: TagRow[]
 }
+
+const CUSTOMER_INCLUDE = { owner: true, tags: true } as const
 
 @Injectable()
 export class CustomersService {
   constructor(private prisma: PrismaService, private audit: AuditService) {}
 
-  async list(query?: string): Promise<CustomerDto[]> {
+  async list(query?: string, tagId?: string): Promise<CustomerDto[]> {
     const rows = await this.prisma.customer.findMany({
       where: {
         deletedAt: null,
@@ -27,15 +32,16 @@ export class CustomersService {
               ],
             }
           : {}),
+        ...(tagId ? { tags: { some: { id: tagId } } } : {}),
       },
-      include: { owner: true },
+      include: CUSTOMER_INCLUDE,
       orderBy: { code: 'asc' },
     })
     return rows.map((c) => this.toDto(c))
   }
 
   async findOne(id: string): Promise<CustomerDto> {
-    const c = await this.prisma.customer.findFirst({ where: { id, deletedAt: null }, include: { owner: true } })
+    const c = await this.prisma.customer.findFirst({ where: { id, deletedAt: null }, include: CUSTOMER_INCLUDE })
     if (!c) throw new NotFoundException(`Customer ${id} not found`)
     return this.toDto(c)
   }
@@ -44,16 +50,18 @@ export class CustomersService {
     const existing = await this.prisma.customer.findUnique({ where: { code: input.code } })
     if (existing) throw new ConflictException(`Customer code ${input.code} already exists`)
 
+    const { tagIds, ...rest } = input
     const created = await this.prisma.customer.create({
       data: {
-        code: input.code, name: input.name, nameTh: input.nameTh ?? null,
-        industry: input.industry, status: input.status ?? 'Prospect',
-        ownerId: input.ownerId, city: input.city, address: input.address, taxId: input.taxId,
-        phone: input.phone, terms: input.terms,
-        openValue: input.openValue ?? 0, wonValue: input.wonValue ?? 0,
-        lastActivity: input.lastActivity ?? '—',
+        code: rest.code, name: rest.name, nameTh: rest.nameTh ?? null,
+        industry: rest.industry, status: rest.status ?? 'Prospect',
+        ownerId: rest.ownerId, city: rest.city, address: rest.address, taxId: rest.taxId,
+        phone: rest.phone, terms: rest.terms,
+        openValue: rest.openValue ?? 0, wonValue: rest.wonValue ?? 0,
+        lastActivity: rest.lastActivity ?? '—',
+        ...(tagIds?.length ? { tags: { connect: tagIds.map((id) => ({ id })) } } : {}),
       },
-      include: { owner: true },
+      include: CUSTOMER_INCLUDE,
     })
     await this.audit.log({
       userId: ctx.userId, action: 'customer.create', entity: 'customer', entityId: created.id,
@@ -71,10 +79,14 @@ export class CustomersService {
       if (clash) throw new ConflictException(`Customer code ${input.code} already exists`)
     }
 
+    const { tagIds, ...rest } = input
     const updated = await this.prisma.customer.update({
       where: { id },
-      data: input,
-      include: { owner: true },
+      data: {
+        ...rest,
+        ...(tagIds !== undefined ? { tags: { set: tagIds.map((id) => ({ id })) } } : {}),
+      },
+      include: CUSTOMER_INCLUDE,
     })
     await this.audit.log({
       userId: ctx.userId, action: 'customer.update', entity: 'customer', entityId: id,
@@ -94,12 +106,14 @@ export class CustomersService {
   }
 
   private toDto(row: CustomerRow): CustomerDto {
+    const tags: TagDto[] = row.tags.map((t) => ({ id: t.id, name: t.name, color: t.color, kind: t.kind as TagKind, description: t.description }))
     return {
       id: row.id, code: row.code, name: row.name, nameTh: row.nameTh,
       industry: row.industry, status: row.status as CustomerStatus,
       ownerId: row.ownerId, ownerName: row.owner.name,
       city: row.city, address: row.address, taxId: row.taxId, phone: row.phone, terms: row.terms,
       openValue: row.openValue, wonValue: row.wonValue, lastActivity: row.lastActivity,
+      tags,
     }
   }
 }

@@ -51,8 +51,8 @@ export class CustomersController {
 
   @Get()
   @RequirePermissions(PERMISSIONS.CUSTOMER_READ)
-  list(@Query('q') q?: string): Promise<CustomerDto[]> {
-    return this.customers.list(q)
+  list(@Query('q') q?: string, @Query('tagId') tagId?: string): Promise<CustomerDto[]> {
+    return this.customers.list(q, tagId)
   }
 
   @Get(':id')

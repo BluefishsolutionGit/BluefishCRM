@@ -9,6 +9,23 @@ export interface AuditCtx {
   userAgent?: string | null
 }
 
+type ContactRow = {
+  id: string; customerId: string
+  name: string; firstName: string | null; lastName: string | null; nickname: string | null
+  role: string; position: string | null; department: string | null
+  email: string; phone: string; telephone: string | null
+  lineId: string | null; notes: string | null; isPrimary: boolean
+}
+
+function deriveName(input: { name?: string; firstName?: string | null; lastName?: string | null; nickname?: string | null }): string {
+  if (input.name && input.name.trim()) return input.name.trim()
+  const parts = [input.firstName, input.lastName].filter((p): p is string => Boolean(p?.trim()))
+  const full = parts.join(' ').trim()
+  if (full) return full
+  if (input.nickname?.trim()) return input.nickname.trim()
+  return ''
+}
+
 @Injectable()
 export class ContactsService {
   constructor(private prisma: PrismaService, private audit: AuditService) {}
@@ -29,8 +46,26 @@ export class ContactsService {
       await this.prisma.contact.updateMany({ where: { customerId, isPrimary: true }, data: { isPrimary: false } })
     }
 
+    const displayName = deriveName(input)
+    if (!displayName) throw new NotFoundException('Contact must have at least a first/last name or nickname')
+
     const row = await this.prisma.contact.create({
-      data: { customerId, name: input.name, role: input.role, phone: input.phone, email: input.email, isPrimary: input.isPrimary ?? false },
+      data: {
+        customerId,
+        name: displayName,
+        firstName: input.firstName ?? null,
+        lastName: input.lastName ?? null,
+        nickname: input.nickname ?? null,
+        role: input.role ?? input.position ?? '',
+        position: input.position ?? null,
+        department: input.department ?? null,
+        email: input.email,
+        phone: input.phone,
+        telephone: input.telephone ?? null,
+        lineId: input.lineId ?? null,
+        notes: input.notes ?? null,
+        isPrimary: input.isPrimary ?? false,
+      },
     })
 
     await this.audit.log({
@@ -48,7 +83,35 @@ export class ContactsService {
       await this.prisma.contact.updateMany({ where: { customerId: before.customerId, isPrimary: true, NOT: { id } }, data: { isPrimary: false } })
     }
 
-    const row = await this.prisma.contact.update({ where: { id }, data: input })
+    // If any name component changed, recompute the display name
+    const nextName = input.name !== undefined
+      ? input.name
+      : (input.firstName !== undefined || input.lastName !== undefined || input.nickname !== undefined)
+        ? deriveName({
+            firstName: input.firstName !== undefined ? input.firstName : before.firstName,
+            lastName: input.lastName !== undefined ? input.lastName : before.lastName,
+            nickname: input.nickname !== undefined ? input.nickname : before.nickname,
+          }) || before.name
+        : undefined
+
+    const row = await this.prisma.contact.update({
+      where: { id },
+      data: {
+        ...(nextName !== undefined ? { name: nextName } : {}),
+        ...(input.firstName !== undefined ? { firstName: input.firstName } : {}),
+        ...(input.lastName !== undefined ? { lastName: input.lastName } : {}),
+        ...(input.nickname !== undefined ? { nickname: input.nickname } : {}),
+        ...(input.role !== undefined ? { role: input.role } : {}),
+        ...(input.position !== undefined ? { position: input.position } : {}),
+        ...(input.department !== undefined ? { department: input.department } : {}),
+        ...(input.email !== undefined ? { email: input.email } : {}),
+        ...(input.phone !== undefined ? { phone: input.phone } : {}),
+        ...(input.telephone !== undefined ? { telephone: input.telephone } : {}),
+        ...(input.lineId !== undefined ? { lineId: input.lineId } : {}),
+        ...(input.notes !== undefined ? { notes: input.notes } : {}),
+        ...(input.isPrimary !== undefined ? { isPrimary: input.isPrimary } : {}),
+      },
+    })
 
     await this.audit.log({
       userId: ctx.userId, action: 'contact.update', entity: 'contact', entityId: id,
@@ -67,9 +130,15 @@ export class ContactsService {
     })
   }
 
-  private toDto(row: {
-    id: string; customerId: string; name: string; role: string; phone: string; email: string; isPrimary: boolean
-  }): ContactDto {
-    return { id: row.id, customerId: row.customerId, name: row.name, role: row.role, phone: row.phone, email: row.email, isPrimary: row.isPrimary }
+  private toDto(row: ContactRow): ContactDto {
+    return {
+      id: row.id, customerId: row.customerId,
+      name: row.name,
+      firstName: row.firstName, lastName: row.lastName, nickname: row.nickname,
+      role: row.role, position: row.position, department: row.department,
+      email: row.email, phone: row.phone, telephone: row.telephone,
+      lineId: row.lineId, notes: row.notes,
+      isPrimary: row.isPrimary,
+    }
   }
 }

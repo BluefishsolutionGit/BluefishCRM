@@ -9,6 +9,7 @@ import { MailerModule } from './mailer/mailer.module'
 import { AuthModule } from './auth/auth.module'
 import { UsersModule } from './users/users.module'
 import { CustomersModule } from './customers/customers.module'
+import { TagsModule } from './tags/tags.module'
 import { ContactsModule } from './contacts/contacts.module'
 import { ProductsModule } from './products/products.module'
 import { LeadsModule } from './leads/leads.module'
@@ -42,6 +43,7 @@ import { HealthController } from './health.controller'
     AuthModule,
     UsersModule,
     CustomersModule,
+    TagsModule,
     ContactsModule,
     ProductsModule,
     LeadsModule,

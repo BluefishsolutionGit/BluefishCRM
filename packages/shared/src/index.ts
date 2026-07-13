@@ -57,16 +57,48 @@ export interface CustomerDto {
   openValue: number
   wonValue: number
   lastActivity: string
+  tags: TagDto[]
 }
 
 export interface ContactDto {
   id: string
   customerId: string
   name: string
+  firstName: string | null
+  lastName: string | null
+  nickname: string | null
   role: string
-  phone: string
+  position: string | null
+  department: string | null
   email: string
+  phone: string
+  telephone: string | null
+  lineId: string | null
+  notes: string | null
   isPrimary: boolean
+}
+
+// ─── Tags ─────────────────────────────────────────────────
+export type TagKind = 'department' | 'priority' | 'industry' | 'custom'
+export interface TagDto {
+  id: string
+  name: string
+  color: string
+  kind: TagKind
+  description: string | null
+  usageCount?: number
+}
+export interface CreateTagDto {
+  name: string
+  color?: string
+  kind?: TagKind
+  description?: string
+}
+export interface UpdateTagDto {
+  name?: string
+  color?: string
+  kind?: TagKind
+  description?: string | null
 }
 
 export interface CreateCustomerDto {
@@ -84,6 +116,7 @@ export interface CreateCustomerDto {
   openValue?: number
   wonValue?: number
   lastActivity?: string
+  tagIds?: string[]
 }
 
 export interface UpdateCustomerDto {
@@ -101,21 +134,38 @@ export interface UpdateCustomerDto {
   openValue?: number
   wonValue?: number
   lastActivity?: string
+  tagIds?: string[]
 }
 
 export interface CreateContactDto {
-  name: string
-  role: string
-  phone: string
+  name?: string
+  firstName?: string
+  lastName?: string
+  nickname?: string
+  role?: string
+  position?: string
+  department?: string
   email: string
+  phone: string
+  telephone?: string
+  lineId?: string
+  notes?: string
   isPrimary?: boolean
 }
 
 export interface UpdateContactDto {
   name?: string
+  firstName?: string | null
+  lastName?: string | null
+  nickname?: string | null
   role?: string
-  phone?: string
+  position?: string | null
+  department?: string | null
   email?: string
+  phone?: string
+  telephone?: string | null
+  lineId?: string | null
+  notes?: string | null
   isPrimary?: boolean
 }
 

@@ -488,6 +488,44 @@ Penalties apply per Section 5 for missed SLAs. Governing law: Thailand.`,
     })
   }
 
+  // ── Service department tags ──────────────────────────────────────
+  const tagDefs = [
+    { name: 'Managed IT',      color: '#2A6FDB', description: 'Managed infrastructure + helpdesk' },
+    { name: 'Cloud Migration', color: '#6C55E0', description: 'Cloud modernisation service line' },
+    { name: 'Cybersecurity',   color: '#C0392B', description: 'MDR, pen test, SOC services' },
+    { name: 'ERP Consulting',  color: '#0E9C7E', description: 'SAP / Oracle / Netsuite delivery' },
+    { name: 'Data & Analytics',color: '#B4650A', description: 'DW, BI, data science engagements' },
+  ]
+  for (const t of tagDefs) {
+    await prisma.tag.upsert({
+      where: { name: t.name },
+      update: { color: t.color, description: t.description, kind: 'department' },
+      create: { ...t, kind: 'department' },
+    })
+  }
+
+  // Tag a few sample customers so the UI has content on first load
+  const managedIt = await prisma.tag.findUnique({ where: { name: 'Managed IT' } })
+  const cloud = await prisma.tag.findUnique({ where: { name: 'Cloud Migration' } })
+  const cyber = await prisma.tag.findUnique({ where: { name: 'Cybersecurity' } })
+  const erp = await prisma.tag.findUnique({ where: { name: 'ERP Consulting' } })
+  const tagAssignments: Array<[string, string[]]> = [
+    ['C-1024', [managedIt?.id, erp?.id].filter(Boolean) as string[]],  // Siam Precision — ERP + IT
+    ['C-1031', [erp?.id, cloud?.id].filter(Boolean) as string[]],       // Thonburi Medical — ERP + Cloud
+    ['C-1042', [cloud?.id].filter(Boolean) as string[]],                // Krungthep Foods — Cloud
+    ['C-1048', [managedIt?.id, cyber?.id].filter(Boolean) as string[]], // TechVista — IT + Cyber
+    ['C-1055', [cloud?.id].filter(Boolean) as string[]],                // Lanna Solar — Cloud
+  ]
+  for (const [code, tagIds] of tagAssignments) {
+    const cust = await prisma.customer.findUnique({ where: { code } })
+    if (cust && tagIds.length > 0) {
+      await prisma.customer.update({
+        where: { id: cust.id },
+        data: { tags: { set: tagIds.map((id) => ({ id })) } },
+      })
+    }
+  }
+
   // ── Competitor Tracker seed ──────────────────────────────────────
   const competitors = [
     { name: 'AlphaSoft ERP',      logo: 'A', color: '#2A6FDB' },

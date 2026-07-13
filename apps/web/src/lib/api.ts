@@ -120,8 +120,13 @@ export const api = {
   logout: () => request<void>('/auth/logout', { method: 'POST' }),
   me: () => request<UserDto>('/users/me'),
 
-  customers: (query?: string) =>
-    request<CustomerDto[]>(`/customers${query ? `?q=${encodeURIComponent(query)}` : ''}`),
+  customers: (query?: string, tagId?: string) => {
+    const qs = new URLSearchParams()
+    if (query) qs.set('q', query)
+    if (tagId) qs.set('tagId', tagId)
+    const s = qs.toString()
+    return request<CustomerDto[]>(`/customers${s ? `?${s}` : ''}`)
+  },
   customer: (id: string) => request<CustomerDto>(`/customers/${id}`),
   createCustomer: (data: CreateCustomerDto) =>
     request<CustomerDto>('/customers', { method: 'POST', body: JSON.stringify(data) }),
@@ -141,6 +146,16 @@ export const api = {
   updateContact: (id: string, data: UpdateContactDto) =>
     request<ContactDto>(`/contacts/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteContact: (id: string) => request<void>(`/contacts/${id}`, { method: 'DELETE' }),
+
+  // ─────── Tags ───────
+  tags: () => request<import('@bluefish/shared').TagDto[]>('/tags'),
+  createTag: (data: import('@bluefish/shared').CreateTagDto) =>
+    request<import('@bluefish/shared').TagDto>('/tags', { method: 'POST', body: JSON.stringify(data) }),
+  updateTag: (id: string, data: import('@bluefish/shared').UpdateTagDto) =>
+    request<import('@bluefish/shared').TagDto>(`/tags/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteTag: (id: string) => request<void>(`/tags/${id}`, { method: 'DELETE' }),
+  setCustomerTags: (customerId: string, tagIds: string[]) =>
+    request<import('@bluefish/shared').TagDto[]>(`/customers/${customerId}/tags`, { method: 'PUT', body: JSON.stringify({ tagIds }) }),
 
   users: () => request<UserDto[]>('/users'),
   changePassword: (currentPassword: string, newPassword: string) =>
