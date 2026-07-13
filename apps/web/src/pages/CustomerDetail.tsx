@@ -226,8 +226,17 @@ function MetaRow({ label, value }: { label: string; value: string | null | undef
 }
 
 function ContactForm({ initial, customerId, onCancel, onSaved }: { initial?: ContactDto; customerId: string; onCancel: () => void; onSaved: () => void }) {
-  const [firstName, setFirstName] = useState(initial?.firstName ?? '')
-  const [lastName, setLastName] = useState(initial?.lastName ?? '')
+  // Legacy contacts have only `name` — split it so the form isn't empty on first edit.
+  const legacySplit = (() => {
+    if (!initial) return { first: '', last: '' }
+    if (initial.firstName || initial.lastName) return { first: initial.firstName ?? '', last: initial.lastName ?? '' }
+    const raw = (initial.name ?? '').replace(/^คุณ\s*/, '').trim()
+    if (!raw) return { first: '', last: '' }
+    const parts = raw.split(/\s+/)
+    return { first: parts[0] ?? '', last: parts.slice(1).join(' ') }
+  })()
+  const [firstName, setFirstName] = useState(legacySplit.first)
+  const [lastName, setLastName] = useState(legacySplit.last)
   const [nickname, setNickname] = useState(initial?.nickname ?? '')
   const [position, setPosition] = useState(initial?.position ?? initial?.role ?? '')
   const [department, setDepartment] = useState(initial?.department ?? '')
@@ -346,8 +355,11 @@ function TagPickerModal({ customerId, currentIds, onClose, onSaved, onToast }: {
   const [newName, setNewName] = useState('')
   const [newColor, setNewColor] = useState('#2A6FDB')
   const [saving, setSaving] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editColor, setEditColor] = useState('#2A6FDB')
 
-  const loadTags = () => api.tags().then(setTags).catch(() => {})
+  const loadTags = () => api.tags().then((t) => setTags(t.sort((a, b) => a.name.localeCompare(b.name)))).catch(() => {})
   useEffect(() => { loadTags() }, [])
 
   const toggle = (id: string) => setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n })
@@ -364,6 +376,39 @@ function TagPickerModal({ customerId, currentIds, onClose, onSaved, onToast }: {
     }
   }
 
+  const startEdit = (t: TagDto) => {
+    setEditingId(t.id)
+    setEditName(t.name)
+    setEditColor(t.color)
+  }
+  const cancelEdit = () => { setEditingId(null); setEditName(''); setEditColor('#2A6FDB') }
+  const saveEdit = async () => {
+    if (!editingId || !editName.trim()) return
+    try {
+      const updated = await api.updateTag(editingId, { name: editName.trim(), color: editColor })
+      setTags((all) => all.map((x) => x.id === updated.id ? { ...updated, usageCount: x.usageCount } : x).sort((a, b) => a.name.localeCompare(b.name)))
+      cancelEdit()
+    } catch (e) {
+      onToast(e instanceof ApiError ? e.message : 'Update failed')
+    }
+  }
+
+  const removeTag = async (t: TagDto) => {
+    const inUse = t.usageCount ?? 0
+    const msg = inUse > 0
+      ? `Delete tag "${t.name}"? It's applied to ${inUse} customer${inUse === 1 ? '' : 's'} — they will be un-tagged.`
+      : `Delete tag "${t.name}"?`
+    if (!window.confirm(msg)) return
+    try {
+      await api.deleteTag(t.id)
+      setTags((all) => all.filter((x) => x.id !== t.id))
+      setSelected((s) => { const n = new Set(s); n.delete(t.id); return n })
+      onToast('Tag deleted')
+    } catch (e) {
+      onToast(e instanceof ApiError ? e.message : 'Delete failed')
+    }
+  }
+
   const save = async () => {
     setSaving(true)
     try {
@@ -376,32 +421,50 @@ function TagPickerModal({ customerId, currentIds, onClose, onSaved, onToast }: {
 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(30,26,48,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 20 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', width: 460, maxHeight: '80vh', borderRadius: 14, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', width: 500, maxHeight: '80vh', borderRadius: 14, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <div style={{ padding: '14px 18px', borderBottom: '1px solid #E5E7F0' }}>
           <div style={{ fontSize: 15, fontWeight: 700 }}>Assign service tags</div>
-          <div style={{ fontSize: 12, color: '#5C5C74', marginTop: 3 }}>Tag customers with the service departments that own them.</div>
+          <div style={{ fontSize: 12, color: '#5C5C74', marginTop: 3 }}>Click a tag to (un)assign. Hover to rename or delete.</div>
         </div>
         <div style={{ flex: 1, overflow: 'auto', padding: '10px 18px' }}>
           {tags.length === 0 && <div style={{ padding: 20, textAlign: 'center', color: '#8888A0', fontSize: 12 }}>No tags yet — create the first one below.</div>}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {tags.map((t) => {
               const on = selected.has(t.id)
-              return (
-                <div key={t.id} onClick={() => toggle(t.id)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 8, cursor: 'pointer', background: on ? hexToRgba(t.color, 0.09) : 'transparent', border: `1px solid ${on ? hexToRgba(t.color, 0.4) : '#F1F1F5'}` }}>
-                  <input type="checkbox" readOnly checked={on} style={{ pointerEvents: 'none' }} />
-                  <span style={{ width: 10, height: 10, borderRadius: '50%', background: t.color, flex: 'none' }} />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 12.5, fontWeight: 700 }}>{t.name}</div>
-                    {t.description && <div style={{ fontSize: 10.5, color: '#8888A0' }}>{t.description}</div>}
+              if (editingId === t.id) {
+                return (
+                  <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 10px', borderRadius: 8, background: '#FAFBFD', border: '1px solid #B7CFF3' }}>
+                    <input type="color" value={editColor} onChange={(e) => setEditColor(e.target.value)} style={{ width: 28, height: 28, border: '1px solid #E5E7F0', borderRadius: 5, padding: 1, flex: 'none' }} />
+                    <input autoFocus value={editName} onChange={(e) => setEditName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); saveEdit() } if (e.key === 'Escape') cancelEdit() }} style={{ ...fieldInput, flex: 1 }} />
+                    <button type="button" onClick={saveEdit} disabled={!editName.trim()} style={{ background: '#2A6FDB', color: '#fff', border: 'none', borderRadius: 7, padding: '6px 11px', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>Save</button>
+                    <button type="button" onClick={cancelEdit} style={{ background: '#fff', color: '#5C5C74', border: '1px solid #E5E7F0', borderRadius: 7, padding: '6px 11px', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
                   </div>
-                  <div style={{ fontSize: 10, color: '#8888A0' }}>{t.kind}{t.usageCount != null ? ` · ${t.usageCount}` : ''}</div>
+                )
+              }
+              return (
+                <div key={t.id} className="tag-row" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 8, background: on ? hexToRgba(t.color, 0.09) : 'transparent', border: `1px solid ${on ? hexToRgba(t.color, 0.4) : '#F1F1F5'}` }}>
+                  <div onClick={() => toggle(t.id)} style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, cursor: 'pointer' }}>
+                    <input type="checkbox" readOnly checked={on} style={{ pointerEvents: 'none' }} />
+                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: t.color, flex: 'none' }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.name}</div>
+                      {t.description && <div style={{ fontSize: 10.5, color: '#8888A0' }}>{t.description}</div>}
+                    </div>
+                    <div style={{ fontSize: 10, color: '#8888A0', whiteSpace: 'nowrap' }}>{t.kind}{t.usageCount != null ? ` · ${t.usageCount}` : ''}</div>
+                  </div>
+                  <button type="button" onClick={() => startEdit(t)} title="Rename / recolor" style={iconBtn}>
+                    <svg viewBox="0 0 24 24" width="14" height="14"><path d="M4 20h4l10-10-4-4-10 10v4z M14 6l4 4" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" /></svg>
+                  </button>
+                  <button type="button" onClick={() => removeTag(t)} title="Delete tag" style={{ ...iconBtn, color: '#C0392B' }}>
+                    <svg viewBox="0 0 24 24" width="14" height="14"><path d="M5 7h14 M8 7l1-3h6l1 3 M9 11v6 M15 11v6 M6.5 7l1 12a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1l1-12" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" /></svg>
+                  </button>
                 </div>
               )
             })}
           </div>
         </div>
         <div style={{ padding: '10px 18px', borderTop: '1px solid #F1F1F5', display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="New tag name…" style={{ ...fieldInput, flex: 1 }} />
+          <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="New tag name…" onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); createTag() } }} style={{ ...fieldInput, flex: 1 }} />
           <input type="color" value={newColor} onChange={(e) => setNewColor(e.target.value)} style={{ width: 34, height: 32, border: '1px solid #E5E7F0', borderRadius: 6, padding: 1 }} />
           <button type="button" onClick={createTag} disabled={!newName.trim()} style={{ background: '#F2F3F9', color: '#3B3B52', border: '1px solid #E5E7F0', borderRadius: 8, padding: '7px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>+ Create</button>
         </div>
@@ -425,6 +488,7 @@ const metaLabel: CSSProperties = { fontSize: 10.5, fontWeight: 700, letterSpacin
 const metaValue: CSSProperties = { fontFamily: "'Space Grotesk'", fontSize: 17, fontWeight: 600, marginTop: 3 }
 const fieldLabel: CSSProperties = { color: '#8888A0', fontSize: 11, fontWeight: 600, marginBottom: 2 }
 const fieldInput: CSSProperties = { border: '1px solid #E5E7F0', borderRadius: 8, padding: '7px 10px', fontSize: 12.5, outline: 'none' }
+const iconBtn: CSSProperties = { background: 'transparent', border: '1px solid transparent', borderRadius: 6, padding: '4px 6px', color: '#5C5C74', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }
 function tabStyle(active: boolean): CSSProperties {
   return {
     padding: '9px 15px', fontSize: 13, fontWeight: active ? 700 : 500,
