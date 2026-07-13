@@ -265,6 +265,15 @@ export interface OpportunityLineDto {
   amount: number
 }
 
+/**
+ * Canonical service pipelines that Bluefish tracks. Each opportunity belongs
+ * to exactly one — the sales manager filters their pipeline by this to see
+ * only deals in their service line. Sales reps may sell across multiple lines,
+ * so this is NOT tied to the user.
+ */
+export const SERVICE_LINES = ['Box', '3S', '3D', 'AI&RPA'] as const
+export type ServiceLine = (typeof SERVICE_LINES)[number]
+
 export interface OpportunityDto {
   id: string
   title: string
@@ -276,6 +285,7 @@ export interface OpportunityDto {
   value: number
   probability: number
   closeDate: string | null
+  serviceOrProduct: string | null
   competitor: string | null
   lostReason: string | null
   wonReason: string | null
@@ -293,6 +303,7 @@ export interface CreateOpportunityDto {
   value?: number
   probability?: number
   closeDate?: string
+  serviceOrProduct?: string
   competitor?: string
   aiHint?: string
 }

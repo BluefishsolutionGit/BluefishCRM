@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type CSSProperties, type DragEvent } from 'react'
 import type { ForecastDto, OpportunityDto, OpportunityStage } from '@bluefish/shared'
+import { SERVICE_LINES } from '@bluefish/shared'
 import { api, ApiError } from '../lib/api'
 import { av, pill } from '../lib/styleUtils'
 import { useToast } from '../lib/ToastContext'
@@ -14,6 +15,7 @@ const STAGES: { name: OpportunityStage; c: string }[] = [
   { name: 'Lost', c: '#C0392B' },
 ]
 const FCAT_COLOR: Record<string, string> = { Closed: '#06A94A', Commit: '#2A6FDB', 'Best Case': '#6C55E0', Pipeline: '#8888A0' }
+const SERVICE_COLOR: Record<string, string> = { Box: '#2A6FDB', '3S': '#0E9C7E', '3D': '#B4650A', 'AI&RPA': '#6C55E0' }
 const fmt = (n: number) => n >= 1e6 ? '฿' + (n / 1e6).toFixed(1) + 'M' : '฿' + Math.round(n / 1e3) + 'K'
 
 const OWNER_COLORS = ['#2A6FDB', '#1F5AC2', '#B4650A', '#6C55E0', '#0E9C7E']
@@ -27,6 +29,7 @@ function ownerInitials(name: string) {
 
 export default function Pipeline() {
   const [view, setView] = useState<View>('kanban')
+  const [serviceFilter, setServiceFilter] = useState<string>('all')  // 'all' | 'Box' | '3S' | '3D' | 'AI&RPA' | 'unassigned'
   const [opps, setOpps] = useState<OpportunityDto[]>([])
   const [loading, setLoading] = useState(true)
   const [dragId, setDragId] = useState<string | null>(null)
@@ -46,11 +49,27 @@ export default function Pipeline() {
     if (view === 'forecast') api.forecast().then(setForecast).catch(() => setForecast(null))
   }, [view, opps])
 
+  const filteredOpps = useMemo(() => {
+    if (serviceFilter === 'all') return opps
+    if (serviceFilter === 'unassigned') return opps.filter((o) => !o.serviceOrProduct)
+    return opps.filter((o) => o.serviceOrProduct === serviceFilter)
+  }, [opps, serviceFilter])
+
   const columns = useMemo(() => STAGES.filter((s) => s.name !== 'Lost').map((s) => ({
-    ...s, deals: opps.filter((o) => o.stage === s.name),
-    total: opps.filter((o) => o.stage === s.name).reduce((a, o) => a + o.value, 0),
-  })), [opps])
-  const pipeTotal = opps.filter((o) => o.stage !== 'Won' && o.stage !== 'Lost').reduce((a, o) => a + o.value, 0)
+    ...s, deals: filteredOpps.filter((o) => o.stage === s.name),
+    total: filteredOpps.filter((o) => o.stage === s.name).reduce((a, o) => a + o.value, 0),
+  })), [filteredOpps])
+  const pipeTotal = filteredOpps.filter((o) => o.stage !== 'Won' && o.stage !== 'Lost').reduce((a, o) => a + o.value, 0)
+
+  const serviceCounts = useMemo(() => {
+    const acc: Record<string, number> = { all: opps.length, unassigned: 0 }
+    for (const line of SERVICE_LINES) acc[line] = 0
+    for (const o of opps) {
+      if (o.serviceOrProduct && acc[o.serviceOrProduct] !== undefined) acc[o.serviceOrProduct]++
+      else if (!o.serviceOrProduct) acc.unassigned++
+    }
+    return acc
+  }, [opps])
 
   const moveTo = async (deal: OpportunityDto, stage: OpportunityStage) => {
     if (!canMove || deal.stage === stage) return
@@ -75,9 +94,10 @@ export default function Pipeline() {
 
       {view === 'kanban' && (
         <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', padding: '0 28px', overflow: 'hidden' }}>
+          <ServiceFilterRow filter={serviceFilter} onFilter={setServiceFilter} counts={serviceCounts} />
           <div style={{ display: 'flex', gap: 18, marginBottom: 14, fontSize: 12.5, color: '#5C5C74', alignItems: 'center' }}>
             <div>Total open <b style={{ color: '#1E1E30', fontFamily: "'Space Grotesk'" }}>{fmt(pipeTotal)}</b></div>
-            <div>{opps.length} deals</div>
+            <div>{filteredOpps.length} of {opps.length} deals</div>
             <div style={{ flex: 1 }} />
             <div style={{ fontSize: 11.5, color: '#8888A0' }}>{canMove ? 'Drag cards between stages' : 'Read-only'}</div>
           </div>
@@ -111,7 +131,14 @@ export default function Pipeline() {
                     onDragStart={(e: DragEvent<HTMLDivElement>) => { setDragId(d.id); e.dataTransfer.effectAllowed = 'move' }}
                     style={{ background: '#fff', border: '1px solid #E5E7F0', borderRadius: 12, padding: '13px 14px', cursor: canMove ? 'grab' : 'default', boxShadow: '0 1px 2px rgba(14,31,25,.05)' }}
                   >
-                    <div style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.35 }}>{d.title}</div>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.35, flex: 1 }}>{d.title}</div>
+                      {d.serviceOrProduct && (
+                        <span style={{ background: hexToRgba(SERVICE_COLOR[d.serviceOrProduct] ?? '#5C5C74', 0.12), color: SERVICE_COLOR[d.serviceOrProduct] ?? '#5C5C74', border: `1px solid ${hexToRgba(SERVICE_COLOR[d.serviceOrProduct] ?? '#5C5C74', 0.35)}`, borderRadius: 6, fontSize: 10, fontWeight: 700, padding: '2px 6px', whiteSpace: 'nowrap', flex: 'none' }}>
+                          {d.serviceOrProduct}
+                        </span>
+                      )}
+                    </div>
                     <div style={{ fontSize: 11.5, color: '#5C5C74', marginTop: 3 }}>{d.customerName}</div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 9 }}>
                       <div style={{ fontFamily: "'Space Grotesk'", fontSize: 14.5, fontWeight: 700 }}>{fmt(d.value)}</div>
@@ -140,13 +167,21 @@ export default function Pipeline() {
 
       {view === 'list' && (
         <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '0 28px 24px' }}>
+          <ServiceFilterRow filter={serviceFilter} onFilter={setServiceFilter} counts={serviceCounts} />
           <div style={{ background: '#fff', border: '1px solid #E5E7F0', borderRadius: 14, overflow: 'hidden' }}>
             <div style={{ ...gridColsList, padding: '11px 18px', borderBottom: '1px solid #E5E7F0', fontSize: 10.5, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#8888A0' }}>
-              <div>Opportunity</div><div>Owner</div><div>Stage</div><div style={{ textAlign: 'right' }}>Amount</div><div>Probability</div><div>Close</div>
+              <div>Opportunity</div><div>Service</div><div>Owner</div><div>Stage</div><div style={{ textAlign: 'right' }}>Amount</div><div>Probability</div><div>Close</div>
             </div>
-            {opps.map((o) => (
+            {filteredOpps.map((o) => (
               <div key={o.id} style={{ ...gridColsList, padding: '12px 18px', borderBottom: '1px solid #F2F3F9', alignItems: 'center' }}>
                 <div style={{ fontSize: 13, fontWeight: 600, color: '#2A6FDB' }}>{o.title} — {o.customerName}</div>
+                <div>
+                  {o.serviceOrProduct ? (
+                    <span style={{ background: hexToRgba(SERVICE_COLOR[o.serviceOrProduct] ?? '#5C5C74', 0.12), color: SERVICE_COLOR[o.serviceOrProduct] ?? '#5C5C74', border: `1px solid ${hexToRgba(SERVICE_COLOR[o.serviceOrProduct] ?? '#5C5C74', 0.35)}`, borderRadius: 6, fontSize: 10.5, fontWeight: 700, padding: '2px 7px' }}>
+                      {o.serviceOrProduct}
+                    </span>
+                  ) : <span style={{ fontSize: 11, color: '#B4B4C4' }}>—</span>}
+                </div>
                 <div style={{ fontSize: 12.5, color: '#3B3B52' }}>{o.ownerName}</div>
                 <div style={{ fontSize: 12.5, fontWeight: 600, color: o.stage === 'Won' ? '#0E9C7E' : o.stage === 'Lost' ? '#C0392B' : '#3B3B52' }}>{o.stage}</div>
                 <div style={{ textAlign: 'right', fontFamily: "'IBM Plex Mono', monospace", fontSize: 12.5 }}>{fmt(o.value)}</div>
@@ -221,5 +256,49 @@ export default function Pipeline() {
 function viewTab(active: boolean): CSSProperties {
   return { borderRadius: 7, fontSize: 12, fontWeight: 600, padding: '5px 13px', cursor: 'pointer', background: active ? '#2E1A6B' : 'transparent', color: active ? '#fff' : '#5C5C74' }
 }
-const gridColsList: CSSProperties = { display: 'grid', gridTemplateColumns: '2.4fr 130px 130px 130px 110px 130px', gap: 10 }
+const gridColsList: CSSProperties = { display: 'grid', gridTemplateColumns: '2.4fr 100px 130px 130px 130px 110px 130px', gap: 10 }
+
+function ServiceFilterRow({ filter, onFilter, counts }: { filter: string; onFilter: (v: string) => void; counts: Record<string, number> }) {
+  const chips: Array<{ id: string; label: string; color: string }> = [
+    { id: 'all', label: 'All', color: '#5C5C74' },
+    ...SERVICE_LINES.map((s) => ({ id: s, label: s, color: SERVICE_COLOR[s] ?? '#5C5C74' })),
+    { id: 'unassigned', label: 'No service', color: '#B4B4C4' },
+  ]
+  return (
+    <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
+      {chips.map((c) => {
+        const active = filter === c.id
+        const count = counts[c.id] ?? 0
+        return (
+          <div
+            key={c.id}
+            onClick={() => onFilter(c.id)}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              background: active ? c.color : hexToRgba(c.color, 0.09),
+              color: active ? '#fff' : c.color,
+              border: `1px solid ${active ? c.color : hexToRgba(c.color, 0.35)}`,
+              borderRadius: 999,
+              padding: '6px 13px',
+              fontSize: 12,
+              fontWeight: 700,
+              cursor: 'pointer',
+              transition: 'background 120ms',
+            }}
+          >
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: active ? '#fff' : c.color }} />
+            {c.label}
+            <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, opacity: 0.85 }}>{count}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function hexToRgba(hex: string, alpha: number): string {
+  const h = hex.replace('#', '')
+  const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16)
+  return `rgba(${r},${g},${b},${alpha})`
+}
 const repGrid: CSSProperties = { display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr 1fr 1fr 1fr', gap: 10 }

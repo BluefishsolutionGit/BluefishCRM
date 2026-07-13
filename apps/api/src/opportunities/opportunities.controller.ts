@@ -19,6 +19,7 @@ class CreateBody {
   @IsOptional() @IsInt() @Min(0) value?: number
   @IsOptional() @IsInt() @Min(0) @Max(100) probability?: number
   @IsOptional() @IsString() closeDate?: string
+  @IsOptional() @IsString() serviceOrProduct?: string
   @IsOptional() @IsString() competitor?: string
   @IsOptional() @IsString() aiHint?: string
 }
@@ -30,6 +31,7 @@ class UpdateBody {
   @IsOptional() @IsInt() @Min(0) value?: number
   @IsOptional() @IsInt() @Min(0) @Max(100) probability?: number
   @IsOptional() @IsString() closeDate?: string
+  @IsOptional() @IsString() serviceOrProduct?: string
   @IsOptional() @IsString() competitor?: string
   @IsOptional() @IsString() lostReason?: string
   @IsOptional() @IsString() wonReason?: string
@@ -44,8 +46,12 @@ export class OpportunitiesController {
 
   @Get()
   @RequirePermissions(PERMISSIONS.OPPORTUNITY_READ)
-  list(@Query('ownerId') ownerId?: string, @Query('stage') stage?: OpportunityStage): Promise<OpportunityDto[]> {
-    return this.opps.list({ ownerId, stage })
+  list(
+    @Query('ownerId') ownerId?: string,
+    @Query('stage') stage?: OpportunityStage,
+    @Query('serviceOrProduct') serviceOrProduct?: string,
+  ): Promise<OpportunityDto[]> {
+    return this.opps.list({ ownerId, stage, serviceOrProduct })
   }
 
   @Get('forecast')

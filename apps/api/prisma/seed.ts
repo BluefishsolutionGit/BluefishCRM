@@ -196,28 +196,34 @@ async function main() {
   }
 
   // 7. Opportunities (map to existing customers)
-  const deals: Array<{ code: string; title: string; ownerKey: 'NP' | 'KS' | 'PW' | 'ST'; stage: string; value: number; prob: number; close: string; aiHint?: string }> = [
-    { code: 'C-1024', title: 'Factory Automation Phase 2', ownerKey: 'NP', stage: 'Negotiation', value: 4200000, prob: 70, close: '2026-08-15', aiHint: 'Send updated ROI sheet — decision meeting Friday' },
-    { code: 'C-1031', title: 'Hospital ERP Integration', ownerKey: 'KS', stage: 'Proposal', value: 7800000, prob: 55, close: '2026-09-02', aiHint: 'Quotation viewed 3× today — follow up before 16:00' },
-    { code: 'C-1007', title: 'Cold-chain Fleet Tracking', ownerKey: 'PW', stage: 'Qualification', value: 2100000, prob: 40, close: '2026-09-20', aiHint: 'Idle 9 days — auto follow-up scheduled tomorrow' },
-    { code: 'C-1055', title: 'Solar PPA — Rooftop 2MW', ownerKey: 'ST', stage: 'Negotiation', value: 5600000, prob: 80, close: '2026-08-08' },
-    { code: 'C-1042', title: 'Central Kitchen MES', ownerKey: 'NP', stage: 'Qualification', value: 1500000, prob: 30, close: '2026-10-01' },
-    { code: 'C-1060', title: 'Water Treatment SCADA', ownerKey: 'KS', stage: 'Proposal', value: 3000000, prob: 60, close: '2026-09-12' },
-    { code: 'C-1048', title: 'Data Center Fit-out', ownerKey: 'ST', stage: 'Proposal', value: 6000000, prob: 45, close: '2026-10-10' },
-    { code: 'C-1031', title: 'Clinic Queue System', ownerKey: 'KS', stage: 'Won', value: 620000, prob: 100, close: '2026-06-24' },
-    { code: 'C-1024', title: 'Smart Metering Pilot', ownerKey: 'NP', stage: 'Won', value: 1080000, prob: 100, close: '2026-07-01' },
+  // serviceOrProduct = one of Box | 3S | 3D | AI&RPA — Bluefish's 4 core service pipelines
+  const deals: Array<{ code: string; title: string; ownerKey: 'NP' | 'KS' | 'PW' | 'ST'; stage: string; value: number; prob: number; close: string; service: string; aiHint?: string }> = [
+    { code: 'C-1024', title: 'Factory Automation Phase 2', ownerKey: 'NP', stage: 'Negotiation', value: 4200000, prob: 70, close: '2026-08-15', service: '3D',     aiHint: 'Send updated ROI sheet — decision meeting Friday' },
+    { code: 'C-1031', title: 'Hospital ERP Integration',   ownerKey: 'KS', stage: 'Proposal',    value: 7800000, prob: 55, close: '2026-09-02', service: 'Box',    aiHint: 'Quotation viewed 3× today — follow up before 16:00' },
+    { code: 'C-1007', title: 'Cold-chain Fleet Tracking',  ownerKey: 'PW', stage: 'Qualification', value: 2100000, prob: 40, close: '2026-09-20', service: '3S',   aiHint: 'Idle 9 days — auto follow-up scheduled tomorrow' },
+    { code: 'C-1055', title: 'Solar PPA — Rooftop 2MW',    ownerKey: 'ST', stage: 'Negotiation', value: 5600000, prob: 80, close: '2026-08-08', service: '3S' },
+    { code: 'C-1042', title: 'Central Kitchen MES',        ownerKey: 'NP', stage: 'Qualification', value: 1500000, prob: 30, close: '2026-10-01', service: '3D' },
+    { code: 'C-1060', title: 'Water Treatment SCADA',      ownerKey: 'KS', stage: 'Proposal',    value: 3000000, prob: 60, close: '2026-09-12', service: '3D' },
+    { code: 'C-1048', title: 'Data Center Fit-out',        ownerKey: 'ST', stage: 'Proposal',    value: 6000000, prob: 45, close: '2026-10-10', service: 'Box' },
+    { code: 'C-1031', title: 'Clinic Queue System',        ownerKey: 'KS', stage: 'Won',         value: 620000,  prob: 100, close: '2026-06-24', service: 'AI&RPA' },
+    { code: 'C-1024', title: 'Smart Metering Pilot',       ownerKey: 'NP', stage: 'Won',         value: 1080000, prob: 100, close: '2026-07-01', service: 'AI&RPA' },
   ]
   for (const d of deals) {
     const cust = await prisma.customer.findUnique({ where: { code: d.code } })
     if (!cust) continue
     const ownerId = owners[d.ownerKey]
     const existing = await prisma.opportunity.findFirst({ where: { title: d.title, customerId: cust.id } })
-    if (existing) continue
+    if (existing) {
+      // Backfill serviceOrProduct on re-seed so existing records get classified
+      await prisma.opportunity.update({ where: { id: existing.id }, data: { serviceOrProduct: d.service } })
+      continue
+    }
     await prisma.opportunity.create({
       data: {
         title: d.title, customerId: cust.id, ownerId,
         stage: d.stage, value: d.value, probability: d.prob,
         closeDate: new Date(d.close), aiHint: d.aiHint ?? null,
+        serviceOrProduct: d.service,
       },
     })
   }

@@ -17,9 +17,13 @@ const STAGES: OpportunityStage[] = ['Qualification', 'Proposal', 'Negotiation', 
 export class OpportunitiesService {
   constructor(private prisma: PrismaService, private audit: AuditService) {}
 
-  async list(filter: { ownerId?: string; stage?: OpportunityStage } = {}): Promise<OpportunityDto[]> {
+  async list(filter: { ownerId?: string; stage?: OpportunityStage; serviceOrProduct?: string } = {}): Promise<OpportunityDto[]> {
     const rows = await this.prisma.opportunity.findMany({
-      where: { ownerId: filter.ownerId, stage: filter.stage },
+      where: {
+        ownerId: filter.ownerId,
+        stage: filter.stage,
+        serviceOrProduct: filter.serviceOrProduct,
+      },
       include: {
         customer: true,
         owner: true,
@@ -47,6 +51,7 @@ export class OpportunitiesService {
         stage: input.stage ?? 'Qualification', value: input.value ?? 0,
         probability: input.probability ?? 20,
         closeDate: input.closeDate ? new Date(input.closeDate) : null,
+        serviceOrProduct: input.serviceOrProduct ?? null,
         competitor: input.competitor ?? null, aiHint: input.aiHint ?? null,
       },
       include: { customer: true, owner: true, lines: { include: { product: true } } },
@@ -130,7 +135,8 @@ export class OpportunitiesService {
 
   private toDto = (row: {
     id: string; title: string; customerId: string; ownerId: string; stage: string
-    value: number; probability: number; closeDate: Date | null; competitor: string | null
+    value: number; probability: number; closeDate: Date | null
+    serviceOrProduct: string | null; competitor: string | null
     lostReason: string | null; wonReason: string | null; aiHint: string | null
     createdAt: Date; updatedAt: Date
     customer: { name: string }; owner: { name: string }
@@ -143,6 +149,7 @@ export class OpportunitiesService {
       stage: row.stage as OpportunityStage,
       value: row.value, probability: row.probability,
       closeDate: row.closeDate?.toISOString() ?? null,
+      serviceOrProduct: row.serviceOrProduct,
       competitor: row.competitor, lostReason: row.lostReason, wonReason: row.wonReason,
       aiHint: row.aiHint,
       lines: row.lines.map((l): OpportunityLineDto => ({

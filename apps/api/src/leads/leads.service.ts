@@ -146,6 +146,7 @@ export class LeadsService {
         value: input.value ?? before.estValue ?? 0,
         probability: input.probability ?? 20,
         closeDate: input.closeDate ? new Date(input.closeDate) : null,
+        serviceOrProduct: before.serviceOrProduct ?? null,
       },
     })
     const leadUpdated = await this.prisma.lead.update({

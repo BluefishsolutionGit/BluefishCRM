@@ -205,10 +205,11 @@ export const api = {
   deleteProduct: (id: string) => request<void>(`/products/${id}`, { method: 'DELETE' }),
 
   // ─────── Opportunities ───────
-  opportunities: (filter: { ownerId?: string; stage?: OpportunityStage } = {}) => {
+  opportunities: (filter: { ownerId?: string; stage?: OpportunityStage; serviceOrProduct?: string } = {}) => {
     const p = new URLSearchParams()
     if (filter.ownerId) p.set('ownerId', filter.ownerId)
     if (filter.stage) p.set('stage', filter.stage)
+    if (filter.serviceOrProduct) p.set('serviceOrProduct', filter.serviceOrProduct)
     const qs = p.toString()
     return request<OpportunityDto[]>(`/opportunities${qs ? `?${qs}` : ''}`)
   },

@@ -176,6 +176,7 @@ model Opportunity {
   value        Int       @default(0)
   probability  Int       @default(20)
   closeDate    DateTime?
+  serviceOrProduct String?
   competitor   String?
   lostReason   String?
   wonReason    String?
