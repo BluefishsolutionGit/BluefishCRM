@@ -1,5 +1,6 @@
 import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
 import type { CreateLeadDto, DuplicateCheckResult, LeadDto, LeadStatus, UserDto } from '@bluefish/shared'
+import { SERVICE_LINES } from '@bluefish/shared'
 import { api, ApiError } from '../lib/api'
 
 interface Props { open: boolean; initial?: LeadDto | null; onClose: () => void; onSaved: (l: LeadDto) => void }
@@ -82,8 +83,11 @@ export default function LeadFormModal({ open, initial, onClose, onSaved }: Props
               </select>
             </Field>
             <Field label="Estimated value (฿)"><input type="number" min={0} value={form.estValue ?? ''} onChange={(e) => change('estValue', e.target.value ? Number(e.target.value) : undefined)} style={inp} /></Field>
-            <Field label="Service / Product" span2>
-              <input value={form.serviceOrProduct ?? ''} onChange={(e) => change('serviceOrProduct', e.target.value)} placeholder="e.g. Cloud Migration, Managed IT, ERP Consulting" style={inp} />
+            <Field label="Service / Product">
+              <select value={form.serviceOrProduct ?? ''} onChange={(e) => change('serviceOrProduct', e.target.value || undefined)} style={inp}>
+                <option value="">— No service —</option>
+                {SERVICE_LINES.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
             </Field>
             {initial && (
               <Field label="Status">

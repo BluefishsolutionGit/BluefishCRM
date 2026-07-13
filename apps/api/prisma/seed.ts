@@ -170,27 +170,29 @@ async function main() {
   }
 
   // 6. Leads
-  const leadRows = [
-    { name: 'คุณอรทัย บุญมี', companyName: 'Bangna Cold Chain Co., Ltd.', source: 'LINE OA', ownerKey: 'NP' as const, status: 'New', estValue: 1200000, email: 'orathai@bangnacc.co.th', phone: '088-345-6612' },
-    { name: 'คุณวีรพล จันทร์แก้ว', companyName: 'Metro Rail Facilities (MRF)', source: 'e-GP Tender', ownerKey: null, status: 'AI Sourced', estValue: 8500000, email: 'weeraphol@mrf.co.th' },
-    { name: 'คุณสุภาวดี ทองดี', companyName: 'Phuket Marina Resort', source: 'Facebook Ads', ownerKey: 'PW' as const, status: 'Contacted', estValue: 950000, phone: '086-231-9021' },
-    { name: 'คุณกิตติศักดิ์ พรหมมา', companyName: 'Udon Agro Industry', source: 'Website', ownerKey: 'KS' as const, status: 'Qualified', estValue: 2400000, email: 'kittisak@udonagro.co.th' },
-    { name: 'คุณเมธาวี ลิ้มสกุล', companyName: 'Siam Data Center Co., Ltd.', source: 'Referral', ownerKey: 'ST' as const, status: 'Qualified', estValue: 6000000, email: 'methawee@siamdc.co.th' },
-    { name: 'คุณประเสริฐ วงศ์สว่าง', companyName: 'Hatyai Municipality (RFP)', source: 'e-GP Tender', ownerKey: null, status: 'AI Sourced', estValue: 3800000, email: 'prasert@hatyai.go.th' },
-    { name: 'คุณชลธิชา แสงทอง', companyName: 'Rimping Retail Group', source: 'Instagram', ownerKey: 'PW' as const, status: 'New', estValue: 480000 },
+  const leadRows: Array<{ name: string; companyName: string; source: string; ownerKey: 'NP' | 'KS' | 'PW' | 'ST' | null; status: string; estValue: number; email?: string; phone?: string; serviceOrProduct?: string }> = [
+    { name: 'คุณอรทัย บุญมี', companyName: 'Bangna Cold Chain Co., Ltd.', source: 'LINE OA', ownerKey: 'NP', status: 'New', estValue: 1200000, email: 'orathai@bangnacc.co.th', phone: '088-345-6612', serviceOrProduct: '3S' },
+    { name: 'คุณวีรพล จันทร์แก้ว', companyName: 'Metro Rail Facilities (MRF)', source: 'e-GP Tender', ownerKey: null, status: 'AI Sourced', estValue: 8500000, email: 'weeraphol@mrf.co.th', serviceOrProduct: 'Box' },
+    { name: 'คุณสุภาวดี ทองดี', companyName: 'Phuket Marina Resort', source: 'Facebook Ads', ownerKey: 'PW', status: 'Contacted', estValue: 950000, phone: '086-231-9021', serviceOrProduct: '3D' },
+    { name: 'คุณกิตติศักดิ์ พรหมมา', companyName: 'Udon Agro Industry', source: 'Website', ownerKey: 'KS', status: 'Qualified', estValue: 2400000, email: 'kittisak@udonagro.co.th', serviceOrProduct: 'AI&RPA' },
+    { name: 'คุณเมธาวี ลิ้มสกุล', companyName: 'Siam Data Center Co., Ltd.', source: 'Referral', ownerKey: 'ST', status: 'Qualified', estValue: 6000000, email: 'methawee@siamdc.co.th', serviceOrProduct: 'Box' },
+    { name: 'คุณประเสริฐ วงศ์สว่าง', companyName: 'Hatyai Municipality (RFP)', source: 'e-GP Tender', ownerKey: null, status: 'AI Sourced', estValue: 3800000, email: 'prasert@hatyai.go.th', serviceOrProduct: '3D' },
+    { name: 'คุณชลธิชา แสงทอง', companyName: 'Rimping Retail Group', source: 'Instagram', ownerKey: 'PW', status: 'New', estValue: 480000 },
   ]
   const { scoreLead } = await import('../src/leads/lead-scoring')
   for (const l of leadRows) {
     const ownerId = l.ownerKey ? owners[l.ownerKey] : null
     await prisma.lead.upsert({
       where: { id: 'seed-lead-' + l.companyName },
-      update: {},
+      // Backfill serviceOrProduct on re-seed so existing rows pick up classification
+      update: { serviceOrProduct: l.serviceOrProduct ?? null },
       create: {
         id: 'seed-lead-' + l.companyName,
         name: l.name, companyName: l.companyName,
         email: l.email ?? null, phone: l.phone ?? null,
         source: l.source, ownerId, status: l.status,
         estValue: l.estValue, score: scoreLead(l),
+        serviceOrProduct: l.serviceOrProduct ?? null,
       },
     })
   }

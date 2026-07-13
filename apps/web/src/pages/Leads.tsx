@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { LeadDto } from '@bluefish/shared'
+import { SERVICE_LINES } from '@bluefish/shared'
 import { api, ApiError } from '../lib/api'
 import { pill, srcStyle } from '../lib/styleUtils'
 import { useToast } from '../lib/ToastContext'
@@ -106,7 +107,7 @@ export default function Leads() {
 
       <div style={{ background: '#fff', border: '1px solid #E5E7F0', borderRadius: 14, overflow: 'hidden' }}>
         <div style={{ ...gridCols, padding: '11px 18px', borderBottom: '1px solid #E5E7F0', fontSize: 10.5, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: '#8888A0' }}>
-          <div>Lead</div><div>Source</div>
+          <div>Lead</div><div>Service</div><div>Source</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             Score
             <span onClick={() => setScoreInfoOpen(true)} title="How is the score calculated?" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 15, height: 15, borderRadius: '50%', background: '#EEF0FA', color: '#2A6FDB', fontSize: 10, fontWeight: 700, cursor: 'pointer', textTransform: 'none' }}>?</span>
@@ -125,10 +126,9 @@ export default function Leads() {
             <div key={l.id} style={{ ...gridCols, padding: '12px 18px', borderBottom: '1px solid #F2F3F9', alignItems: 'center' }}>
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{l.companyName}</div>
-                <div style={{ fontSize: 11.5, fontWeight: 400, color: '#5C5C74', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {l.name}{l.serviceOrProduct ? <span style={{ color: '#8888A0' }}> · {l.serviceOrProduct}</span> : null}
-                </div>
+                <div style={{ fontSize: 11.5, fontWeight: 400, color: '#5C5C74', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{l.name}</div>
               </div>
+              <div><ServicePill service={l.serviceOrProduct} /></div>
               <div><span style={srcStyle(l.source)}>{l.source}</span></div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontFamily: "'Space Grotesk'", fontWeight: 700, fontSize: 13, color: scoreCol }}>{l.score}</span>
@@ -230,7 +230,25 @@ function ScoreRow({ label, value }: { label: string; value: string }) {
   )
 }
 
-const gridCols: CSSProperties = { display: 'grid', gridTemplateColumns: '1.9fr 130px 150px 130px 110px 90px 260px', gap: 10 }
+const gridCols: CSSProperties = { display: 'grid', gridTemplateColumns: '1.9fr 100px 130px 150px 130px 110px 90px 260px', gap: 10 }
+
+const SERVICE_COLOR: Record<string, string> = { Box: '#2A6FDB', '3S': '#0E9C7E', '3D': '#B4650A', 'AI&RPA': '#6C55E0' }
+function hexToRgba(hex: string, alpha: number): string {
+  const h = hex.replace('#', '')
+  const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16)
+  return `rgba(${r},${g},${b},${alpha})`
+}
+function ServicePill({ service }: { service: string | null }) {
+  if (!service) return <span style={{ fontSize: 11, color: '#B4B4C4' }}>—</span>
+  const known = (SERVICE_LINES as readonly string[]).includes(service)
+  const c = known ? (SERVICE_COLOR[service] ?? '#5C5C74') : '#5C5C74'
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: hexToRgba(c, 0.12), color: c, border: `1px solid ${hexToRgba(c, 0.35)}`, borderRadius: 6, fontSize: 10.5, fontWeight: 700, padding: '2px 8px', whiteSpace: 'nowrap' }}>
+      <span style={{ width: 5, height: 5, borderRadius: '50%', background: c }} />
+      {service}
+    </span>
+  )
+}
 const primaryBtn: CSSProperties = { background: '#2A6FDB', color: '#fff', borderRadius: 9, padding: '8px 16px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', border: 'none' }
 const ghostBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid #E5E7F0', background: '#fff', borderRadius: 9, padding: '7px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: '#3B3B52', textDecoration: 'none' }
 const smallBtn: CSSProperties = { border: '1px solid #E5E7F0', background: '#fff', borderRadius: 8, fontSize: 11.5, fontWeight: 600, padding: '5px 11px', cursor: 'pointer' }
