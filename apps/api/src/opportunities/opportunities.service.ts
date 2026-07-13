@@ -53,6 +53,7 @@ export class OpportunitiesService {
         closeDate: input.closeDate ? new Date(input.closeDate) : null,
         serviceOrProduct: input.serviceOrProduct ?? null,
         competitor: input.competitor ?? null, aiHint: input.aiHint ?? null,
+        notes: input.notes ?? null,
       },
       include: { customer: true, owner: true, lines: { include: { product: true } } },
     })
@@ -138,6 +139,7 @@ export class OpportunitiesService {
     value: number; probability: number; closeDate: Date | null
     serviceOrProduct: string | null; competitor: string | null
     lostReason: string | null; wonReason: string | null; aiHint: string | null
+    notes: string | null
     createdAt: Date; updatedAt: Date
     customer: { name: string }; owner: { name: string }
     lines: Array<{ id: string; productId: string; product: { code: string; name: string }; quantity: number; unitPrice: number; discount: number }>
@@ -151,7 +153,7 @@ export class OpportunitiesService {
       closeDate: row.closeDate?.toISOString() ?? null,
       serviceOrProduct: row.serviceOrProduct,
       competitor: row.competitor, lostReason: row.lostReason, wonReason: row.wonReason,
-      aiHint: row.aiHint,
+      aiHint: row.aiHint, notes: row.notes,
       lines: row.lines.map((l): OpportunityLineDto => ({
         id: l.id, productId: l.productId,
         productCode: l.product.code, productName: l.product.name,

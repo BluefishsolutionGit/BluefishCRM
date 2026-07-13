@@ -181,6 +181,7 @@ model Opportunity {
   lostReason   String?
   wonReason    String?
   aiHint       String?
+  notes        String?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 

@@ -5,6 +5,7 @@ import { api, ApiError } from '../lib/api'
 import { av, pill } from '../lib/styleUtils'
 import { useToast } from '../lib/ToastContext'
 import { useAuth } from '../lib/AuthContext'
+import OpportunityDetailModal from '../components/OpportunityDetailModal'
 
 type View = 'kanban' | 'list' | 'forecast'
 const STAGES: { name: OpportunityStage; c: string }[] = [
@@ -30,6 +31,7 @@ function ownerInitials(name: string) {
 export default function Pipeline() {
   const [view, setView] = useState<View>('kanban')
   const [serviceFilter, setServiceFilter] = useState<string>('all')  // 'all' | 'Box' | '3S' | '3D' | 'AI&RPA' | 'unassigned'
+  const [selectedOpp, setSelectedOpp] = useState<OpportunityDto | null>(null)
   const [opps, setOpps] = useState<OpportunityDto[]>([])
   const [loading, setLoading] = useState(true)
   const [dragId, setDragId] = useState<string | null>(null)
@@ -129,7 +131,9 @@ export default function Pipeline() {
                     key={d.id}
                     draggable={canMove}
                     onDragStart={(e: DragEvent<HTMLDivElement>) => { setDragId(d.id); e.dataTransfer.effectAllowed = 'move' }}
-                    style={{ background: '#fff', border: '1px solid #E5E7F0', borderRadius: 12, padding: '13px 14px', cursor: canMove ? 'grab' : 'default', boxShadow: '0 1px 2px rgba(14,31,25,.05)' }}
+                    onClick={() => setSelectedOpp(d)}
+                    style={{ background: '#fff', border: '1px solid #E5E7F0', borderRadius: 12, padding: '13px 14px', cursor: canMove ? 'grab' : 'pointer', boxShadow: '0 1px 2px rgba(14,31,25,.05)' }}
+                    title="Click to open · drag to move"
                   >
                     <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
                       <div style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.35, flex: 1 }}>{d.title}</div>
@@ -173,7 +177,7 @@ export default function Pipeline() {
               <div>Opportunity</div><div>Service</div><div>Owner</div><div>Stage</div><div style={{ textAlign: 'right' }}>Amount</div><div>Probability</div><div>Close</div>
             </div>
             {filteredOpps.map((o) => (
-              <div key={o.id} style={{ ...gridColsList, padding: '12px 18px', borderBottom: '1px solid #F2F3F9', alignItems: 'center' }}>
+              <div key={o.id} onClick={() => setSelectedOpp(o)} style={{ ...gridColsList, padding: '12px 18px', borderBottom: '1px solid #F2F3F9', alignItems: 'center', cursor: 'pointer' }}>
                 <div style={{ fontSize: 13, fontWeight: 600, color: '#2A6FDB' }}>{o.title} — {o.customerName}</div>
                 <div>
                   {o.serviceOrProduct ? (
@@ -249,6 +253,19 @@ export default function Pipeline() {
           </div>
         </div>
       )}
+
+      <OpportunityDetailModal
+        opp={selectedOpp}
+        onClose={() => setSelectedOpp(null)}
+        onChanged={(upd) => {
+          setOpps((os) => os.map((o) => (o.id === upd.id ? upd : o)))
+          setSelectedOpp(upd)
+        }}
+        onDeleted={(id) => {
+          setOpps((os) => os.filter((o) => o.id !== id))
+          setSelectedOpp(null)
+        }}
+      />
     </div>
   )
 }

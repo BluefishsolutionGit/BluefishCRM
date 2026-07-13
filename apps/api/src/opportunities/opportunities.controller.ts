@@ -22,6 +22,7 @@ class CreateBody {
   @IsOptional() @IsString() serviceOrProduct?: string
   @IsOptional() @IsString() competitor?: string
   @IsOptional() @IsString() aiHint?: string
+  @IsOptional() @IsString() notes?: string
 }
 class UpdateBody {
   @IsOptional() @IsString() title?: string
@@ -36,6 +37,7 @@ class UpdateBody {
   @IsOptional() @IsString() lostReason?: string
   @IsOptional() @IsString() wonReason?: string
   @IsOptional() @IsString() aiHint?: string
+  @IsOptional() @IsString() notes?: string
 }
 class StageBody { @IsIn(STAGES) stage!: OpportunityStage }
 

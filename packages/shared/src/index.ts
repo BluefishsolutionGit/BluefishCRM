@@ -290,6 +290,7 @@ export interface OpportunityDto {
   lostReason: string | null
   wonReason: string | null
   aiHint: string | null
+  notes: string | null
   lines: OpportunityLineDto[]
   createdAt: string
   updatedAt: string
@@ -306,6 +307,7 @@ export interface CreateOpportunityDto {
   serviceOrProduct?: string
   competitor?: string
   aiHint?: string
+  notes?: string
 }
 
 export interface UpdateOpportunityDto extends Partial<CreateOpportunityDto> {
