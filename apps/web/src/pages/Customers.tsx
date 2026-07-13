@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
-import type { CustomerDto } from '@bluefish/shared'
+import type { CustomerDto, TagDto } from '@bluefish/shared'
 import { api, ApiError } from '../lib/api'
 import { fmt, initialsOf } from '../data/mockData'
 import { av, statusStyle } from '../lib/styleUtils'
@@ -104,7 +104,7 @@ export default function Customers() {
 
       <div style={{ background: '#fff', border: '1px solid #E5E7F0', borderRadius: 14, overflow: 'visible' }}>
         <div style={{ ...gridCols, padding: '11px 18px', borderBottom: '1px solid #E5E7F0', fontSize: 10.5, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: '#8888A0' }}>
-          <div>Code</div><div>Company</div><div>Industry</div><div>Status</div><div>Owner</div><div>Last activity</div><div style={{ textAlign: 'right' }}>Open value</div><div />
+          <div>Code</div><div>Company</div><div>Industry</div><div>Service tags</div><div>Status</div><div>Owner</div><div>Last activity</div><div style={{ textAlign: 'right' }}>Open value</div><div />
         </div>
         {loading && <div style={{ padding: 24, textAlign: 'center', color: '#8888A0', fontSize: 13 }}>Loading…</div>}
         {!loading && customers.length === 0 && !error && (
@@ -123,6 +123,7 @@ export default function Customers() {
               </div>
             </div>
             <div style={{ fontSize: 12.5, color: '#3B3B52' }}>{c.industry}</div>
+            <TagCell tags={c.tags} onClick={() => navigate(`/customers/${c.id}`)} />
             <div><span style={statusStyle(c.status)}>{c.status}</span></div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
               <div style={av(22, colorFor(c.ownerName))}>{ownerInitials(c.ownerName)}</div>
@@ -151,9 +152,49 @@ export default function Customers() {
   )
 }
 
+function TagCell({ tags, onClick }: { tags: TagDto[]; onClick: () => void }) {
+  if (tags.length === 0) {
+    return <div onClick={onClick} style={{ color: '#B4B4C4', fontSize: 11, cursor: 'pointer' }}>—</div>
+  }
+  const visible = tags.slice(0, 2)
+  const extra = tags.length - visible.length
+  const tooltip = tags.map((t) => t.name).join(', ')
+  return (
+    <div onClick={onClick} title={tooltip} style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center', cursor: 'pointer', minWidth: 0 }}>
+      {visible.map((t) => (
+        <span
+          key={t.id}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            background: hexToRgba(t.color, 0.12), color: t.color,
+            border: `1px solid ${hexToRgba(t.color, 0.35)}`,
+            borderRadius: 6, fontSize: 10.5, fontWeight: 700,
+            padding: '2px 7px', maxWidth: 100,
+            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+          }}
+        >
+          <span style={{ width: 5, height: 5, borderRadius: '50%', background: t.color, flex: 'none' }} />
+          {t.name}
+        </span>
+      ))}
+      {extra > 0 && (
+        <span style={{ background: '#F2F3F9', color: '#5C5C74', border: '1px solid #E5E7F0', borderRadius: 6, fontSize: 10.5, fontWeight: 700, padding: '2px 6px' }}>
+          +{extra}
+        </span>
+      )}
+    </div>
+  )
+}
+
+function hexToRgba(hex: string, alpha: number): string {
+  const h = hex.replace('#', '')
+  const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16)
+  return `rgba(${r},${g},${b},${alpha})`
+}
+
 const gridCols: CSSProperties = {
   display: 'grid',
-  gridTemplateColumns: '96px 2fr 1fr 104px 130px 1.3fr 90px 36px',
+  gridTemplateColumns: '96px 2fr 1fr 175px 104px 130px 1.3fr 90px 36px',
   gap: 10,
 }
 const outlineBtn: CSSProperties = { border: '1px solid #E5E7F0', background: '#fff', borderRadius: 9, padding: '8px 14px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', color: '#3B3B52' }
