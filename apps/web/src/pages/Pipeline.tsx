@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState, type CSSProperties, type DragEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type DragEvent } from 'react'
 import type { ForecastDto, OpportunityDto, OpportunityStage } from '@bluefish/shared'
 import { SERVICE_LINES } from '@bluefish/shared'
 import { api, ApiError } from '../lib/api'
-import { av, pill } from '../lib/styleUtils'
+import { av } from '../lib/styleUtils'
 import { useToast } from '../lib/ToastContext'
 import { useAuth } from '../lib/AuthContext'
 import OpportunityDetailModal from '../components/OpportunityDetailModal'
@@ -17,6 +17,28 @@ const STAGES: { name: OpportunityStage; c: string }[] = [
 ]
 const FCAT_COLOR: Record<string, string> = { Closed: '#06A94A', Commit: '#2A6FDB', 'Best Case': '#6C55E0', Pipeline: '#8888A0' }
 const SERVICE_COLOR: Record<string, string> = { Box: '#2A6FDB', '3S': '#0E9C7E', '3D': '#B4650A', 'AI&RPA': '#6C55E0' }
+
+/**
+ * Probability pill colors — 100% = green (a closed-won deal), then graded
+ * from blue → purple → amber → orange → red as confidence drops.
+ * Returns a filled pill style.
+ */
+function probStyle(p: number): CSSProperties {
+  const b =
+    p >= 100 ? { bg: '#D6F5E3', fg: '#0E6E4E', border: '#8AD9AC' }
+    : p >= 80 ? { bg: '#DDEAFB', fg: '#1F5AC2', border: '#B7CFF3' }
+    : p >= 60 ? { bg: '#EAE7F7', fg: '#5B3FC4', border: '#CDBFF9' }
+    : p >= 40 ? { bg: '#FEF3E2', fg: '#B4650A', border: '#F0BA95' }
+    : p >= 20 ? { bg: '#FEEFE6', fg: '#D2601A', border: '#F0BA95' }
+    :           { bg: '#FDECEA', fg: '#C0392B', border: '#F5B7B1' }
+  return {
+    display: 'inline-flex', alignItems: 'center', gap: 4,
+    background: b.bg, color: b.fg, border: `1px solid ${b.border}`,
+    borderRadius: 999, fontSize: 11, fontWeight: 700, padding: '2px 8px',
+    fontFamily: "'IBM Plex Mono', monospace",
+    whiteSpace: 'nowrap',
+  }
+}
 const fmt = (n: number) => n >= 1e6 ? '฿' + (n / 1e6).toFixed(1) + 'M' : '฿' + Math.round(n / 1e3) + 'K'
 
 const OWNER_COLORS = ['#2A6FDB', '#1F5AC2', '#B4650A', '#6C55E0', '#0E9C7E']
@@ -36,6 +58,8 @@ export default function Pipeline() {
   const [loading, setLoading] = useState(true)
   const [dragId, setDragId] = useState<string | null>(null)
   const [forecast, setForecast] = useState<ForecastDto | null>(null)
+  const [importing, setImporting] = useState(false)
+  const fileRef = useRef<HTMLInputElement | null>(null)
   const toast = useToast()
   const { hasPermission } = useAuth()
   const canMove = hasPermission('opportunity:write')
@@ -80,11 +104,40 @@ export default function Pipeline() {
     catch (e) { toast(e instanceof ApiError ? e.message : 'Stage change failed'); reload() }
   }
 
+  const onImport = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    setImporting(true)
+    try {
+      const res = await api.importOpportunities(file)
+      const summary = `Imported ${res.imported} · skipped ${res.skipped}${res.errors.length ? ` · ${res.errors.length} error(s) — check first row` : ''}`
+      toast(summary)
+      if (res.errors.length > 0 && res.errors[0]) {
+        // eslint-disable-next-line no-console
+        console.warn('Import errors:', res.errors)
+      }
+      await reload()
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : 'Import failed')
+    } finally { setImporting(false) }
+  }
+
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', animation: 'fadeUp .3s ease', overflow: 'hidden' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '20px 28px 14px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '20px 28px 14px', flexWrap: 'wrap' }}>
         <div style={{ fontFamily: "'Space Grotesk'", fontSize: 21, fontWeight: 600 }}>Pipeline — Q3 FY2026</div>
         <div style={{ flex: 1 }} />
+
+        <a href={api.opportunitiesImportTemplateUrl()} target="_blank" rel="noopener noreferrer" style={ioBtn}>Template</a>
+        <a href={api.opportunitiesExportUrl()} style={ioBtn}>Export ↓</a>
+        {canMove && (
+          <>
+            <input ref={fileRef} type="file" accept=".xlsx,.xls" onChange={onImport} style={{ display: 'none' }} />
+            <div onClick={() => fileRef.current?.click()} style={{ ...ioBtn, opacity: importing ? 0.5 : 1 }}>{importing ? 'Importing…' : 'Import ↑'}</div>
+          </>
+        )}
+
         <div style={{ display: 'flex', background: '#fff', border: '1px solid #E5E7F0', borderRadius: 9, padding: 3, gap: 2 }}>
           {(['kanban', 'list', 'forecast'] as View[]).map((v) => (
             <div key={v} onClick={() => setView(v)} style={viewTab(view === v)}>
@@ -146,7 +199,7 @@ export default function Pipeline() {
                     <div style={{ fontSize: 11.5, color: '#5C5C74', marginTop: 3 }}>{d.customerName}</div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 9 }}>
                       <div style={{ fontFamily: "'Space Grotesk'", fontSize: 14.5, fontWeight: 700 }}>{fmt(d.value)}</div>
-                      <span style={pill(d.probability >= 70 ? '#E4EDFC' : '#F2F3F9', d.probability >= 70 ? '#2A6FDB' : '#5C5C74')}>{d.probability}%</span>
+                      <span style={probStyle(d.probability)}>{d.probability}%</span>
                       <div style={{ flex: 1 }} />
                       <div style={av(24, colorFor(d.ownerName))}>{ownerInitials(d.ownerName)}</div>
                     </div>
@@ -189,7 +242,7 @@ export default function Pipeline() {
                 <div style={{ fontSize: 12.5, color: '#3B3B52' }}>{o.ownerName}</div>
                 <div style={{ fontSize: 12.5, fontWeight: 600, color: o.stage === 'Won' ? '#0E9C7E' : o.stage === 'Lost' ? '#C0392B' : '#3B3B52' }}>{o.stage}</div>
                 <div style={{ textAlign: 'right', fontFamily: "'IBM Plex Mono', monospace", fontSize: 12.5 }}>{fmt(o.value)}</div>
-                <div style={{ fontSize: 12.5, color: '#5C5C74' }}>{o.probability}%</div>
+                <div><span style={probStyle(o.probability)}>{o.probability}%</span></div>
                 <div style={{ fontSize: 12.5, color: '#5C5C74' }}>{o.closeDate ? new Date(o.closeDate).toLocaleDateString() : '—'}</div>
               </div>
             ))}
@@ -274,6 +327,7 @@ function viewTab(active: boolean): CSSProperties {
   return { borderRadius: 7, fontSize: 12, fontWeight: 600, padding: '5px 13px', cursor: 'pointer', background: active ? '#2E1A6B' : 'transparent', color: active ? '#fff' : '#5C5C74' }
 }
 const gridColsList: CSSProperties = { display: 'grid', gridTemplateColumns: '2.4fr 100px 130px 130px 130px 110px 130px', gap: 10 }
+const ioBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid #E5E7F0', background: '#fff', borderRadius: 9, padding: '7px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: '#3B3B52', textDecoration: 'none' }
 
 function ServiceFilterRow({ filter, onFilter, counts }: { filter: string; onFilter: (v: string) => void; counts: Record<string, number> }) {
   const chips: Array<{ id: string; label: string; color: string }> = [

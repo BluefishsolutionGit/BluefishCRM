@@ -205,6 +205,14 @@ export const api = {
   deleteProduct: (id: string) => request<void>(`/products/${id}`, { method: 'DELETE' }),
 
   // ─────── Opportunities ───────
+  importOpportunities: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return request<ImportResultDto>('/opportunities/import', { method: 'POST', body: form })
+  },
+  opportunitiesImportTemplateUrl: () => `${API_BASE}/opportunities/import-template`,
+  opportunitiesExportUrl: () => `${API_BASE}/opportunities/export`,
+
   opportunities: (filter: { ownerId?: string; stage?: OpportunityStage; serviceOrProduct?: string } = {}) => {
     const p = new URLSearchParams()
     if (filter.ownerId) p.set('ownerId', filter.ownerId)
