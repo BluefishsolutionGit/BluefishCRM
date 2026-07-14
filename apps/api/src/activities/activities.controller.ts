@@ -22,6 +22,8 @@ class CreateBody {
   @IsOptional() @IsString() customerId?: string
   @IsOptional() @IsString() opportunityId?: string
   @IsOptional() @IsIn(STATUSES) status?: ActivityStatus
+  @IsOptional() @IsString() location?: string
+  @IsOptional() @IsString() meetingLink?: string
   @IsOptional() @IsString() notes?: string
 }
 class UpdateBody {
@@ -34,6 +36,8 @@ class UpdateBody {
   @IsOptional() @IsString() customerId?: string
   @IsOptional() @IsString() opportunityId?: string
   @IsOptional() @IsIn(STATUSES) status?: ActivityStatus
+  @IsOptional() @IsString() location?: string
+  @IsOptional() @IsString() meetingLink?: string
   @IsOptional() @IsString() notes?: string
 }
 

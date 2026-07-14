@@ -22,7 +22,7 @@ export class ActivitiesService {
         opportunityId: filter.opportunityId,
         scheduledAt: filter.from || filter.to ? { gte: filter.from, lte: filter.to } : undefined,
       },
-      include: { owner: true, customer: true, opportunity: true },
+      include: { owner: true, customer: true, opportunity: { select: { title: true, serviceOrProduct: true } } },
       orderBy: { scheduledAt: 'asc' },
     })
     return rows.map(this.toDto)
@@ -47,8 +47,9 @@ export class ActivitiesService {
         durationMin: input.durationMin ?? null, ownerId: input.ownerId,
         customerId: input.customerId ?? null, opportunityId: input.opportunityId ?? null,
         status: input.status ?? 'scheduled', notes: input.notes ?? null,
+        location: input.location ?? null, meetingLink: input.meetingLink ?? null,
       },
-      include: { owner: true, customer: true, opportunity: true },
+      include: { owner: true, customer: true, opportunity: { select: { title: true, serviceOrProduct: true } } },
     })
     await this.audit.log({ ...ctx, action: 'activity.create', entity: 'activity', entityId: row.id, after: row })
     return this.toDto(row)
@@ -65,7 +66,7 @@ export class ActivitiesService {
 
     const row = await this.prisma.activity.update({
       where: { id }, data,
-      include: { owner: true, customer: true, opportunity: true },
+      include: { owner: true, customer: true, opportunity: { select: { title: true, serviceOrProduct: true } } },
     })
     await this.audit.log({ ...ctx, action: 'activity.update', entity: 'activity', entityId: id, before, after: row })
     return this.toDto(row)
@@ -81,18 +82,22 @@ export class ActivitiesService {
   private toDto = (row: {
     id: string; type: string; title: string; description: string | null
     scheduledAt: Date; durationMin: number | null; status: string; notes: string | null
+    location: string | null; meetingLink: string | null
     ownerId: string; customerId: string | null; opportunityId: string | null
     createdAt: Date
     owner: { name: string }
     customer: { name: string } | null
-    opportunity: { title: string } | null
+    opportunity: { title: string; serviceOrProduct: string | null } | null
   }): ActivityDto => ({
     id: row.id, type: row.type as ActivityType, title: row.title, description: row.description,
     scheduledAt: row.scheduledAt.toISOString(), durationMin: row.durationMin,
     ownerId: row.ownerId, ownerName: row.owner.name,
     customerId: row.customerId, customerName: row.customer?.name ?? null,
     opportunityId: row.opportunityId, opportunityTitle: row.opportunity?.title ?? null,
-    status: row.status as ActivityStatus, notes: row.notes,
+    opportunityServiceOrProduct: row.opportunity?.serviceOrProduct ?? null,
+    status: row.status as ActivityStatus,
+    location: row.location, meetingLink: row.meetingLink,
+    notes: row.notes,
     createdAt: row.createdAt.toISOString(),
   })
 }

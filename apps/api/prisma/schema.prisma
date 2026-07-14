@@ -224,6 +224,8 @@ model Activity {
   customerId    String?
   opportunityId String?
   status        String    @default("scheduled")
+  location      String?
+  meetingLink   String?
   notes         String?
   reminderSentAt DateTime?
   createdAt     DateTime  @default(now())

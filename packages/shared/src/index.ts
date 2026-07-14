@@ -344,7 +344,11 @@ export interface ActivityDto {
   customerName: string | null
   opportunityId: string | null
   opportunityTitle: string | null
+  /** Denormalised from linked opportunity — enables service-line filtering on the Activities page without extra fetches */
+  opportunityServiceOrProduct: string | null
   status: ActivityStatus
+  location: string | null
+  meetingLink: string | null
   notes: string | null
   createdAt: string
 }
@@ -359,6 +363,8 @@ export interface CreateActivityDto {
   customerId?: string
   opportunityId?: string
   status?: ActivityStatus
+  location?: string
+  meetingLink?: string
   notes?: string
 }
 
