@@ -26,6 +26,11 @@ export interface UserDto {
   email: string
   name: string
   role: string
+  department?: string | null
+  services?: string[]
+  isActive?: boolean
+  /** IANA timezone name (e.g. "Asia/Bangkok"). Used when pushing activities to Outlook. */
+  timezone?: string
   /** List of permission keys the user's role grants (e.g. "customer:read"). */
   permissions?: string[]
 }
@@ -37,6 +42,34 @@ export type UserRole =
   | 'legal'
   | 'finance'
   | 'auditor'
+  | 'viewer'
+
+export interface RoleDto {
+  name: string
+  description: string
+  permissions: string[]
+}
+
+export interface CreateUserDto {
+  email: string
+  name: string
+  role: string
+  password: string
+  department?: string | null
+  services?: string[]
+}
+
+export interface UpdateUserDto {
+  name?: string
+  role?: string
+  department?: string | null
+  services?: string[]
+  isActive?: boolean
+}
+
+export interface AdminResetPasswordDto {
+  newPassword: string
+}
 
 export type CustomerStatus = 'Active' | 'Prospect' | 'Inactive'
 
@@ -76,6 +109,15 @@ export interface ContactDto {
   lineId: string | null
   notes: string | null
   isPrimary: boolean
+}
+
+/** Slim result for the global contact-search autocomplete — includes customer name for context. */
+export interface ContactSearchResultDto {
+  id: string
+  name: string
+  email: string
+  customerId: string
+  customerName: string
 }
 
 // ─── Tags ─────────────────────────────────────────────────
@@ -285,11 +327,13 @@ export interface OpportunityDto {
   value: number
   probability: number
   closeDate: string | null
+  bidDeadline: string | null
+  decisionDate: string | null
   serviceOrProduct: string | null
   competitor: string | null
   lostReason: string | null
   wonReason: string | null
-  aiHint: string | null
+  managerHint: string | null
   notes: string | null
   lines: OpportunityLineDto[]
   createdAt: string
@@ -304,9 +348,11 @@ export interface CreateOpportunityDto {
   value?: number
   probability?: number
   closeDate?: string
+  bidDeadline?: string
+  decisionDate?: string
   serviceOrProduct?: string
   competitor?: string
-  aiHint?: string
+  managerHint?: string
   notes?: string
 }
 
@@ -331,6 +377,35 @@ export interface ForecastDto {
 export type ActivityType = 'meeting' | 'call' | 'visit' | 'demo' | 'task' | 'follow_up' | 'email'
 export type ActivityStatus = 'scheduled' | 'completed' | 'cancelled'
 
+/** Outlook attendee response values — mirrors Graph attendee.status.response. */
+export type AttendeeResponse = 'none' | 'organizer' | 'tentativelyAccepted' | 'accepted' | 'declined' | 'notResponded'
+
+export type DayOfWeek = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday'
+
+/**
+ * Recurrence pattern for a series. MVP supports daily/weekly/monthly-absolute with an end
+ * date; range 'noEnd' and 'numbered' aren't exposed yet. Weekly falls back to the weekday
+ * of scheduledAt if daysOfWeek is empty.
+ */
+export interface RecurrencePatternDto {
+  type: 'daily' | 'weekly' | 'monthly'
+  interval: number  // every N days/weeks/months (>= 1)
+  daysOfWeek?: DayOfWeek[]
+  endDate: string  // YYYY-MM-DD
+}
+
+export interface AttendeeDto {
+  email: string
+  name?: string | null
+  response?: AttendeeResponse | null
+  /** Set when this email matches a CRM Contact — lets the UI link straight to the contact. */
+  contactId?: string | null
+  contactName?: string | null
+}
+
+/** Accepted input shapes: bare email, or a rich {email, name?, response?, contactId?}. Both normalised server-side. */
+export type AttendeeInput = string | { email: string; name?: string; response?: AttendeeResponse; contactId?: string | null }
+
 export interface ActivityDto {
   id: string
   type: ActivityType
@@ -350,6 +425,13 @@ export interface ActivityDto {
   location: string | null
   meetingLink: string | null
   notes: string | null
+  attendees: AttendeeDto[]
+  /** True when this activity mirrors an Outlook event (either imported or pushed). */
+  linkedToCalendar: boolean
+  /** Timestamp of the most recent Graph write (inbound or outbound). Null until first sync. */
+  calendarSyncedAt: string | null
+  /** Recurrence pattern — null for one-off events. Only outbound is supported for MVP. */
+  recurrence: RecurrencePatternDto | null
   createdAt: string
 }
 
@@ -366,6 +448,8 @@ export interface CreateActivityDto {
   location?: string
   meetingLink?: string
   notes?: string
+  attendees?: AttendeeInput[]
+  recurrence?: RecurrencePatternDto | null
 }
 
 export interface UpdateActivityDto extends Partial<CreateActivityDto> {}
@@ -968,7 +1052,7 @@ export interface ApiError {
 }
 
 // ─── Notifications ──────────────────────────────────────────────────
-export type NotificationKind = 'activity_upcoming' | 'activity_overdue' | 'quotation_approval' | 'inbox_message' | 'flowaccount_status'
+export type NotificationKind = 'activity_upcoming' | 'activity_overdue' | 'quotation_approval' | 'inbox_message' | 'flowaccount_status' | 'attendee_declined' | 'attendee_tentative'
 export type NotificationTone = 'ok' | 'warn' | 'bad' | 'info'
 
 export interface NotificationDto {

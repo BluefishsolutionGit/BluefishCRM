@@ -1,4 +1,4 @@
-import { Controller, Get, Req, UnauthorizedException, UseGuards } from '@nestjs/common'
+import { Controller, Get, HttpCode, Param, Post, Req, UnauthorizedException, UseGuards } from '@nestjs/common'
 import type { Request } from 'express'
 import type { NotificationDto } from '@bluefish/shared'
 import { JwtAuthGuard } from '../auth/jwt.guard'
@@ -29,7 +29,8 @@ export class NotificationsController {
     const in48h = new Date(now.getTime() + 48 * 3600 * 1000)
     const in24hAgo = new Date(now.getTime() - 24 * 3600 * 1000)
 
-    const [activities, overdue, pendingApprovals, inboxThreads, faChanges] = await Promise.all([
+    const in48hAgo = new Date(now.getTime() - 48 * 3600 * 1000)
+    const [activities, overdue, pendingApprovals, inboxThreads, faChanges, declines, readKeys] = await Promise.all([
       this.prisma.activity.findMany({
         where: { ownerId: userId, status: { not: 'completed' }, scheduledAt: { gte: now, lte: in48h } },
         take: 10, orderBy: { scheduledAt: 'asc' },
@@ -57,7 +58,21 @@ export class NotificationsController {
         },
         take: 5, orderBy: { createdAt: 'desc' },
       }),
+      // Recent RSVP changes on activities I own — captures both declines and tentative
+      // downgrades so a sales rep sees drop-outs and soft-commits in one place.
+      this.prisma.auditLog.findMany({
+        where: {
+          userId,
+          action: { in: ['activity.attendee.declined', 'activity.attendee.tentative'] },
+          createdAt: { gte: in48hAgo },
+        },
+        take: 15, orderBy: { createdAt: 'desc' },
+      }),
+      // Which notification keys has this user already marked read? Used to override the
+      // per-source default `unread=true` when we assemble the final list.
+      this.prisma.notificationRead.findMany({ where: { userId }, select: { key: true } }),
     ])
+    const readSet = new Set(readKeys.map((r) => r.key))
 
     const rows: NotificationDto[] = []
 
@@ -123,9 +138,64 @@ export class NotificationsController {
         unread: false,
       })
     }
+    for (const d of declines) {
+      const meta = (d.metadata ?? {}) as { attendeeEmail?: string; attendeeName?: string; activityTitle?: string; previousResponse?: string }
+      const who = meta.attendeeName ?? meta.attendeeEmail ?? 'Someone'
+      const isDeclined = d.action === 'activity.attendee.declined'
+      rows.push({
+        id: (isDeclined ? 'decline-' : 'tentative-') + d.id,
+        kind: isDeclined ? 'attendee_declined' : 'attendee_tentative',
+        title: `${who} ${isDeclined ? 'declined' : 'is tentative on'} "${meta.activityTitle ?? 'meeting'}"`,
+        sub: meta.previousResponse ? `was ${meta.previousResponse}` : 'via Outlook calendar',
+        tone: isDeclined ? 'bad' : 'warn',
+        link: '/activities',
+        at: d.createdAt.toISOString(),
+        unread: true,
+      })
+    }
 
-    // Sort by at DESC
-    rows.sort((x, y) => y.at.localeCompare(x.at))
+    // Apply the read-receipt overlay — any row whose key we've stored gets unread=false
+    // regardless of the per-source default. Keeps the badge count meaningful.
+    for (const row of rows) {
+      if (readSet.has(row.id)) row.unread = false
+    }
+
+    // Attendee-change events are actionable — someone dropped out or downgraded to
+    // tentative — so they float to the top regardless of meeting time. Declines rank
+    // above tentative. Everything else falls back to at DESC.
+    const rank = (k: string) => (k === 'attendee_declined' ? 0 : k === 'attendee_tentative' ? 1 : 2)
+    rows.sort((x, y) => {
+      const dx = rank(x.kind), dy = rank(y.kind)
+      if (dx !== dy) return dx - dy
+      return y.at.localeCompare(x.at)
+    })
     return rows.slice(0, 20)
+  }
+
+  /** Mark a single notification (by its computed id) as read. Idempotent. */
+  @Post(':key/read')
+  @HttpCode(204)
+  async markRead(@Param('key') key: string, @Req() req: JwtRequest): Promise<void> {
+    if (!req.user) throw new UnauthorizedException()
+    // Upsert so double-clicking doesn't error — same key, refresh readAt.
+    await this.prisma.notificationRead.upsert({
+      where: { userId_key: { userId: req.user.sub, key } },
+      update: { readAt: new Date() },
+      create: { userId: req.user.sub, key, readAt: new Date() },
+    })
+  }
+
+  /** Mark every notification currently in the user's feed as read in one shot. */
+  @Post('read-all')
+  @HttpCode(204)
+  async markAllRead(@Req() req: JwtRequest): Promise<void> {
+    if (!req.user) throw new UnauthorizedException()
+    const rows = await this.list(req)
+    const now = new Date()
+    // createMany with skipDuplicates keeps this idempotent — anything already read stays put.
+    await this.prisma.notificationRead.createMany({
+      data: rows.map((r) => ({ userId: req.user!.sub, key: r.id, readAt: now })),
+      skipDuplicates: true,
+    })
   }
 }

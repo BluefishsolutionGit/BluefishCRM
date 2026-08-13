@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Req, UseGuards } from '@nestjs/common'
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common'
 import { IsBoolean, IsEmail, IsOptional, IsString, MinLength } from 'class-validator'
 import { JwtAuthGuard } from '../auth/jwt.guard'
 import { PermissionsGuard } from '../auth/permissions.guard'
@@ -7,7 +7,7 @@ import { PERMISSIONS } from '../auth/permissions'
 import { ContactsService } from './contacts.service'
 import { clientIp } from '../common/request-context'
 import type { Request } from 'express'
-import type { ContactDto } from '@bluefish/shared'
+import type { ContactDto, ContactSearchResultDto } from '@bluefish/shared'
 
 interface JwtRequest extends Request { user?: { sub: string; email: string; role: string } }
 
@@ -51,6 +51,13 @@ export class ContactsController {
   @RequirePermissions(PERMISSIONS.CONTACT_READ)
   list(@Param('customerId') customerId: string): Promise<ContactDto[]> {
     return this.contacts.listByCustomer(customerId)
+  }
+
+  /** Global lookup used by the meeting-attendees autocomplete. Empty q returns []. */
+  @Get('contacts/search')
+  @RequirePermissions(PERMISSIONS.CONTACT_READ)
+  search(@Query('q') q?: string): Promise<ContactSearchResultDto[]> {
+    return this.contacts.search(q ?? '')
   }
 
   @Post('customers/:customerId/contacts')

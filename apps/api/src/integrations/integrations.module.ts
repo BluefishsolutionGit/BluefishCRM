@@ -4,15 +4,14 @@ import { WebhooksService } from './webhooks.service'
 import { PushService } from './push.service'
 import { EsignService } from './esign.service'
 import { CalendarSyncService } from './calendar-sync.service'
+import { CalendarSyncCron } from './calendar-sync.cron'
 import { IntegrationsController } from './integrations.controller'
 import { EsignController } from './esign.controller'
 import { CalendarSyncController } from './calendar-sync.controller'
-import { ActivitiesModule } from '../activities/activities.module'
 
 @Module({
-  imports: [ActivitiesModule],
-  providers: [ApiKeysService, WebhooksService, PushService, EsignService, CalendarSyncService],
+  providers: [ApiKeysService, WebhooksService, PushService, EsignService, CalendarSyncService, CalendarSyncCron],
   controllers: [IntegrationsController, EsignController, CalendarSyncController],
-  exports: [ApiKeysService, WebhooksService, PushService, EsignService],
+  exports: [ApiKeysService, WebhooksService, PushService, EsignService, CalendarSyncService],
 })
 export class IntegrationsModule {}

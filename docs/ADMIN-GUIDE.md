@@ -35,7 +35,51 @@ Set them to `inactive`. They can no longer log in but their history stays — do
 5. Subscribe your page/account to `messages` and `messaging_postbacks`.
 
 ### Microsoft 365 calendar
-Users self-link at Settings → Integrations → Microsoft. The system pulls their events on demand; auto-sync runs hourly if the account has been used recently.
+
+**Server-side setup** (one-time, requires Entra app registration):
+
+1. Entra admin center → App registrations → **New registration**. Redirect URI:
+   `https://<prod>/api/integrations/calendar/microsoft/callback` (type: Web).
+2. API permissions → Add `Microsoft Graph` delegated: `openid`, `offline_access`, `User.Read`,
+   `Calendars.ReadWrite`. Grant admin consent.
+3. Certificates & secrets → **New client secret**. Copy the value.
+4. Set in `apps/api/.env`:
+   ```
+   MICROSOFT_CLIENT_ID=<app id>
+   MICROSOFT_CLIENT_SECRET=<...>
+   MICROSOFT_TENANT_ID=<tenant id or 'common'>
+   MICROSOFT_CALENDAR_REDIRECT_URI=https://<prod>/api/integrations/calendar/microsoft/callback
+   ```
+5. Restart the API. `GET /api/integrations/calendar/microsoft/status` should return
+   `{configured: true}`.
+
+**Users self-link** at Settings → Integrations → **Connect Microsoft 365**. Consent screen
+prompts for calendar read+write. On return, the account appears with a "Synced" timestamp.
+
+**How the sync works:**
+- **Inbound** — delta query on `/me/calendarView` (last 7 days → next 60). Runs every 5 minutes
+  per account via `CalendarSyncCron.pollAll()`; also on-demand via the "Sync now" button.
+- **Outbound** — activity create/update/delete pushes to Graph immediately (`safePush` swallows
+  Graph errors so CRM writes are never blocked). Timezone from `User.timezone`.
+- **Webhook (optional, near-realtime):** set `MICROSOFT_WEBHOOK_URL=https://<public>/api/integrations/calendar/microsoft/notifications`.
+  Subscription is created automatically on OAuth callback and renewed hourly (Graph caps event
+  subscriptions at ~3 days). Without a public URL, the 5-min polling cron is the fallback.
+- **Loop prevention** — imported events store `externalCalendarId + externalCalendarAccountId`;
+  outbound push checks `externalCalendarId` before firing. Series masters we own suppress their
+  own expanded occurrences via `seriesMasterId` match.
+- **Attendee → Contact linking** — inbound emails are auto-matched to CRM Contacts in a single
+  query per list request. Users can manually override via the `+ LINK` chip in the attendee
+  chip; the override stores `contactId` on the attendee JSON and always wins over email match.
+
+**Dev / preview mode (no real M365):** click **Connect (dev stub)** in Settings → Integrations.
+This inserts a fake account whose sync cycles simulate the full lifecycle — imports, updates,
+removals, cancellation, recurring occurrences, RSVP transitions — so the UI can be exercised
+without a live Entra app.
+
+**Cron jobs (`@nestjs/schedule`):**
+- `CalendarSyncCron.pollAll` — every 5 minutes; skips accounts synced in the last 4 minutes
+- `CalendarSyncCron.renewSubscriptions` — hourly; renews any Graph subscription within 12h of expiry
+- `NotificationsCron.pruneStaleReadReceipts` — weekly; deletes `NotificationRead` rows older than 60 days
 
 ### e-Signature
 Ships with a **stub** provider that generates envelope URLs on-domain. Swap to a real vendor by implementing the interface in `apps/api/src/integrations/esign.service.ts` and setting `ESIGN_PROVIDER=<vendor>`.

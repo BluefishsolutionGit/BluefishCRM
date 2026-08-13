@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
 import { AuditService } from '../audit/audit.service'
-import type { ContactDto, CreateContactDto, UpdateContactDto } from '@bluefish/shared'
+import type { ContactDto, ContactSearchResultDto, CreateContactDto, UpdateContactDto } from '@bluefish/shared'
 
 export interface AuditCtx {
   userId?: string
@@ -36,6 +36,31 @@ export class ContactsService {
       orderBy: [{ isPrimary: 'desc' }, { name: 'asc' }],
     })
     return rows.map(this.toDto)
+  }
+
+  /**
+   * Case-insensitive substring match against name or email — capped at 20 for the
+   * autocomplete so the browser isn't drowned in results on a bare "a". Empty query
+   * short-circuits to [] to avoid a full-table scan on modal open.
+   */
+  async search(q: string): Promise<ContactSearchResultDto[]> {
+    const trimmed = q.trim()
+    if (trimmed.length === 0) return []
+    const rows = await this.prisma.contact.findMany({
+      where: {
+        OR: [
+          { name:  { contains: trimmed, mode: 'insensitive' } },
+          { email: { contains: trimmed, mode: 'insensitive' } },
+        ],
+      },
+      select: { id: true, name: true, email: true, customerId: true, customer: { select: { name: true } } },
+      orderBy: [{ isPrimary: 'desc' }, { name: 'asc' }],
+      take: 20,
+    })
+    return rows.map((r) => ({
+      id: r.id, name: r.name, email: r.email,
+      customerId: r.customerId, customerName: r.customer.name,
+    }))
   }
 
   async create(customerId: string, input: CreateContactDto, ctx: AuditCtx): Promise<ContactDto> {

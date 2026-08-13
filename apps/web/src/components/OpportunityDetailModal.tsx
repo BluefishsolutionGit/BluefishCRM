@@ -29,8 +29,9 @@ export default function OpportunityDetailModal({ opp, onClose, onChanged, onDele
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState<UpdateOpportunityDto>({})
   const toast = useToast()
-  const { hasPermission } = useAuth()
+  const { hasPermission, user } = useAuth()
   const canWrite = hasPermission('opportunity:write')
+  const canEditManagerHint = user?.role === 'admin' || user?.role === 'sales_manager'
 
   useEffect(() => {
     if (!opp) return
@@ -40,8 +41,11 @@ export default function OpportunityDetailModal({ opp, onClose, onChanged, onDele
       value: opp.value,
       probability: opp.probability,
       closeDate: opp.closeDate ?? undefined,
+      bidDeadline: opp.bidDeadline ?? undefined,
+      decisionDate: opp.decisionDate ?? undefined,
       serviceOrProduct: opp.serviceOrProduct ?? undefined,
       competitor: opp.competitor ?? undefined,
+      managerHint: opp.managerHint ?? undefined,
       notes: opp.notes ?? undefined,
     })
     api.activities({ opportunityId: opp.id }).then(setActivities).catch(() => setActivities([]))
@@ -62,7 +66,10 @@ export default function OpportunityDetailModal({ opp, onClose, onChanged, onDele
         serviceOrProduct: form.serviceOrProduct || undefined,
         competitor: form.competitor || undefined,
         notes: form.notes || undefined,
+        managerHint: form.managerHint || undefined,
         closeDate: form.closeDate || undefined,
+        bidDeadline: form.bidDeadline || undefined,
+        decisionDate: form.decisionDate || undefined,
       }
       const updated = await api.updateOpportunity(opp.id, patch)
       toast('Saved')
@@ -146,11 +153,17 @@ export default function OpportunityDetailModal({ opp, onClose, onChanged, onDele
                 <Field label="Probability %">
                   <input disabled={!canWrite} type="number" min={0} max={100} value={form.probability ?? 0} onChange={(e) => set('probability', Number(e.target.value))} style={inp} />
                 </Field>
-                <Field label="Close date">
+                <Field label="Close date" hint="Expected close while open · actual close date once Won/Lost">
                   <input disabled={!canWrite} type="date" value={form.closeDate?.slice(0, 10) ?? ''} onChange={(e) => set('closeDate', e.target.value || undefined)} style={inp} />
                 </Field>
                 <Field label="Competitor">
                   <input disabled={!canWrite} value={form.competitor ?? ''} onChange={(e) => set('competitor', e.target.value)} placeholder="e.g. AlphaSoft ERP" style={inp} />
+                </Field>
+                <Field label="Bid deadline" hint="วันครบกำหนดยื่นข้อเสนอ / TOR submission cut-off">
+                  <input disabled={!canWrite} type="date" value={form.bidDeadline?.slice(0, 10) ?? ''} onChange={(e) => set('bidDeadline', e.target.value || undefined)} style={inp} />
+                </Field>
+                <Field label="Decision date" hint="วันประกาศผล / award announcement">
+                  <input disabled={!canWrite} type="date" value={form.decisionDate?.slice(0, 10) ?? ''} onChange={(e) => set('decisionDate', e.target.value || undefined)} style={inp} />
                 </Field>
                 <div style={{ gridColumn: '1 / -1' }}>
                   <Field label="Notes (internal — visible on this deal only)">
@@ -165,11 +178,27 @@ export default function OpportunityDetailModal({ opp, onClose, onChanged, onDele
                   </Field>
                 </div>
               </div>
-              {opp.aiHint && (
-                <div style={{ background: '#F4F1FD', border: '1px solid #DCD4F6', borderRadius: 10, padding: '10px 14px', fontSize: 12.5, color: '#4A3AB8', display: 'flex', gap: 8 }}>
-                  <span>✦</span><span><b>AI suggestion:</b> {opp.aiHint}</span>
+              {canEditManagerHint ? (
+                <div style={{ background: '#F4F1FD', border: '1px solid #DCD4F6', borderRadius: 10, padding: '10px 14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#4A3AB8', fontWeight: 700, marginBottom: 6 }}>
+                    <span>✦</span>
+                    <span>Manager suggestion</span>
+                    <span style={{ marginLeft: 4, fontSize: 10, background: '#EEE7FF', color: '#6C55E0', padding: '1px 6px', borderRadius: 5, fontWeight: 700, letterSpacing: 0.3, textTransform: 'uppercase' }}>{user?.role === 'admin' ? 'admin' : 'manager'}</span>
+                  </div>
+                  <textarea
+                    value={form.managerHint ?? ''}
+                    onChange={(e) => set('managerHint', e.target.value)}
+                    rows={2}
+                    placeholder="Coach the deal owner — next best move, blockers to raise, timing cues…"
+                    style={{ ...inp, resize: 'vertical', fontFamily: 'inherit', background: '#fff', color: '#4A3AB8' }}
+                  />
+                  <div style={{ fontSize: 11, color: '#8082A5', marginTop: 5 }}>Visible to the deal owner on the card. Only Sales Manager and Admin can edit.</div>
                 </div>
-              )}
+              ) : opp.managerHint ? (
+                <div style={{ background: '#F4F1FD', border: '1px solid #DCD4F6', borderRadius: 10, padding: '10px 14px', fontSize: 12.5, color: '#4A3AB8', display: 'flex', gap: 8 }}>
+                  <span>✦</span><span><b>Manager suggestion:</b> {opp.managerHint}</span>
+                </div>
+              ) : null}
               {canWrite && (
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                   <button type="button" onClick={onClose} style={ghostBtn}>Cancel</button>
@@ -283,11 +312,12 @@ function AddActivityForm({ opp, onCancel, onCreated }: { opp: OpportunityDto; on
   )
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <div>
       <div style={{ fontSize: 11, fontWeight: 700, color: '#5C5C74', marginBottom: 4 }}>{label}</div>
       {children}
+      {hint && <div style={{ fontSize: 10.5, color: '#8082A5', marginTop: 3, lineHeight: 1.35 }}>{hint}</div>}
     </div>
   )
 }

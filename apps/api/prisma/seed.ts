@@ -1,5 +1,7 @@
 import { PrismaClient } from '@prisma/client'
 import * as bcrypt from 'bcryptjs'
+import * as fs from 'node:fs'
+import * as path from 'node:path'
 
 const prisma = new PrismaClient()
 
@@ -9,8 +11,58 @@ const ROLES = [
   { name: 'sales_rep', description: 'Own leads, opportunities, activities' },
   { name: 'legal', description: 'Review + approve contracts (legal step)' },
   { name: 'finance', description: 'Review + approve contracts (finance step)' },
-  { name: 'auditor', description: 'Read-only access + audit log' },
+  { name: 'auditor', description: 'Read-only + audit log access' },
+  { name: 'viewer', description: 'Read-only across CRM entities' },
 ]
+
+const SERVICE_LINES = ['Box', '3S', '3D', 'AI&RPA'] as const
+
+// Map CSV department → default service coverage the user is responsible for.
+// Sales / directors touch every service line; RPA folks own AI&RPA;
+// pure admins default to none (assignable via UI).
+function defaultServicesFor(department: string): string[] {
+  const d = department.trim().toLowerCase()
+  if (d.includes('rpa')) return ['AI&RPA']
+  if (d.includes('sales') || d.includes('director')) return [...SERVICE_LINES]
+  return []
+}
+
+function parseCsv(raw: string): Record<string, string>[] {
+  const lines = raw.split(/\r?\n/).filter((l) => l.trim().length > 0)
+  if (lines.length < 2) return []
+  const header = lines[0].split(',').map((h) => h.trim())
+  return lines.slice(1).map((line) => {
+    const cells = line.split(',').map((c) => c.trim())
+    const row: Record<string, string> = {}
+    header.forEach((h, i) => { row[h] = cells[i] ?? '' })
+    return row
+  })
+}
+
+async function seedBfsUsersFromCsv(roleMap: Map<string, string>, passwordHash: string) {
+  const csvPath = path.resolve(__dirname, '../../../requirements/BFS_user.csv')
+  if (!fs.existsSync(csvPath)) {
+    console.warn(`[seed] BFS_user.csv not found at ${csvPath} — skipping`)
+    return
+  }
+  const rows = parseCsv(fs.readFileSync(csvPath, 'utf8'))
+  for (const row of rows) {
+    if (!row.email) continue
+    const roleName = row.role?.trim() || 'viewer'
+    const roleId = roleMap.get(roleName) ?? roleMap.get('viewer')!
+    const isActive = (row.is_active ?? 'true').trim().toLowerCase() !== 'false'
+    const department = row.department || null
+    const services = department ? defaultServicesFor(department) : []
+    await prisma.user.upsert({
+      where: { email: row.email },
+      update: { name: row.name, roleId, department, isActive },
+      create: {
+        email: row.email, passwordHash, name: row.name,
+        roleId, department, services, isActive,
+      },
+    })
+  }
+}
 
 interface CustomerSeed {
   code: string
@@ -88,6 +140,9 @@ async function main() {
     update: { roleId: roleMap.get('finance')! },
     create: { email: 'finance@bluefishsolution.com', passwordHash, name: 'Finance Officer', roleId: roleMap.get('finance')! },
   })
+
+  // Real BFS staff (from requirements/BFS_user.csv)
+  await seedBfsUsersFromCsv(roleMap, passwordHash)
 
   const owners: Record<CustomerSeed['ownerKey'], string> = {
     NP: nattaya.id, KS: krit.id, PW: ploy.id, ST: somchai.id,
@@ -199,10 +254,10 @@ async function main() {
 
   // 7. Opportunities (map to existing customers)
   // serviceOrProduct = one of Box | 3S | 3D | AI&RPA — Bluefish's 4 core service pipelines
-  const deals: Array<{ code: string; title: string; ownerKey: 'NP' | 'KS' | 'PW' | 'ST'; stage: string; value: number; prob: number; close: string; service: string; aiHint?: string }> = [
-    { code: 'C-1024', title: 'Factory Automation Phase 2', ownerKey: 'NP', stage: 'Negotiation', value: 4200000, prob: 70, close: '2026-08-15', service: '3D',     aiHint: 'Send updated ROI sheet — decision meeting Friday' },
-    { code: 'C-1031', title: 'Hospital ERP Integration',   ownerKey: 'KS', stage: 'Proposal',    value: 7800000, prob: 55, close: '2026-09-02', service: 'Box',    aiHint: 'Quotation viewed 3× today — follow up before 16:00' },
-    { code: 'C-1007', title: 'Cold-chain Fleet Tracking',  ownerKey: 'PW', stage: 'Qualification', value: 2100000, prob: 40, close: '2026-09-20', service: '3S',   aiHint: 'Idle 9 days — auto follow-up scheduled tomorrow' },
+  const deals: Array<{ code: string; title: string; ownerKey: 'NP' | 'KS' | 'PW' | 'ST'; stage: string; value: number; prob: number; close: string; service: string; managerHint?: string }> = [
+    { code: 'C-1024', title: 'Factory Automation Phase 2', ownerKey: 'NP', stage: 'Negotiation', value: 4200000, prob: 70, close: '2026-08-15', service: '3D',     managerHint: 'Send updated ROI sheet — decision meeting Friday' },
+    { code: 'C-1031', title: 'Hospital ERP Integration',   ownerKey: 'KS', stage: 'Proposal',    value: 7800000, prob: 55, close: '2026-09-02', service: 'Box',    managerHint: 'Quotation viewed 3× today — follow up before 16:00' },
+    { code: 'C-1007', title: 'Cold-chain Fleet Tracking',  ownerKey: 'PW', stage: 'Qualification', value: 2100000, prob: 40, close: '2026-09-20', service: '3S',   managerHint: 'Idle 9 days — auto follow-up scheduled tomorrow' },
     { code: 'C-1055', title: 'Solar PPA — Rooftop 2MW',    ownerKey: 'ST', stage: 'Negotiation', value: 5600000, prob: 80, close: '2026-08-08', service: '3S' },
     { code: 'C-1042', title: 'Central Kitchen MES',        ownerKey: 'NP', stage: 'Qualification', value: 1500000, prob: 30, close: '2026-10-01', service: '3D' },
     { code: 'C-1060', title: 'Water Treatment SCADA',      ownerKey: 'KS', stage: 'Proposal',    value: 3000000, prob: 60, close: '2026-09-12', service: '3D' },
@@ -224,7 +279,7 @@ async function main() {
       data: {
         title: d.title, customerId: cust.id, ownerId,
         stage: d.stage, value: d.value, probability: d.prob,
-        closeDate: new Date(d.close), aiHint: d.aiHint ?? null,
+        closeDate: new Date(d.close), managerHint: d.managerHint ?? null,
         serviceOrProduct: d.service,
       },
     })

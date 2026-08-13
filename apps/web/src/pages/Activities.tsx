@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type CSSProperties, type FormEvent } from 'react'
-import type { ActivityDto, ActivityStatus, ActivityType, CustomerDto, UserDto } from '@bluefish/shared'
+import type { ActivityDto, ActivityStatus, ActivityType, AttendeeDto, AttendeeResponse, ContactSearchResultDto, CustomerDto, DayOfWeek, RecurrencePatternDto, UserDto } from '@bluefish/shared'
 import { SERVICE_LINES } from '@bluefish/shared'
 import { api, ApiError } from '../lib/api'
 import { useToast } from '../lib/ToastContext'
@@ -208,9 +208,23 @@ export default function Activities() {
                 )}
                 {sel.location && <div style={{ fontSize: 12, color: '#5C5C74', marginTop: 3 }}>📍 {sel.location}</div>}
                 {sel.meetingLink && <div style={{ fontSize: 12, marginTop: 3 }}>🔗 <a href={sel.meetingLink} target="_blank" rel="noopener noreferrer" style={{ color: '#2A6FDB' }}>{sel.meetingLink}</a></div>}
+                {sel.recurrence && (
+                  <div style={{ marginTop: 8 }}><RecurrenceBadge r={sel.recurrence} /></div>
+                )}
+                {sel.attendees && sel.attendees.length > 0 && (
+                  <AttendeesList attendees={sel.attendees} />
+                )}
                 {sel.notes && <div style={{ marginTop: 12, background: '#F7F8FC', borderRadius: 8, padding: '10px 12px', fontSize: 12, lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{sel.notes}</div>}
-                <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+                {sel.linkedToCalendar && (
+                  <SyncInfo activity={sel} onResync={reload} />
+                )}
+                <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap', alignItems: 'center' }}>
                   <StatusPill status={sel.status} />
+                  {sel.linkedToCalendar && (
+                    <span title="Synced with Outlook calendar" style={{ background: '#EEE7FF', color: '#6C55E0', border: '1px solid #C9B8FA', borderRadius: 6, fontSize: 10, fontWeight: 800, padding: '2px 7px', letterSpacing: 0.3 }}>
+                      M365
+                    </span>
+                  )}
                   {canWrite && sel.status !== 'completed' && <div onClick={() => setStatus(sel, 'completed')} style={{ ...miniBtn, background: '#0E9C7E', color: '#fff', borderColor: '#0E9C7E' }}>✓ Mark done</div>}
                   {canWrite && sel.status === 'completed' && <div onClick={() => setStatus(sel, 'scheduled')} style={miniBtn}>↺ Cancel mark</div>}
                   {canWrite && sel.status === 'scheduled' && <div onClick={() => setStatus(sel, 'cancelled')} style={miniBtn}>Cancel</div>}
@@ -359,6 +373,343 @@ function MonthListView({ activities, onOpen }: { activities: ActivityDto[]; onOp
   )
 }
 
+function AttendeesList({ attendees }: { attendees: AttendeeDto[] }) {
+  return (
+    <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 5 }}>
+      <div style={{ fontSize: 10.5, fontWeight: 700, color: '#8082A5', textTransform: 'uppercase', letterSpacing: 0.4 }}>
+        Attendees ({attendees.length})
+      </div>
+      {attendees.map((a, i) => (
+        <div key={`${a.email}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#3B3B52', flexWrap: 'wrap' }}>
+          <span style={{ fontWeight: 600 }}>{a.contactName ?? a.name ?? a.email}</span>
+          {(a.contactName || a.name) && (
+            <span style={{ color: '#8082A5', fontSize: 11 }}>&lt;{a.email}&gt;</span>
+          )}
+          {a.contactId && (
+            <span title="Linked to CRM Contact" style={{ background: '#DDEAFB', color: '#1F5AC2', border: '1px solid #B7CFF3', borderRadius: 5, fontSize: 9.5, fontWeight: 800, padding: '1px 5px', letterSpacing: 0.3 }}>
+              CONTACT
+            </span>
+          )}
+          {a.response && <RsvpBadge response={a.response} />}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function relativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime()
+  const s = Math.round(diff / 1000)
+  if (s < 60) return `${s}s ago`
+  const m = Math.round(s / 60)
+  if (m < 60) return `${m}m ago`
+  const h = Math.round(m / 60)
+  if (h < 48) return `${h}h ago`
+  const d = Math.round(h / 24)
+  return `${d}d ago`
+}
+
+const WEEKDAY_LABELS: Array<{ id: DayOfWeek; label: string }> = [
+  { id: 'monday', label: 'Mon' }, { id: 'tuesday', label: 'Tue' }, { id: 'wednesday', label: 'Wed' },
+  { id: 'thursday', label: 'Thu' }, { id: 'friday', label: 'Fri' }, { id: 'saturday', label: 'Sat' },
+  { id: 'sunday', label: 'Sun' },
+]
+
+function RecurrenceEditor({ value, onChange, scheduledAt }: { value: RecurrencePatternDto | null; onChange: (v: RecurrencePatternDto | null) => void; scheduledAt: string }) {
+  const enabled = value !== null
+  const type = value?.type ?? 'weekly'
+  const interval = value?.interval ?? 1
+  const daysOfWeek = value?.daysOfWeek ?? []
+  // Default the end date to 3 months out — a sensible cap for most sales cadences.
+  const defaultEnd = (() => {
+    const d = scheduledAt ? new Date(scheduledAt) : new Date()
+    d.setMonth(d.getMonth() + 3)
+    return d.toISOString().slice(0, 10)
+  })()
+  const endDate = value?.endDate ?? defaultEnd
+
+  const patch = (next: Partial<RecurrencePatternDto>) => {
+    onChange({ type, interval, endDate, ...(daysOfWeek.length > 0 ? { daysOfWeek } : {}), ...next })
+  }
+  const toggleDay = (day: DayOfWeek) => {
+    const set = new Set(daysOfWeek)
+    if (set.has(day)) set.delete(day); else set.add(day)
+    patch({ daysOfWeek: [...set] })
+  }
+
+  return (
+    <div>
+      <select
+        value={enabled ? type : 'none'}
+        onChange={(e) => {
+          const v = e.target.value
+          if (v === 'none') onChange(null)
+          else patch({ type: v as RecurrencePatternDto['type'] })
+        }}
+        style={inp}
+      >
+        <option value="none">Does not repeat</option>
+        <option value="daily">Daily</option>
+        <option value="weekly">Weekly</option>
+        <option value="monthly">Monthly (same day of month)</option>
+      </select>
+      {enabled && (
+        <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 12.5, color: '#3B3B52' }}>
+            <span>Every</span>
+            <input type="number" min={1} max={12} value={interval}
+              onChange={(e) => patch({ interval: Math.max(1, Math.min(12, Number(e.target.value) || 1)) })}
+              style={{ ...inp, width: 60, padding: '6px 8px' }} />
+            <span>{type === 'daily' ? 'day(s)' : type === 'weekly' ? 'week(s)' : 'month(s)'}</span>
+            <div style={{ flex: 1 }} />
+            <span>Until</span>
+            <input type="date" value={endDate} onChange={(e) => patch({ endDate: e.target.value })}
+              style={{ ...inp, padding: '6px 8px' }} />
+          </div>
+          {type === 'weekly' && (
+            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+              {WEEKDAY_LABELS.map((d) => {
+                const active = daysOfWeek.includes(d.id)
+                return (
+                  <button key={d.id} type="button" onClick={() => toggleDay(d.id)}
+                    style={{
+                      background: active ? '#2A6FDB' : '#fff', color: active ? '#fff' : '#5C5C74',
+                      border: `1px solid ${active ? '#2A6FDB' : '#E5E7F0'}`,
+                      borderRadius: 999, padding: '4px 11px', fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
+                    }}
+                  >{d.label}</button>
+                )
+              })}
+              {daysOfWeek.length === 0 && (
+                <span style={{ fontSize: 11, color: '#8082A5', alignSelf: 'center' }}>
+                  Defaults to the weekday of the scheduled time
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function RecurrenceBadge({ r }: { r: RecurrencePatternDto }) {
+  const summary = r.type === 'daily'
+    ? `every ${r.interval === 1 ? 'day' : `${r.interval} days`}`
+    : r.type === 'weekly'
+    ? `every ${r.interval === 1 ? 'week' : `${r.interval} weeks`}${r.daysOfWeek && r.daysOfWeek.length > 0 ? ' · ' + r.daysOfWeek.map((d) => d.slice(0, 3)).join('/') : ''}`
+    : `every ${r.interval === 1 ? 'month' : `${r.interval} months`}`
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: '#F4F1FD', color: '#4A3AB8', border: '1px solid #C9B8FA', borderRadius: 999, fontSize: 11, fontWeight: 700, padding: '2px 9px' }}>
+      🔁 Repeats {summary}
+    </span>
+  )
+}
+
+function SyncInfo({ activity, onResync }: { activity: ActivityDto; onResync: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const toast = useToast()
+  const { hasPermission } = useAuth()
+  const canResync = hasPermission('opportunity:write')
+  const resync = async () => {
+    setBusy(true)
+    try {
+      await api.resyncActivity(activity.id)
+      toast('Resynced with Outlook')
+      onResync()
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : 'Resync failed')
+    } finally { setBusy(false) }
+  }
+  return (
+    <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: '#8082A5' }}>
+      <svg viewBox="0 0 24 24" width="12" height="12"><path d="M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3M20 4v4h-4M4 20v-4h4" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" /></svg>
+      {activity.calendarSyncedAt
+        ? <>Synced <b style={{ color: '#3B3B52' }}>{relativeTime(activity.calendarSyncedAt)}</b> with Outlook</>
+        : <>Not yet synced with Outlook</>}
+      {canResync && (
+        <button type="button" onClick={resync} disabled={busy} style={{ marginLeft: 'auto', background: '#fff', color: '#6C55E0', border: '1px solid #C9B8FA', borderRadius: 6, fontSize: 10.5, fontWeight: 700, padding: '3px 8px', cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.6 : 1 }}>
+          {busy ? '…' : 'Resync'}
+        </button>
+      )}
+    </div>
+  )
+}
+
+function AttendeesEditor({ attendees, onChange }: { attendees: AttendeeDto[]; onChange: (next: AttendeeDto[]) => void }) {
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<ContactSearchResultDto[]>([])
+  const [open, setOpen] = useState(false)
+  const [searching, setSearching] = useState(false)
+
+  // Debounce the lookup so each keystroke doesn't hit the API.
+  useEffect(() => {
+    if (query.trim().length < 2) { setResults([]); return }
+    const handle = setTimeout(async () => {
+      setSearching(true)
+      try {
+        const hits = await api.searchContacts(query.trim())
+        // Filter out contacts whose email is already added.
+        const already = new Set(attendees.map((a) => a.email.toLowerCase()))
+        setResults(hits.filter((h) => !already.has(h.email.toLowerCase())))
+      } catch { setResults([]) }
+      finally { setSearching(false) }
+    }, 200)
+    return () => clearTimeout(handle)
+  }, [query, attendees])
+
+  const addContact = (c: ContactSearchResultDto) => {
+    onChange([...attendees, { email: c.email.toLowerCase(), name: c.name, contactId: c.id, contactName: c.name, response: null }])
+    setQuery(''); setResults([]); setOpen(false)
+  }
+  const addEmail = () => {
+    const email = query.trim().toLowerCase()
+    if (!email || !/^\S+@\S+\.\S+$/.test(email)) return
+    if (attendees.some((a) => a.email === email)) { setQuery(''); return }
+    onChange([...attendees, { email, name: null, response: null, contactId: null, contactName: null }])
+    setQuery(''); setResults([]); setOpen(false)
+  }
+  const remove = (email: string) => onChange(attendees.filter((a) => a.email !== email))
+  const linkToContact = (email: string, c: ContactSearchResultDto) => {
+    onChange(attendees.map((a) => a.email === email
+      ? { ...a, contactId: c.id, contactName: c.name, name: a.name ?? c.name }
+      : a))
+  }
+  const unlinkContact = (email: string) => {
+    onChange(attendees.map((a) => a.email === email
+      ? { ...a, contactId: null, contactName: null }
+      : a))
+  }
+
+  const looksLikeEmail = /^\S+@\S+\.\S+$/.test(query.trim())
+
+  return (
+    <div>
+      {attendees.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+          {attendees.map((a) => (
+            <span key={a.email} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: a.contactId ? '#DDEAFB' : '#F2F3F9', color: a.contactId ? '#1F5AC2' : '#3B3B52', border: `1px solid ${a.contactId ? '#B7CFF3' : '#E5E7F0'}`, borderRadius: 999, padding: '4px 4px 4px 10px', fontSize: 12, fontWeight: 600 }}>
+              {a.contactName ?? a.name ?? a.email}
+              {(a.contactName || a.name) && (
+                <span style={{ color: '#8082A5', fontWeight: 500 }}>&lt;{a.email}&gt;</span>
+              )}
+              <AttendeeLinkAction attendee={a} onLink={(c) => linkToContact(a.email, c)} onUnlink={() => unlinkContact(a.email)} />
+              <button type="button" onClick={() => remove(a.email)} title="Remove" style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: 15, padding: '0 6px', lineHeight: 1 }}>×</button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div style={{ position: 'relative' }}>
+        <input
+          value={query}
+          onChange={(e) => { setQuery(e.target.value); setOpen(true) }}
+          onFocus={() => setOpen(true)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && looksLikeEmail) { e.preventDefault(); addEmail() }
+            if (e.key === 'Escape') setOpen(false)
+          }}
+          placeholder="Search contacts by name/email, or type a new email + Enter"
+          style={inp}
+        />
+        {open && (query.trim().length > 0 || results.length > 0) && (
+          <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, background: '#fff', border: '1px solid #E5E7F0', borderRadius: 10, boxShadow: '0 12px 32px -12px rgba(0,0,0,0.2)', zIndex: 10, maxHeight: 240, overflowY: 'auto' }}>
+            {searching && <div style={{ padding: '10px 12px', fontSize: 12, color: '#8082A5' }}>Searching…</div>}
+            {!searching && results.length === 0 && !looksLikeEmail && query.trim().length >= 2 && (
+              <div style={{ padding: '10px 12px', fontSize: 12, color: '#8082A5' }}>No matching contacts. Type a full email to add anyway.</div>
+            )}
+            {results.map((r) => (
+              <div key={r.id} onMouseDown={(e) => { e.preventDefault(); addContact(r) }} style={{ padding: '9px 12px', cursor: 'pointer', borderBottom: '1px solid #F7F8FC', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 600, color: '#1E1E30' }}>{r.name} <span style={{ color: '#8082A5', fontWeight: 500 }}>&lt;{r.email}&gt;</span></div>
+                <div style={{ fontSize: 10.5, color: '#5C5C74' }}>{r.customerName}</div>
+              </div>
+            ))}
+            {looksLikeEmail && !results.some((r) => r.email.toLowerCase() === query.trim().toLowerCase()) && (
+              <div onMouseDown={(e) => { e.preventDefault(); addEmail() }} style={{ padding: '9px 12px', cursor: 'pointer', fontSize: 12.5, color: '#2A6FDB', fontWeight: 600, background: '#F5F8FF' }}>
+                + Add <b>{query.trim()}</b> as attendee
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function AttendeeLinkAction({ attendee, onLink, onUnlink }: {
+  attendee: AttendeeDto
+  onLink: (c: ContactSearchResultDto) => void
+  onUnlink: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [q, setQ] = useState('')
+  const [hits, setHits] = useState<ContactSearchResultDto[]>([])
+  useEffect(() => {
+    if (!open || q.trim().length < 2) { setHits([]); return }
+    const h = setTimeout(async () => {
+      try { setHits(await api.searchContacts(q.trim())) } catch { setHits([]) }
+    }, 200)
+    return () => clearTimeout(h)
+  }, [q, open])
+
+  if (attendee.contactId) {
+    // Linked: click the CONTACT badge to unlink
+    return (
+      <span title="Linked to CRM Contact — click to unlink"
+        onClick={(e) => { e.stopPropagation(); onUnlink() }}
+        style={{ background: '#1F5AC2', color: '#fff', borderRadius: 4, fontSize: 8.5, fontWeight: 800, padding: '1px 4px', letterSpacing: 0.3, cursor: 'pointer' }}>
+        CONTACT ×
+      </span>
+    )
+  }
+  // Unlinked: show + Link chip that opens a popover
+  return (
+    <span style={{ position: 'relative' }}>
+      <button type="button" onClick={() => setOpen((v) => !v)} title="Link this attendee to a CRM Contact"
+        style={{ background: '#EEE7FF', color: '#6C55E0', border: '1px dashed #C9B8FA', borderRadius: 4, fontSize: 8.5, fontWeight: 800, padding: '1px 4px', letterSpacing: 0.3, cursor: 'pointer' }}>
+        + LINK
+      </button>
+      {open && (
+        <>
+          <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 210 }} />
+          <div style={{ position: 'absolute', top: '110%', left: 0, zIndex: 211, background: '#fff', border: '1px solid #E5E7F0', borderRadius: 10, boxShadow: '0 12px 32px rgba(14,31,25,.14)', width: 280, padding: 6 }}>
+            <input autoFocus value={q} onChange={(e) => setQ(e.target.value)}
+              placeholder="Search contacts…"
+              style={{ ...inp, fontSize: 12, padding: '6px 10px' }} />
+            {q.trim().length >= 2 && hits.length === 0 && (
+              <div style={{ padding: '8px 10px', fontSize: 11, color: '#8082A5' }}>No matches.</div>
+            )}
+            {hits.map((h) => (
+              <div key={h.id}
+                onMouseDown={(e) => { e.preventDefault(); onLink(h); setOpen(false); setQ('') }}
+                style={{ padding: '7px 10px', fontSize: 12, cursor: 'pointer', borderRadius: 6 }}>
+                <div style={{ fontWeight: 600 }}>{h.name}</div>
+                <div style={{ fontSize: 10.5, color: '#8082A5' }}>{h.customerName}</div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </span>
+  )
+}
+
+function RsvpBadge({ response }: { response: AttendeeResponse }) {
+  const map: Record<AttendeeResponse, { label: string; bg: string; fg: string; border: string }> = {
+    accepted:            { label: 'Accepted',     bg: '#D6F5E3', fg: '#0E6E4E', border: '#8AD9AC' },
+    declined:            { label: 'Declined',     bg: '#FDECEA', fg: '#C0392B', border: '#F5B7B1' },
+    tentativelyAccepted: { label: 'Tentative',    bg: '#FEF3E2', fg: '#B4650A', border: '#F0BA95' },
+    notResponded:        { label: 'No response',  bg: '#F2F3F9', fg: '#5C5C74', border: '#DFE1EE' },
+    organizer:           { label: 'Organiser',    bg: '#EEE7FF', fg: '#6C55E0', border: '#C9B8FA' },
+    none:                { label: '—',            bg: '#F2F3F9', fg: '#5C5C74', border: '#DFE1EE' },
+  }
+  const s = map[response] ?? map.none
+  return (
+    <span style={{ background: s.bg, color: s.fg, border: `1px solid ${s.border}`, borderRadius: 5, fontSize: 9.5, fontWeight: 800, padding: '1px 5px', letterSpacing: 0.3 }}>
+      {s.label}
+    </span>
+  )
+}
+
 function EventCard({ e, selected, onClick, onDoubleClick }: { e: ActivityDto; selected: boolean; onClick: () => void; onDoubleClick: () => void }) {
   const done = e.status === 'completed'
   const cancelled = e.status === 'cancelled'
@@ -374,6 +725,10 @@ function EventCard({ e, selected, onClick, onDoubleClick }: { e: ActivityDto; se
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
         <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, opacity: 0.75 }}>{new Date(e.scheduledAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</div>
         {done && <span style={{ fontSize: 9.5, fontWeight: 800, color: '#0E6E4E' }}>✓ DONE</span>}
+        <div style={{ flex: 1 }} />
+        {e.linkedToCalendar && (
+          <span title="Synced with Outlook" style={{ fontSize: 8, fontWeight: 800, background: selected ? 'rgba(255,255,255,0.22)' : '#EEE7FF', color: selected ? '#fff' : '#6C55E0', borderRadius: 3, padding: '1px 4px', letterSpacing: 0.3 }}>M365</span>
+        )}
       </div>
       <div style={{ fontSize: 11.5, fontWeight: 700, lineHeight: 1.35, marginTop: 2 }}>{e.title}</div>
       <div style={{ fontSize: 10.5, opacity: 0.8, marginTop: 1 }}>{e.ownerName}</div>
@@ -432,6 +787,8 @@ function ActivityModal({ initial, onClose, onSaved, onDeleted }: { initial: Acti
   const [location, setLocation] = useState(initial?.location ?? '')
   const [meetingLink, setMeetingLink] = useState(initial?.meetingLink ?? '')
   const [notes, setNotes] = useState(initial?.notes ?? '')
+  const [attendees, setAttendees] = useState<AttendeeDto[]>(initial?.attendees ?? [])
+  const [recurrence, setRecurrence] = useState<RecurrencePatternDto | null>(initial?.recurrence ?? null)
   const [status, setLocalStatus] = useState<ActivityStatus>(initial?.status ?? 'scheduled')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -458,6 +815,10 @@ function ActivityModal({ initial, onClose, onSaved, onDeleted }: { initial: Acti
         meetingLink: meetingLink || undefined,
         notes: notes || undefined,
         status: extra?.status ?? status,
+        // Send back the enriched objects. The API's parseAttendees drops contactId/contactName
+        // and stores only {email, name, response} — that's fine, they get re-derived on read.
+        attendees: attendees.map((a) => ({ email: a.email, name: a.name ?? undefined, response: a.response ?? undefined, contactId: a.contactId ?? undefined })),
+        recurrence,
       }
       if (initial) await api.updateActivity(initial.id, payload)
       else await api.createActivity(payload)
@@ -556,6 +917,14 @@ function ActivityModal({ initial, onClose, onSaved, onDeleted }: { initial: Acti
               <FieldLabel>Notes</FieldLabel>
               <textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} style={{ ...inp, resize: 'vertical' }} />
             </label>
+            <div style={{ gridColumn: 'span 2' }}>
+              <FieldLabel>Attendees</FieldLabel>
+              <AttendeesEditor attendees={attendees} onChange={setAttendees} />
+            </div>
+            <div style={{ gridColumn: 'span 2' }}>
+              <FieldLabel>Repeats</FieldLabel>
+              <RecurrenceEditor value={recurrence} onChange={setRecurrence} scheduledAt={scheduledAt} />
+            </div>
           </div>
           {error && <div style={{ margin: '0 22px 12px', background: '#FDECEA', color: '#C0392B', border: '1px solid #F5B7B1', borderRadius: 10, padding: '10px 14px', fontSize: 13 }}>{error}</div>}
           <div style={{ padding: '14px 22px', borderTop: '1px solid #E5E7F0', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>

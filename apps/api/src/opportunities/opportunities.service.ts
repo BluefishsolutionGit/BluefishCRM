@@ -11,8 +11,6 @@ import type {
 } from '@bluefish/shared'
 import type { AuditRequestContext } from '../common/request-context'
 
-const STAGES: OpportunityStage[] = ['Qualification', 'Proposal', 'Negotiation', 'Won', 'Lost']
-
 @Injectable()
 export class OpportunitiesService {
   constructor(private prisma: PrismaService, private audit: AuditService) {}
@@ -44,15 +42,17 @@ export class OpportunitiesService {
   }
 
   async create(input: CreateOpportunityDto, ctx: AuditRequestContext): Promise<OpportunityDto> {
-    if (input.stage && !STAGES.includes(input.stage)) throw new BadRequestException(`Invalid stage ${input.stage}`)
+    if (input.stage !== undefined && input.stage.trim().length === 0) throw new BadRequestException('Stage cannot be empty')
     const row = await this.prisma.opportunity.create({
       data: {
         title: input.title, customerId: input.customerId, ownerId: input.ownerId,
         stage: input.stage ?? 'Qualification', value: input.value ?? 0,
         probability: input.probability ?? 20,
         closeDate: input.closeDate ? new Date(input.closeDate) : null,
+        bidDeadline: input.bidDeadline ? new Date(input.bidDeadline) : null,
+        decisionDate: input.decisionDate ? new Date(input.decisionDate) : null,
         serviceOrProduct: input.serviceOrProduct ?? null,
-        competitor: input.competitor ?? null, aiHint: input.aiHint ?? null,
+        competitor: input.competitor ?? null, managerHint: input.managerHint ?? null,
         notes: input.notes ?? null,
       },
       include: { customer: true, owner: true, lines: { include: { product: true } } },
@@ -64,10 +64,12 @@ export class OpportunitiesService {
   async update(id: string, input: UpdateOpportunityDto, ctx: AuditRequestContext): Promise<OpportunityDto> {
     const before = await this.prisma.opportunity.findUnique({ where: { id } })
     if (!before) throw new NotFoundException(`Opportunity ${id} not found`)
-    if (input.stage && !STAGES.includes(input.stage)) throw new BadRequestException(`Invalid stage ${input.stage}`)
+    if (input.stage !== undefined && input.stage.trim().length === 0) throw new BadRequestException('Stage cannot be empty')
 
     const data: Record<string, unknown> = { ...input }
     if (input.closeDate !== undefined) data.closeDate = input.closeDate ? new Date(input.closeDate) : null
+    if (input.bidDeadline !== undefined) data.bidDeadline = input.bidDeadline ? new Date(input.bidDeadline) : null
+    if (input.decisionDate !== undefined) data.decisionDate = input.decisionDate ? new Date(input.decisionDate) : null
 
     const row = await this.prisma.opportunity.update({
       where: { id }, data,
@@ -136,9 +138,10 @@ export class OpportunitiesService {
 
   private toDto = (row: {
     id: string; title: string; customerId: string; ownerId: string; stage: string
-    value: number; probability: number; closeDate: Date | null
+    value: number; probability: number
+    closeDate: Date | null; bidDeadline: Date | null; decisionDate: Date | null
     serviceOrProduct: string | null; competitor: string | null
-    lostReason: string | null; wonReason: string | null; aiHint: string | null
+    lostReason: string | null; wonReason: string | null; managerHint: string | null
     notes: string | null
     createdAt: Date; updatedAt: Date
     customer: { name: string }; owner: { name: string }
@@ -151,9 +154,11 @@ export class OpportunitiesService {
       stage: row.stage as OpportunityStage,
       value: row.value, probability: row.probability,
       closeDate: row.closeDate?.toISOString() ?? null,
+      bidDeadline: row.bidDeadline?.toISOString() ?? null,
+      decisionDate: row.decisionDate?.toISOString() ?? null,
       serviceOrProduct: row.serviceOrProduct,
       competitor: row.competitor, lostReason: row.lostReason, wonReason: row.wonReason,
-      aiHint: row.aiHint, notes: row.notes,
+      managerHint: row.managerHint, notes: row.notes,
       lines: row.lines.map((l): OpportunityLineDto => ({
         id: l.id, productId: l.productId,
         productCode: l.product.code, productName: l.product.name,

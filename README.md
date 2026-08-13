@@ -66,10 +66,33 @@ npm run db:down
 - `apps/api/.env` — DATABASE_URL, JWT_SECRET, PORT (default 4000)
 - Frontend uses `VITE_API_BASE` (defaults to http://localhost:4000/api)
 
-## Phase status
+**Optional (Microsoft 365 calendar sync):**
+
+```
+MICROSOFT_CLIENT_ID=<Entra app registration client id>
+MICROSOFT_CLIENT_SECRET=<...>
+MICROSOFT_TENANT_ID=<...>
+MICROSOFT_CALENDAR_REDIRECT_URI=http://localhost:4000/api/integrations/calendar/microsoft/callback
+MICROSOFT_WEBHOOK_URL=https://<public tunnel or host>/api/integrations/calendar/microsoft/notifications  # optional
+```
+
+Without these, the "Connect (dev stub)" button in **Settings → Integrations** still exercises
+the full sync flow end-to-end (simulated events + attendees + RSVP + recurrence).
+
+## Feature status
 
 See `plan.md` for the full 28-sprint plan.
 
 - ✅ Phase 0 — Monorepo scaffold, PostgreSQL, NestJS + Prisma, docker-compose
-- 🟡 Phase 1 — Auth + Core Data Model (in progress: login + customer list wired end-to-end; MFA/SSO/full CRUD next)
-- ⏳ Phase 2-8 — see plan.md
+- ✅ Phases 1–8 — Auth/SSO, Sales core, Quotations, Contracts, AI suite, Reports, Mobile, CI/CD
+- ✅ Microsoft 365 calendar integration — two-way sync, delta queries, webhooks, recurrence, attendees + RSVP tracking, notifications
+- See `docs/USER-GUIDE.md` and `docs/ADMIN-GUIDE.md` for feature-by-feature docs
+
+## Microsoft 365 sync — feature summary
+
+- **Inbound** — Graph delta on `/me/calendarView` runs every 5 minutes (cron) or via webhook when configured
+- **Outbound** — activity create / update / delete pushes to the linked Outlook calendar in the owner's timezone
+- **Recurrence** — daily / weekly / monthly patterns with end date, weekday picker for weekly; occurrences of your own master are skipped inbound to prevent double-booking
+- **Attendees** — captured with name + RSVP response; auto-linked to CRM Contacts by email, or manually linked via the `+ LINK` chip in the activity modal
+- **Notifications** — attendee declines (bad tone) and tentative downgrades (warn tone) surface in the bell panel; per-row dismiss + "Mark all read"; read state persists across sessions
+- **Force resync** — one-click Resync button per activity if Outlook state drifts

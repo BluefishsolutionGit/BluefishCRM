@@ -21,6 +21,7 @@ Purpose: give on-call engineers the fastest possible path from "something's wron
 | e-Sign envelope stuck              | `EsignEnvelope` status, callback logs |
 | Push notifications not delivering  | `PushSubscription` cleanup, VAPID keys |
 | Scheduled report not emailed       | `ReportSchedule.lastRunAt`, mailer logs |
+| M365 calendar sync stale / failing | `CalendarSyncAccount.lastSyncedAt`, cron log |
 
 ## Endpoints for ops
 
@@ -89,6 +90,29 @@ Purpose: give on-call engineers the fastest possible path from "something's wron
 6. Docs referenced when writing this integration:
    - OpenAPI spec: https://raw.githubusercontent.com/flowaccount/open-api/main/libs/api-spec/src/api-spec.openapi.json
    - Portal: https://developers.flowaccount.com/
+
+### Microsoft 365 calendar sync stale or failing
+
+1. `GET /api/integrations/calendar/microsoft/status` — is `configured: true`? If false, the
+   OAuth env vars aren't set — see ADMIN-GUIDE §Microsoft 365 calendar.
+2. Query `CalendarSyncAccount` — check `lastSyncedAt` per row. If null or > 15 min old, the
+   5-min polling cron isn't reaching it.
+3. Tail the API log for `CalendarSyncCron.pollAll` and `CalendarSyncService`:
+   - `Graph 401` → token expired. Refresh flow should auto-retry; if it doesn't, the refresh
+     token was revoked (user reconsented or admin removed the grant). User must reconnect.
+   - `Graph 410` on delta → deltaLink expired; service clears it and starts fresh (self-heals).
+   - `Refresh token rejected` warn — user was signed out server-side; UI will show "Not synced"
+     until they reconnect.
+4. Force a manual sync: `POST /api/integrations/calendar/accounts/:id/sync` (as the user, or
+   as admin impersonating).
+5. Webhook receiver: if `MICROSOFT_WEBHOOK_URL` is set, the endpoint must be publicly reachable
+   over HTTPS. Test the validation echo: `curl -X POST '<publicUrl>?validationToken=hello'`
+   should return `hello` as `text/plain`.
+6. Renewal cron fires hourly (`CalendarSyncCron.renewSubscriptions`). Subscriptions expire at
+   `webhookExpiresAt`; anything within 12h is refreshed. Watch for `subscription PATCH failed`
+   warnings.
+7. Manual disconnect: `DELETE /api/integrations/calendar/accounts/:id` — removes the Graph
+   subscription then the DB row. Activities already imported remain.
 
 ### AI generation is failing
 

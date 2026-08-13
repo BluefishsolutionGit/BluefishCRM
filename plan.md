@@ -85,7 +85,7 @@ Frontend prototype ครอบคลุมทั้ง 12 UI screens ตาม 
 | 11 | AI Forecast | ❌ | ML pipeline for win-rate, revenue prediction | P2 |
 | 12 | Mobile Native | ❌ Preview only | iOS/Android app หรือ PWA | P1 |
 | 13 | Import/Export | ❌ | Excel/CSV/PDF/Word template + validation | P0 |
-| 14 | Integration (M365, Google, LINE) | ❌ | OAuth, calendar sync, LINE OA webhook | P1 |
+| 14 | Integration (M365, Google, LINE) | 🟢 M365 ✅ / Google/LINE ❌ | OAuth, calendar sync, LINE OA webhook — **M365 delivered** (see §5.7) | P1 |
 | 15 | Security (RBAC, MFA, Audit) | ❌ | Full auth stack, encryption, audit log | P0 |
 | 16 | Contract Repository | ✅ UI | File storage, full-text search | P0 |
 | 17 | Contract Template + Creation | ❌ | Template engine, auto-fill | P1 |
@@ -297,7 +297,7 @@ S1         S2-4       S5-8       S9-11      S12-15     S16-19     S20-22     S23
 - [x] GPS check-in (Geolocation → activity of type `visit`)
 - [x] Offline drafts (localStorage queue + auto-sync on `online` event)
 - [x] Push notifications (Web Push VAPID; FCM/APNS deferred to native shell)
-- [x] **Microsoft 365:** calendar pull via Graph API with dev-stub events
+- [x] **Microsoft 365:** full two-way calendar sync — see §5.7 below
 - [x] **Google Workspace:** intentionally deferred — users are M365-only
 - [x] **LINE OA:** webhook → Inbox (HMAC signature verify)
 - [x] **Facebook Messenger + Instagram DM:** webhooks → Inbox
@@ -308,7 +308,56 @@ S1         S2-4       S5-8       S9-11      S12-15     S16-19     S20-22     S23
 **Exit Criteria (M7):** ✅ MET
 - Sales rep บน iPhone check-in ที่ลูกค้า + voice note + auto-log ลง CRM
 - LINE message จากลูกค้าเข้า Inbox ภายใน 30 วินาที (verified in smoke test)
-- M365 calendar pull ทำงานได้บน dev stub (production wiring pending OAuth flow)
+- M365 two-way sync + delta + webhook flow ทำงานครบ (see §5.7 for details)
+
+### 5.7 Microsoft 365 Calendar Sync — Deep Dive
+
+**Delivered across 12 iterations after Phase 7 baseline.** Every layer is exercised end-to-end via a
+dev-stub account so the sync path is testable without real Entra credentials.
+
+- [x] **OAuth (Item 1):** `POST /integrations/calendar/microsoft/authorize-url` → Microsoft consent →
+      `GET /callback` verifies state via in-memory 10-min TTL map, stores access + refresh tokens.
+      Scopes: `openid offline_access User.Read Calendars.ReadWrite`.
+- [x] **Outbound push (Item 2):** activity create/update/delete pushes to Graph `/me/events`;
+      Activity carries `externalCalendarId + externalCalendarAccountId` for idempotency. `safePush`
+      wrapper swallows Graph errors so CRM writes never fail on push errors.
+- [x] **Delta + webhook (Item 3):** `/me/calendarView/delta` with pagination + persisted deltaLink;
+      `@Cron(EVERY_5_MINUTES)` polling; `POST /notifications` receiver with validationToken echo +
+      clientState check; hourly subscription renewal cron.
+- [x] **Recurrence expand / cancellation / all-day / timezone (Item 4):** `seriesMaster` and
+      `isAllDay` skipped inbound; `isCancelled=true` → `status='cancelled'` (not deleted); `User.timezone`
+      (default `Asia/Bangkok`) drives outbound wall-clock formatting via `Intl.DateTimeFormat`.
+- [x] **Visibility (Item 5):** `linkedToCalendar` and M365 chip on activities; timezone picker in
+      Settings > Profile.
+- [x] **Rich attendees + Contact linking (Item 6):** `Activity.attendees` is JSONB storing
+      `[{email, name, response, contactId?}]`; email-based Contact auto-match batched in one query.
+- [x] **Attendees editor + search (Item 7):** `GET /contacts/search?q=<query>` returns top 20;
+      `AttendeesEditor` component with debounced autocomplete + freeform email entry.
+- [x] **Decline notifications (Item 8):** `emitRsvpChangeAudits` fires audit `activity.attendee.declined`;
+      `NotificationsController.list()` surfaces last 48h + floats to top of feed.
+- [x] **Sync timestamp + Force resync (Item 9):** `Activity.calendarSyncedAt` stamped on any Graph
+      write; `POST /activities/:id/resync` for manual override.
+- [x] **Outbound recurrence (Item 10):** `Activity.recurrence` JSONB, `RecurrencePatternDto`,
+      `buildGraphRecurrence` maps to Graph pattern/range; inbound loop prevention via `seriesMasterId`
+      matching one of our activities' `externalCalendarId`.
+- [x] **Notification mark-as-read (Item 11):** `NotificationRead` table with composite `(userId, key)`
+      primary key; `list()` overlays read state; UI has optimistic mark + "Mark all read".
+- [x] **Wrap-up (Item 12):** manual Contact link/unlink chip on attendees (contactId override beats
+      email match); broader RSVP alerts (`activity.attendee.tentative` with warn tone); weekly cron
+      prunes NotificationRead rows older than 60 days; per-row × dismiss in notification panel.
+
+**Environment (to enable real M365):**
+```
+MICROSOFT_CLIENT_ID / MICROSOFT_CLIENT_SECRET / MICROSOFT_TENANT_ID (required)
+MICROSOFT_CALENDAR_REDIRECT_URI (default: http://localhost:4000/api/integrations/calendar/microsoft/callback)
+MICROSOFT_WEBHOOK_URL (optional — if unset, near-realtime falls back to 5-min polling cron)
+```
+
+**Not delivered (backlog):**
+- Recurrence UI expansion — CRM shows 1 master row per recurring series; individual occurrences
+  are only visible in Outlook until we implement virtual-expand in the list endpoint
+- Google Calendar / Google Workspace integration
+- Attendee response tracking beyond declined / tentative (accepted/notResponded are silent)
 
 ---
 

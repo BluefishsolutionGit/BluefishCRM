@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common'
-import { IsIn, IsInt, IsISO8601, IsOptional, IsString, MinLength } from 'class-validator'
+import { IsArray, IsIn, IsInt, IsISO8601, IsObject, IsOptional, IsString, MinLength, ValidateIf } from 'class-validator'
 import { JwtAuthGuard } from '../auth/jwt.guard'
 import { PermissionsGuard } from '../auth/permissions.guard'
 import { RequirePermissions } from '../auth/permissions.decorator'
@@ -7,7 +7,7 @@ import { PERMISSIONS } from '../auth/permissions'
 import { ActivitiesService } from './activities.service'
 import { auditContext } from '../common/request-context'
 import type { Request } from 'express'
-import type { ActivityDto, ActivityStatus, ActivityType } from '@bluefish/shared'
+import type { ActivityDto, ActivityStatus, ActivityType, AttendeeInput, RecurrencePatternDto } from '@bluefish/shared'
 
 const TYPES: ActivityType[] = ['meeting', 'call', 'visit', 'demo', 'task', 'follow_up', 'email']
 const STATUSES: ActivityStatus[] = ['scheduled', 'completed', 'cancelled']
@@ -25,6 +25,9 @@ class CreateBody {
   @IsOptional() @IsString() location?: string
   @IsOptional() @IsString() meetingLink?: string
   @IsOptional() @IsString() notes?: string
+  @IsOptional() @IsArray() attendees?: AttendeeInput[]
+  // Passed through to the service which validates + normalises the shape. null clears.
+  @IsOptional() @ValidateIf((_, v) => v !== null) @IsObject() recurrence?: RecurrencePatternDto | null
 }
 class UpdateBody {
   @IsOptional() @IsIn(TYPES) type?: ActivityType
@@ -39,6 +42,9 @@ class UpdateBody {
   @IsOptional() @IsString() location?: string
   @IsOptional() @IsString() meetingLink?: string
   @IsOptional() @IsString() notes?: string
+  @IsOptional() @IsArray() attendees?: AttendeeInput[]
+  // Passed through to the service which validates + normalises the shape. null clears.
+  @IsOptional() @ValidateIf((_, v) => v !== null) @IsObject() recurrence?: RecurrencePatternDto | null
 }
 
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -85,5 +91,11 @@ export class ActivitiesController {
   @RequirePermissions(PERMISSIONS.OPPORTUNITY_WRITE)
   async delete(@Param('id') id: string, @Req() req: Request): Promise<void> {
     await this.activities.delete(id, auditContext(req))
+  }
+
+  @Post(':id/resync')
+  @RequirePermissions(PERMISSIONS.OPPORTUNITY_WRITE)
+  resync(@Param('id') id: string, @Req() req: Request): Promise<ActivityDto> {
+    return this.activities.forceResync(id, auditContext(req))
   }
 }

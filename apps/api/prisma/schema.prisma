@@ -22,8 +22,12 @@ model User {
   passwordHash   String
   name           String
   roleId         String
+  department     String?
+  services       String[]   @default([])
+  isActive       Boolean    @default(true)
   mfaSecret      String?
   mfaEnabled     Boolean    @default(false)
+  timezone       String     @default("Asia/Bangkok")
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
 
@@ -176,11 +180,13 @@ model Opportunity {
   value        Int       @default(0)
   probability  Int       @default(20)
   closeDate    DateTime?
+  bidDeadline  DateTime?
+  decisionDate DateTime?
   serviceOrProduct String?
   competitor   String?
   lostReason   String?
   wonReason    String?
-  aiHint       String?
+  managerHint  String?
   notes        String?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
@@ -227,7 +233,12 @@ model Activity {
   location      String?
   meetingLink   String?
   notes         String?
+  attendees     Json      @default("[]")
   reminderSentAt DateTime?
+  externalCalendarId        String?
+  externalCalendarAccountId String?
+  calendarSyncedAt          DateTime?
+  recurrence                Json?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -238,6 +249,7 @@ model Activity {
   @@index([ownerId])
   @@index([customerId])
   @@index([opportunityId])
+  @@index([externalCalendarId])
   @@index([scheduledAt])
   @@index([status])
 }
@@ -710,6 +722,10 @@ model CalendarSyncAccount {
   refreshToken String?
   expiresAt    DateTime?
   lastSyncedAt DateTime?
+  deltaLink              String?
+  webhookSubscriptionId  String?
+  webhookClientState     String?
+  webhookExpiresAt       DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
@@ -717,6 +733,7 @@ model CalendarSyncAccount {
 
   @@unique([provider, externalId])
   @@index([userId])
+  @@index([webhookClientState])
 }
 
 model ReportSchedule {
@@ -735,6 +752,19 @@ model ReportSchedule {
 
   @@index([reportKey])
   @@index([isActive])
+}
+
+/// Read-receipt for the derived notification feed. The feed itself is computed on
+/// the fly from audit log + activities + approvals, so notifications don't live in
+/// their own table — but "have I seen this?" needs to persist. `key` matches the id
+/// we generate in NotificationsController.list() (e.g. "decline-<auditId>").
+model NotificationRead {
+  userId String
+  key    String
+  readAt DateTime @default(now())
+
+  @@id([userId, key])
+  @@index([userId])
 }
 
 model AuditLog {

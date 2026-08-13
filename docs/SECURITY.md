@@ -22,8 +22,14 @@ Legend: ✅ mitigated · ⚠️ partial / known gap · ❌ not addressed
 - API keys stored as SHA256 hash with a display prefix (`bf_…`).
 - e-Sign callback tokens are 24-byte random and validated on callback.
 - MFA secrets stored per-user; TOTP verified against a 30-second window.
+- **Microsoft Graph OAuth tokens** — access + refresh tokens stored **plaintext** in `CalendarSyncAccount` for
+  now. Refresh tokens rotate on each refresh. Graph webhook `clientState` is a 24-byte random secret
+  compared on every notification (mismatched notifications are logged + dropped).
+- **OAuth state (CSRF):** the state param in the calendar consent flow is an in-memory random token
+  keyed to `userId` with a 10-minute TTL — not exposed in the URL beyond the initial redirect.
 
-**Gap:** at-rest encryption for the DB is the deployment layer's responsibility (LUKS on the VPS or managed disk encryption). Not enforced by application code.
+**Gap:** at-rest encryption for the DB is the deployment layer's responsibility (LUKS on the VPS or managed disk encryption). Not enforced by application code. Graph refresh tokens should ideally be
+encrypted at rest with a KMS-managed key before go-live.
 
 ## A03 Injection ✅
 
@@ -100,6 +106,8 @@ Legend: ✅ mitigated · ⚠️ partial / known gap · ❌ not addressed
 - [ ] JWT `AUTH_JWT_SECRET`, `AUTH_REFRESH_SECRET` rotated from dev defaults.
 - [ ] `LINE_CHANNEL_SECRET`, `META_APP_SECRET` set in channel webhook envs.
 - [ ] `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` generated for Web Push.
+- [ ] `MICROSOFT_CLIENT_SECRET` stored in a secrets manager (not the plain `.env`) and rotated on the Entra app's cadence. Consider wrapping `CalendarSyncAccount.accessToken`/`refreshToken` with a KMS key before go-live.
+- [ ] `MICROSOFT_WEBHOOK_URL` (if used) is HTTPS-only and terminates on the prod host, not a public tunnel.
 - [ ] MFA enrolment required for all admin + legal + finance roles.
 - [ ] DB backup drill green (`scripts/backup-restore-drill.sh`).
 - [ ] Load test green (`scripts/load-test.mjs`).

@@ -37,6 +37,10 @@ Optional 6th: auditor with read-only cross-cutting view.
 | 7 | GPS check-in at a customer location                                      | Activity of type `visit` appears  |
 | 8 | Record a voice note; verify it uploaded                                  | Document appears with audio       |
 | 9 | Go offline; create an activity; go online                                | Draft syncs automatically         |
+| 10 | Settings → Integrations → **Connect Microsoft 365**; consent to calendar | Account appears with "just synced" timestamp |
+| 11 | Create a meeting with a recurrence (weekly, Tue+Thu, 3 months) + 2 attendees | Meeting has M365 chip; Outlook shows series |
+| 12 | Decline the same meeting from Outlook web / mobile                       | Bell notification appears within 5 min: "<you> declined ..." with red dot |
+| 13 | Open the activity detail; click **Resync**                               | Timestamp advances; Outlook event still shows CRM state |
 
 ### Sales manager (target: 20 min)
 
@@ -78,6 +82,8 @@ Optional 6th: auditor with read-only cross-cutting view.
 | 3 | Create an API key with `customers:read` scope                            | Key returned once; can hit `/customers` |
 | 4 | Register an outbound webhook for `lead.created`                          | HTTP POST reaches the receiver with `x-bluefish-signature` |
 | 5 | Wire the LINE webhook URL in the LINE Console                            | Verify returns 200; a test message lands in Inbox |
+| 6 | Configure `MICROSOFT_CLIENT_ID/SECRET/TENANT_ID` in `.env`, restart      | `GET /api/integrations/calendar/microsoft/status` returns `{configured:true}` |
+| 7 | (Optional) Configure `MICROSOFT_WEBHOOK_URL` with a public HTTPS URL     | Subscription auto-created on user OAuth; Graph POSTs validation → 200 echo |
 
 ## Sign-off criteria
 

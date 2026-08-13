@@ -1,32 +1,714 @@
-import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties, type FormEvent } from 'react'
 import { useAuth } from '../lib/AuthContext'
 import { api, ApiError } from '../lib/api'
 import { useToast } from '../lib/ToastContext'
+import type { CalendarAccountDto, CreateUserDto, RoleDto, UpdateUserDto, UserDto } from '@bluefish/shared'
+
+const SERVICE_LINES = ['Box', '3S', '3D', 'AI&RPA'] as const
+
+type Tab = 'profile' | 'security' | 'integrations' | 'users' | 'matrix'
 
 export default function Settings() {
-  const { user } = useAuth()
+  const { user, hasPermission } = useAuth()
   const toast = useToast()
+  const canManageUsers = hasPermission('user:manage')
+  const [tab, setTab] = useState<Tab>('profile')
+
+  const tabs: { id: Tab; label: string; visible: boolean }[] = [
+    { id: 'profile',      label: 'Profile',         visible: true },
+    { id: 'security',     label: 'Security',        visible: true },
+    { id: 'integrations', label: 'Integrations',    visible: true },
+    { id: 'users',        label: 'User Management', visible: canManageUsers },
+    { id: 'matrix',       label: 'Role Matrix',     visible: true },
+  ]
+
+  useEffect(() => {
+    // Handle the redirect back from Microsoft OAuth (see calendar-sync.controller.ts).
+    const params = new URLSearchParams(window.location.search)
+    const calendar = params.get('calendar')
+    if (!calendar) return
+    if (calendar === 'connected') {
+      toast(`Microsoft calendar connected${params.get('email') ? ` (${params.get('email')})` : ''}`)
+    } else if (calendar === 'error') {
+      toast(`Calendar connect failed: ${params.get('reason') ?? 'unknown'}`)
+    }
+    setTab('integrations')
+    // Strip the query string so a refresh doesn't fire the toast again
+    window.history.replaceState({}, '', window.location.pathname)
+  }, [toast])
 
   return (
     <div style={{ height: '100%', overflow: 'auto', padding: '24px 28px' }}>
-      <div style={{ fontFamily: "'Space Grotesk'", fontSize: 22, fontWeight: 600, marginBottom: 20 }}>Settings</div>
+      <div style={{ fontFamily: "'Space Grotesk'", fontSize: 22, fontWeight: 600, marginBottom: 4 }}>Settings</div>
+      <div style={{ color: '#8082A5', fontSize: 13, marginBottom: 18 }}>
+        Manage your profile, credentials, workspace users, and role permissions.
+      </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16, alignItems: 'start' }}>
-        <div style={card}>
-          <div style={cardTitle}>Profile</div>
-          <div style={{ padding: '10px 20px 18px', color: '#5C5C74', fontSize: 13 }}>
-            <div style={{ marginBottom: 6 }}><b style={{ color: '#3B3B52' }}>Name:</b> {user?.name}</div>
-            <div style={{ marginBottom: 6 }}><b style={{ color: '#3B3B52' }}>Email:</b> {user?.email}</div>
-            <div><b style={{ color: '#3B3B52' }}>Role:</b> {user?.role}</div>
+      <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid #E5E7F0', marginBottom: 22 }}>
+        {tabs.filter((t) => t.visible).map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              padding: '10px 16px',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+              color: tab === t.id ? '#2A6FDB' : '#5C5C74',
+              borderBottom: tab === t.id ? '2px solid #2A6FDB' : '2px solid transparent',
+              marginBottom: -1,
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'profile' && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16, alignItems: 'start' }}>
+          <div style={card}>
+            <div style={cardTitle}>Profile</div>
+            <div style={{ padding: '10px 20px 18px', color: '#5C5C74', fontSize: 13 }}>
+              <div style={{ marginBottom: 6 }}><b style={{ color: '#3B3B52' }}>Name:</b> {user?.name}</div>
+              <div style={{ marginBottom: 6 }}><b style={{ color: '#3B3B52' }}>Email:</b> {user?.email}</div>
+              <div style={{ marginBottom: 6 }}><b style={{ color: '#3B3B52' }}>Role:</b> {user?.role}</div>
+              {user?.department && <div style={{ marginBottom: 6 }}><b style={{ color: '#3B3B52' }}>Department:</b> {user.department}</div>}
+              {user?.services && user.services.length > 0 && (
+                <div style={{ marginBottom: 6 }}><b style={{ color: '#3B3B52' }}>Services:</b> {user.services.join(', ')}</div>
+              )}
+              <TimezoneField />
+            </div>
           </div>
         </div>
+      )}
 
-        <ChangePasswordCard onDone={() => toast('Password updated')} />
-        <MfaCard onToast={toast} />
+      {tab === 'security' && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16, alignItems: 'start' }}>
+          <ChangePasswordCard onDone={() => toast('Password updated')} />
+          <MfaCard onToast={toast} />
+        </div>
+      )}
+
+      {tab === 'integrations' && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 16, alignItems: 'start' }}>
+          <CalendarSyncCard onToast={toast} />
+        </div>
+      )}
+
+      {tab === 'users' && canManageUsers && (
+        <UserManagementSection onToast={toast} />
+      )}
+
+      {tab === 'matrix' && <RoleMatrixSection />}
+    </div>
+  )
+}
+
+/* ═══════════════════════ Timezone field ═══════════════════════ */
+
+const TIMEZONE_OPTIONS = [
+  'Asia/Bangkok', 'Asia/Singapore', 'Asia/Kuala_Lumpur', 'Asia/Ho_Chi_Minh',
+  'Asia/Jakarta', 'Asia/Manila', 'Asia/Hong_Kong', 'Asia/Tokyo', 'Asia/Shanghai',
+  'Asia/Kolkata', 'Asia/Dubai', 'Europe/London', 'Europe/Paris', 'Europe/Berlin',
+  'America/New_York', 'America/Chicago', 'America/Los_Angeles', 'UTC',
+]
+
+function TimezoneField() {
+  const { user, refreshUser } = useAuth()
+  const toast = useToast()
+  const [saving, setSaving] = useState(false)
+  const current = user?.timezone ?? 'Asia/Bangkok'
+
+  const save = async (tz: string) => {
+    if (tz === current) return
+    setSaving(true)
+    try {
+      await api.updateSelf({ timezone: tz })
+      await refreshUser()
+      toast(`Timezone set to ${tz}`)
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : 'Failed to update timezone')
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+      <b style={{ color: '#3B3B52' }}>Timezone:</b>
+      <select
+        value={current}
+        disabled={saving}
+        onChange={(e) => save(e.target.value)}
+        style={{ ...inputStyle, padding: '5px 10px', fontSize: 12.5 }}
+        title="Applied when pushing your activities to Outlook"
+      >
+        {TIMEZONE_OPTIONS.includes(current) ? null : <option value={current}>{current}</option>}
+        {TIMEZONE_OPTIONS.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
+      </select>
+      {saving && <span style={{ fontSize: 11, color: '#8082A5' }}>Saving…</span>}
+    </div>
+  )
+}
+
+/* ═══════════════════════ Calendar Sync (M365) ═══════════════════════ */
+
+function CalendarSyncCard({ onToast }: { onToast: (msg: string) => void }) {
+  const [accounts, setAccounts] = useState<CalendarAccountDto[] | null>(null)
+  const [configured, setConfigured] = useState<boolean | null>(null)
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [connecting, setConnecting] = useState(false)
+
+  const reload = async () => {
+    try {
+      const [list, status] = await Promise.all([api.calendarAccounts(), api.calendarMicrosoftStatus()])
+      setAccounts(list); setConfigured(status.configured)
+    } catch (e) {
+      onToast(e instanceof ApiError ? e.message : 'Failed to load calendar accounts')
+    }
+  }
+  useEffect(() => { reload() }, [])
+
+  const connect = async () => {
+    setConnecting(true)
+    try {
+      const { url } = await api.calendarMicrosoftAuthorizeUrl()
+      window.location.href = url
+    } catch (e) {
+      onToast(e instanceof ApiError ? e.message : 'Cannot start Microsoft consent flow')
+      setConnecting(false)
+    }
+  }
+
+  const connectStub = async () => {
+    setConnecting(true)
+    try {
+      // Dev stub — bypasses OAuth so users can preview the sync UX end-to-end without
+      // real Microsoft credentials. Backend rejects any non-"dev_stub" access token here.
+      const stubId = `dev-stub-${Date.now()}`
+      await api.linkCalendar({ provider: 'microsoft', externalId: stubId, email: 'demo@bluefishsolution.com', accessToken: 'dev_stub_token' })
+      onToast('Dev stub account connected — click Sync now to import sample events')
+      await reload()
+    } catch (e) {
+      onToast(e instanceof ApiError ? e.message : 'Stub connect failed')
+    } finally { setConnecting(false) }
+  }
+
+  const syncNow = async (id: string) => {
+    setBusyId(id)
+    try {
+      const res = await api.syncCalendar(id)
+      onToast(`Imported ${res.imported} · skipped ${res.skipped}${res.errors.length ? ` · ${res.errors.length} error(s)` : ''}`)
+      await reload()
+    } catch (e) {
+      onToast(e instanceof ApiError ? e.message : 'Sync failed')
+    } finally { setBusyId(null) }
+  }
+
+  const disconnect = async (id: string, email: string) => {
+    if (!window.confirm(`Disconnect ${email}? Activities already imported will remain.`)) return
+    setBusyId(id)
+    try {
+      await api.disconnectCalendar(id)
+      onToast('Calendar disconnected')
+      await reload()
+    } catch (e) {
+      onToast(e instanceof ApiError ? e.message : 'Disconnect failed')
+    } finally { setBusyId(null) }
+  }
+
+  return (
+    <div style={card}>
+      <div style={cardTitle}>Calendar sync — Microsoft 365</div>
+      <div style={{ padding: '14px 20px 18px', fontSize: 13, color: '#3B3B52' }}>
+        <div style={{ color: '#5C5C74', marginBottom: 12, lineHeight: 1.55 }}>
+          Connect your Outlook calendar so meetings appear as Activities in the CRM. Runs pull the next 60 days.
+          Two-way sync (CRM → Outlook) is not enabled in this build.
+        </div>
+
+        {configured === false && (
+          <div style={{ background: '#FEF3E2', border: '1px solid #F0BA95', color: '#B4650A', borderRadius: 8, padding: '10px 12px', fontSize: 12.5, marginBottom: 12 }}>
+            Microsoft OAuth isn't configured on this server. Set <code>MICROSOFT_CLIENT_ID</code>, <code>SECRET</code>, and <code>TENANT_ID</code> in <code>apps/api/.env</code> to enable real connect. For preview, use the dev stub below.
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            onClick={connect}
+            disabled={!configured || connecting}
+            style={{ ...primaryBtn, opacity: !configured || connecting ? 0.5 : 1, cursor: !configured || connecting ? 'not-allowed' : 'pointer' }}
+            title={!configured ? 'Microsoft OAuth not configured' : 'Redirects to Microsoft consent screen'}
+          >
+            {connecting ? 'Redirecting…' : '+ Connect Microsoft 365'}
+          </button>
+          {configured === false && (
+            <button
+              type="button"
+              onClick={connectStub}
+              disabled={connecting}
+              style={{ ...ghostBtn, opacity: connecting ? 0.5 : 1 }}
+              title="Insert a stub account so the sync flow can be exercised without real credentials"
+            >
+              Connect (dev stub)
+            </button>
+          )}
+        </div>
+
+        {accounts === null && <div style={{ color: '#8082A5', fontSize: 12 }}>Loading…</div>}
+        {accounts && accounts.length === 0 && (
+          <div style={{ fontSize: 12.5, color: '#8082A5' }}>No connected accounts yet.</div>
+        )}
+        {accounts && accounts.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {accounts.map((a) => (
+              <div key={a.id} style={{ border: '1px solid #E5E7F0', borderRadius: 10, padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <span style={{ background: '#DDEAFB', color: '#1F5AC2', borderRadius: 6, fontSize: 10.5, fontWeight: 700, padding: '2px 7px', textTransform: 'uppercase', letterSpacing: 0.3 }}>{a.provider}</span>
+                <span style={{ fontSize: 13, fontWeight: 600, flex: 1, minWidth: 180 }}>{a.email}</span>
+                <span style={{ fontSize: 11, color: '#8082A5' }}>
+                  {a.lastSyncedAt ? `synced ${new Date(a.lastSyncedAt).toLocaleString()}` : 'never synced'}
+                </span>
+                <button
+                  type="button" onClick={() => syncNow(a.id)} disabled={busyId === a.id}
+                  style={{ ...ghostBtn, padding: '6px 12px', fontSize: 12, opacity: busyId === a.id ? 0.5 : 1 }}
+                >
+                  {busyId === a.id ? 'Working…' : 'Sync now'}
+                </button>
+                <button
+                  type="button" onClick={() => disconnect(a.id, a.email)} disabled={busyId === a.id}
+                  style={{ background: 'transparent', border: 'none', color: '#C0392B', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: busyId === a.id ? 0.5 : 1 }}
+                >
+                  Disconnect
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
 }
+
+/* ═══════════════════════ User Management ═══════════════════════ */
+
+function UserManagementSection({ onToast }: { onToast: (msg: string) => void }) {
+  const [users, setUsers] = useState<UserDto[]>([])
+  const [roles, setRoles] = useState<RoleDto[]>([])
+  const [loading, setLoading] = useState(true)
+  const [err, setErr] = useState<string | null>(null)
+  const [showInvite, setShowInvite] = useState(false)
+  const [editing, setEditing] = useState<UserDto | null>(null)
+
+  const reload = async () => {
+    setLoading(true); setErr(null)
+    try {
+      const [us, rs] = await Promise.all([api.users(), api.roles()])
+      setUsers(us)
+      setRoles(rs)
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : 'Failed to load users')
+    } finally { setLoading(false) }
+  }
+  useEffect(() => { reload() }, [])
+
+  const grouped = useMemo(() => {
+    const byDept = new Map<string, UserDto[]>()
+    for (const u of users) {
+      const key = u.department || 'Unassigned'
+      if (!byDept.has(key)) byDept.set(key, [])
+      byDept.get(key)!.push(u)
+    }
+    return [...byDept.entries()].sort(([a], [b]) => a.localeCompare(b))
+  }, [users])
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={card}>
+        <div style={{ ...cardTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>Users ({users.length})</span>
+          <button style={primaryBtn} onClick={() => setShowInvite(true)}>+ Invite user</button>
+        </div>
+        {loading && <div style={{ padding: 20, color: '#8082A5' }}>Loading users…</div>}
+        {err && <div style={{ ...errBox, margin: 16 }}>{err}</div>}
+        {!loading && !err && (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={tableStyle}>
+              <thead>
+                <tr>
+                  <th style={thStyle}>Name</th>
+                  <th style={thStyle}>Email</th>
+                  <th style={thStyle}>Role</th>
+                  <th style={thStyle}>Department</th>
+                  <th style={thStyle}>Services</th>
+                  <th style={thStyle}>Status</th>
+                  <th style={{ ...thStyle, textAlign: 'right' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {grouped.flatMap(([dept, rows]) => [
+                  <tr key={`h-${dept}`}>
+                    <td colSpan={7} style={{ background: '#F7F8FC', padding: '6px 14px', fontSize: 11, fontWeight: 700, color: '#5C5C74', textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                      {dept}
+                    </td>
+                  </tr>,
+                  ...rows.map((u) => (
+                    <tr key={u.id} style={{ opacity: u.isActive === false ? 0.55 : 1 }}>
+                      <td style={tdStyle}>{u.name}</td>
+                      <td style={tdStyle}>{u.email}</td>
+                      <td style={tdStyle}><RoleBadge role={u.role} /></td>
+                      <td style={tdStyle}>{u.department ?? '—'}</td>
+                      <td style={tdStyle}>
+                        {u.services && u.services.length > 0
+                          ? u.services.map((s) => <ServiceChip key={s} name={s} />)
+                          : <span style={{ color: '#B8BACD' }}>—</span>}
+                      </td>
+                      <td style={tdStyle}>
+                        <span style={{
+                          fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 8,
+                          background: u.isActive === false ? '#FDECEA' : '#E5F9F1',
+                          color:      u.isActive === false ? '#C0392B' : '#0E9C7E',
+                        }}>{u.isActive === false ? 'Inactive' : 'Active'}</span>
+                      </td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>
+                        <button style={linkBtn} onClick={() => setEditing(u)}>Edit</button>
+                      </td>
+                    </tr>
+                  )),
+                ])}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {showInvite && (
+        <InviteUserModal
+          roles={roles}
+          onClose={() => setShowInvite(false)}
+          onCreated={() => { setShowInvite(false); onToast('User invited'); reload() }}
+        />
+      )}
+      {editing && (
+        <EditUserModal
+          user={editing}
+          roles={roles}
+          onClose={() => setEditing(null)}
+          onSaved={(msg) => { setEditing(null); onToast(msg); reload() }}
+        />
+      )}
+    </div>
+  )
+}
+
+function RoleBadge({ role }: { role: string }) {
+  const colors: Record<string, [string, string]> = {
+    admin:         ['#EEE7FF', '#6C55E0'],
+    sales_manager: ['#E7F0FF', '#2A6FDB'],
+    sales_rep:     ['#E5F9F1', '#0E9C7E'],
+    legal:         ['#FFF3E5', '#B4650A'],
+    finance:       ['#FEEEEE', '#C0392B'],
+    auditor:       ['#F0F0F5', '#5C5C74'],
+    viewer:        ['#F0F0F5', '#8082A5'],
+  }
+  const [bg, fg] = colors[role] ?? ['#F0F0F5', '#5C5C74']
+  return (
+    <span style={{ background: bg, color: fg, fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 8 }}>
+      {role}
+    </span>
+  )
+}
+
+function ServiceChip({ name }: { name: string }) {
+  const colors: Record<string, [string, string]> = {
+    'Box':   ['#E7F0FF', '#2A6FDB'],
+    '3S':    ['#E5F9F1', '#0E9C7E'],
+    '3D':    ['#FFF3E5', '#B4650A'],
+    'AI&RPA':['#EEE7FF', '#6C55E0'],
+  }
+  const [bg, fg] = colors[name] ?? ['#F0F0F5', '#5C5C74']
+  return (
+    <span style={{ background: bg, color: fg, fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 7, marginRight: 4 }}>
+      {name}
+    </span>
+  )
+}
+
+function ServiceCheckboxes({ selected, onChange }: { selected: string[]; onChange: (next: string[]) => void }) {
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+      {SERVICE_LINES.map((s) => {
+        const on = selected.includes(s)
+        return (
+          <label key={s} style={{
+            cursor: 'pointer', border: `1px solid ${on ? '#2A6FDB' : '#E5E7F0'}`,
+            background: on ? '#E7F0FF' : '#fff', color: on ? '#2A6FDB' : '#5C5C74',
+            padding: '5px 10px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+          }}>
+            <input
+              type="checkbox" checked={on}
+              onChange={() => onChange(on ? selected.filter((x) => x !== s) : [...selected, s])}
+              style={{ margin: 0 }}
+            />
+            {s}
+          </label>
+        )
+      })}
+    </div>
+  )
+}
+
+function InviteUserModal({ roles, onClose, onCreated }: { roles: RoleDto[]; onClose: () => void; onCreated: () => void }) {
+  const [form, setForm] = useState<CreateUserDto>({ email: '', name: '', role: 'viewer', password: '', department: '', services: [] })
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault(); setBusy(true); setErr(null)
+    try {
+      await api.createUser({ ...form, department: form.department || null })
+      onCreated()
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : 'Failed to invite user')
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <ModalShell title="Invite user" onClose={onClose}>
+      <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <Field label="Name">
+          <input required style={inputStyle} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+        </Field>
+        <Field label="Email">
+          <input required type="email" style={inputStyle} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+        </Field>
+        <Field label="Role">
+          <select style={inputStyle} value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
+            {roles.map((r) => <option key={r.name} value={r.name}>{r.name}</option>)}
+          </select>
+        </Field>
+        <Field label="Department">
+          <input style={inputStyle} value={form.department ?? ''} onChange={(e) => setForm({ ...form, department: e.target.value })} />
+        </Field>
+        <Field label="Services / Products">
+          <ServiceCheckboxes selected={form.services ?? []} onChange={(next) => setForm({ ...form, services: next })} />
+        </Field>
+        <Field label="Initial password (≥ 8 chars, upper/lower/digit)">
+          <input required type="text" style={inputStyle} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+        </Field>
+        {err && <div style={errBox}>{err}</div>}
+        <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+          <button type="submit" disabled={busy} style={{ ...primaryBtn, flex: 1, opacity: busy ? 0.6 : 1 }}>{busy ? 'Inviting…' : 'Invite user'}</button>
+          <button type="button" onClick={onClose} style={ghostBtn}>Cancel</button>
+        </div>
+      </form>
+    </ModalShell>
+  )
+}
+
+function EditUserModal({ user, roles, onClose, onSaved }: { user: UserDto; roles: RoleDto[]; onClose: () => void; onSaved: (msg: string) => void }) {
+  const { user: me } = useAuth()
+  const isSelf = me?.id === user.id
+  const [form, setForm] = useState<UpdateUserDto>({
+    name: user.name, role: user.role,
+    department: user.department ?? '',
+    services: user.services ?? [],
+    isActive: user.isActive ?? true,
+  })
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const [pwd, setPwd] = useState('')
+
+  const save = async (e: FormEvent) => {
+    e.preventDefault(); setBusy(true); setErr(null)
+    try {
+      await api.updateUser(user.id, { ...form, department: form.department || null })
+      onSaved('User updated')
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : 'Failed to update user')
+    } finally { setBusy(false) }
+  }
+
+  const resetPwd = async () => {
+    if (pwd.length < 8) { setErr('Password must be at least 8 chars'); return }
+    setBusy(true); setErr(null)
+    try {
+      await api.adminResetPassword(user.id, pwd)
+      setPwd('')
+      onSaved(`Password reset for ${user.email}`)
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : 'Reset failed')
+    } finally { setBusy(false) }
+  }
+
+  const deactivate = async () => {
+    if (!window.confirm(`Deactivate ${user.name}? They will not be able to sign in.`)) return
+    setBusy(true); setErr(null)
+    try {
+      await api.deactivateUser(user.id)
+      onSaved(`${user.name} deactivated`)
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : 'Deactivation failed')
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <ModalShell title={`Edit — ${user.name}`} onClose={onClose}>
+      <form onSubmit={save} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <Field label="Name">
+          <input required style={inputStyle} value={form.name ?? ''} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+        </Field>
+        <Field label="Email"><input disabled style={{ ...inputStyle, background: '#F7F8FC' }} value={user.email} /></Field>
+        <Field label="Role">
+          <select style={inputStyle} value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
+            {roles.map((r) => <option key={r.name} value={r.name}>{r.name}</option>)}
+          </select>
+        </Field>
+        <Field label="Department">
+          <input style={inputStyle} value={form.department ?? ''} onChange={(e) => setForm({ ...form, department: e.target.value })} />
+        </Field>
+        <Field label="Services / Products">
+          <ServiceCheckboxes selected={form.services ?? []} onChange={(next) => setForm({ ...form, services: next })} />
+        </Field>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#3B3B52' }}>
+          <input type="checkbox" checked={form.isActive ?? true} onChange={(e) => setForm({ ...form, isActive: e.target.checked })} disabled={isSelf} />
+          Active {isSelf && <span style={{ color: '#8082A5', fontSize: 11 }}>(cannot deactivate yourself)</span>}
+        </label>
+        {err && <div style={errBox}>{err}</div>}
+        <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+          <button type="submit" disabled={busy} style={{ ...primaryBtn, flex: 1, opacity: busy ? 0.6 : 1 }}>{busy ? 'Saving…' : 'Save changes'}</button>
+          <button type="button" onClick={onClose} style={ghostBtn}>Cancel</button>
+        </div>
+      </form>
+
+      <div style={{ height: 1, background: '#F2F3F9', margin: '16px 0' }} />
+
+      <div style={{ fontSize: 13, fontWeight: 700, color: '#3B3B52', marginBottom: 8 }}>Reset password</div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input type="text" placeholder="New password" value={pwd} onChange={(e) => setPwd(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
+        <button type="button" onClick={resetPwd} disabled={busy || pwd.length < 8} style={{ ...primaryBtn, opacity: busy || pwd.length < 8 ? 0.5 : 1 }}>Reset</button>
+      </div>
+
+      {!isSelf && (
+        <>
+          <div style={{ height: 1, background: '#F2F3F9', margin: '16px 0' }} />
+          <button type="button" onClick={deactivate} disabled={busy} style={dangerBtn}>Deactivate user</button>
+        </>
+      )}
+    </ModalShell>
+  )
+}
+
+function ModalShell({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,20,45,0.35)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={onClose}>
+      <div style={{ width: 480, maxWidth: '100%', background: '#fff', borderRadius: 14, boxShadow: '0 24px 60px rgba(0,0,0,0.25)', overflow: 'hidden', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ padding: '14px 18px', borderBottom: '1px solid #F2F3F9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ fontSize: 14, fontWeight: 700 }}>{title}</div>
+          <button onClick={onClose} style={{ background: 'transparent', border: 'none', fontSize: 18, cursor: 'pointer', color: '#8082A5' }}>×</button>
+        </div>
+        <div style={{ padding: 18, overflowY: 'auto' }}>{children}</div>
+      </div>
+    </div>
+  )
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+      <span style={{ fontSize: 11, fontWeight: 700, color: '#5C5C74', textTransform: 'uppercase', letterSpacing: 0.3 }}>{label}</span>
+      {children}
+    </label>
+  )
+}
+
+/* ═══════════════════════ Role Matrix ═══════════════════════ */
+
+function RoleMatrixSection() {
+  const [roles, setRoles] = useState<RoleDto[]>([])
+  const [loading, setLoading] = useState(true)
+  const [err, setErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    api.roles()
+      .then(setRoles)
+      .catch((e) => setErr(e instanceof ApiError ? e.message : 'Failed to load roles'))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const allPerms = useMemo(() => {
+    const set = new Set<string>()
+    roles.forEach((r) => r.permissions.forEach((p) => set.add(p)))
+    return [...set].sort()
+  }, [roles])
+
+  const groupedPerms = useMemo(() => {
+    const groups = new Map<string, string[]>()
+    for (const p of allPerms) {
+      const entity = p.split(':')[0]
+      if (!groups.has(entity)) groups.set(entity, [])
+      groups.get(entity)!.push(p)
+    }
+    return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b))
+  }, [allPerms])
+
+  if (loading) return <div style={{ color: '#8082A5', padding: 12 }}>Loading role matrix…</div>
+  if (err) return <div style={errBox}>{err}</div>
+
+  return (
+    <div style={{ ...card, maxWidth: '80%' }}>
+      <div style={cardTitle}>Role × Permission Matrix</div>
+      <div style={{ padding: 16, fontSize: 12, color: '#5C5C74' }}>
+        Each column is a role that can be assigned to a user. A ✓ means the role grants that permission.
+      </div>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ ...tableStyle, minWidth: 576 }}>
+          <thead>
+            <tr>
+              <th style={{ ...thStyle, minWidth: 200 }}>Permission</th>
+              {roles.map((r) => (
+                <th key={r.name} style={{ ...thStyle, textAlign: 'center', verticalAlign: 'top' }}>
+                  <div>{r.name}</div>
+                  <div style={{
+                    fontWeight: 400, fontSize: 10, color: '#8082A5',
+                    whiteSpace: 'normal', lineHeight: 1.25,
+                    maxWidth: 90, margin: '2px auto 0',
+                    display: '-webkit-box', WebkitBoxOrient: 'vertical',
+                    WebkitLineClamp: 2, overflow: 'hidden',
+                    textTransform: 'none', letterSpacing: 0,
+                  }}>
+                    {r.description}
+                  </div>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {groupedPerms.flatMap(([entity, perms]) => [
+              <tr key={`ge-${entity}`}>
+                <td colSpan={roles.length + 1} style={{ background: '#F7F8FC', padding: '6px 14px', fontSize: 11, fontWeight: 700, color: '#5C5C74', textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                  {entity}
+                </td>
+              </tr>,
+              ...perms.map((perm) => (
+                <tr key={perm}>
+                  <td style={{ ...tdStyle, fontFamily: "'Space Grotesk', 'Inter', system-ui, sans-serif", fontSize: 14, fontWeight: 500 }}>{perm}</td>
+                  {roles.map((r) => (
+                    <td key={r.name} style={{ ...tdStyle, textAlign: 'center', color: r.permissions.includes(perm) ? '#0E9C7E' : '#D5D8E6', fontWeight: 700 }}>
+                      {r.permissions.includes(perm) ? '✓' : '·'}
+                    </td>
+                  ))}
+                </tr>
+              )),
+            ])}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+/* ═══════════════════════ Existing security cards ═══════════════════════ */
 
 function ChangePasswordCard({ onDone }: { onDone: () => void }) {
   const [current, setCurrent] = useState('')
@@ -145,10 +827,16 @@ function MfaCard({ onToast }: { onToast: (msg: string) => void }) {
   )
 }
 
+/* ═══════════════════════ styles ═══════════════════════ */
+
 const card: CSSProperties = { background: '#fff', border: '1px solid #E5E7F0', borderRadius: 14 }
 const cardTitle: CSSProperties = { padding: '16px 20px', borderBottom: '1px solid #F2F3F9', fontSize: 14, fontWeight: 700 }
 const inputStyle: CSSProperties = { border: '1px solid #E5E7F0', borderRadius: 9, padding: '9px 12px', fontSize: 13, outline: 'none' }
 const primaryBtn: CSSProperties = { background: '#2A6FDB', color: '#fff', border: 'none', borderRadius: 9, padding: '10px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }
 const dangerBtn: CSSProperties = { background: '#fff', color: '#C0392B', border: '1px solid #E5B4AC', borderRadius: 9, padding: '9px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }
 const ghostBtn: CSSProperties = { background: '#fff', color: '#5C5C74', border: '1px solid #E5E7F0', borderRadius: 9, padding: '9px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }
+const linkBtn: CSSProperties = { background: 'transparent', border: 'none', color: '#2A6FDB', fontSize: 13, fontWeight: 600, cursor: 'pointer', padding: 0 }
 const errBox: CSSProperties = { background: '#FDECEA', color: '#C0392B', border: '1px solid #F5B7B1', borderRadius: 8, padding: '8px 12px', fontSize: 12.5 }
+const tableStyle: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 13 }
+const thStyle: CSSProperties = { textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#5C5C74', textTransform: 'uppercase', letterSpacing: 0.4, padding: '10px 14px', borderBottom: '1px solid #F2F3F9', background: '#fff' }
+const tdStyle: CSSProperties = { padding: '10px 14px', borderBottom: '1px solid #F5F6FB', color: '#3B3B52' }

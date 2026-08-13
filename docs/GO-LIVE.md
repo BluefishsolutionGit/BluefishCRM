@@ -12,6 +12,8 @@ Every item below is a hard gate. Anything unchecked blocks launch. Owner in pare
 - [ ] `NODE_ENV=production` set in the deployment unit (Ops)
 - [ ] `CORS_ORIGINS`, JWT secrets, refresh secrets rotated from dev (Ops)
 - [ ] Anthropic, LINE, Meta, VAPID secrets set (Ops + Integrations)
+- [ ] Entra app registered; `MICROSOFT_CLIENT_ID/SECRET/TENANT_ID` + `MICROSOFT_CALENDAR_REDIRECT_URI` set; admin consent granted for `Calendars.ReadWrite offline_access User.Read` (Ops + Integrations)
+- [ ] (Optional) `MICROSOFT_WEBHOOK_URL` set to a public HTTPS URL on the prod host — subscription auto-creation on user connect verified in staging (Ops)
 - [ ] `npm audit --production` clean in `apps/api` and `apps/web` (Eng)
 - [ ] `SECURITY.md` — every pre-go-live checkbox ticked (Security)
 
@@ -39,7 +41,7 @@ Every item below is a hard gate. Anything unchecked blocks launch. Owner in pare
 ## T-0: launch
 
 - [ ] DNS cutover
-- [ ] Smoke test suite green (login, create lead, create quote, create contract, e-Sign flow, LINE inbound)
+- [ ] Smoke test suite green (login, create lead, create quote, create contract, e-Sign flow, LINE inbound, **M365 dev-stub sync 2 cycles + decline notification**)
 - [ ] Warm the caches by hitting `/dashboards/executive` for each role
 - [ ] Announce internally
 - [ ] Monitor `/api/metrics` and error dashboard for 2 hours minimum before signing off

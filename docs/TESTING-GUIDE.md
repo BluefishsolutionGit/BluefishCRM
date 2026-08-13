@@ -262,14 +262,26 @@ curl -X POST "http://localhost:4000/api/esign/envelopes/$EXT/callback?token=$TOK
 
 Refresh หน้า contract → status = **Active** อัตโนมัติ
 
-### 5.4 M365 Calendar (Dev Stub)
+### 5.4 M365 Calendar Sync (Dev Stub — ทดสอบครบทั้ง two-way flow)
 
-Login → Settings → Integrations → Calendar → Link Microsoft
-- Provider: microsoft
-- Email: `admin@bluefishsolution.com`
-- Access token: `dev_stub_admin`
+1. Login → **Settings → Integrations** → คลิก **Connect (dev stub)**
+   - (ปุ่มนี้แสดงเฉพาะเมื่อ `MICROSOFT_CLIENT_ID` ยังไม่ตั้งค่า — สำหรับทดสอบใน dev)
+   - ระบบจะสร้าง `CalendarSyncAccount` ที่ใช้ `accessToken='dev_stub_...'`
+2. คลิก **Sync now** ครั้งแรก → **cycle 1** — import 2 events (Weekly pipeline review + Thonburi walkthrough) พร้อม attendees + RSVP
+3. คลิก **Sync now** ครั้งที่ 2 → **cycle 2** — event A updated (Krit accepted→declined, Ploy accepted→tentative), event B @removed
+   - เปิด bell notification → เห็น **"Krit declined ..."** (tone=bad) + **"Ploy is tentative on ..."** (tone=warn)
+4. คลิก **Sync now** ครั้งที่ 3 → **cycle 3** — 3 recurring occurrences + seriesMaster (skipped) + all-day (skipped)
+5. คลิก **Sync now** ครั้งที่ 4 → **cycle 4** — middle occurrence marked cancelled (status flips, not deleted)
+6. **Notification test** — click × on any decline row → dismisses; click "Mark all read" → bell badge = 0
 
-คลิก **Sync** → ระบบจะสร้าง 2 stub events (ไม่ต้อง OAuth จริง)
+**Outbound test** — ใน Activities → New activity → set:
+   - Type: meeting, Title: `Outbound test`
+   - Attendees: search "pim" → เลือก **Pimchanok Aromdee** (auto-linked via email match)
+   - Repeats: Weekly, Every 1 week(s), pick Tue+Thu, End date +3 months
+   - Create → เปิด row ที่เพิ่งสร้าง → เห็น **M365 chip** + **Synced Xs ago** + **🔁 Repeats weekly · Tue/Thu**
+   - ตรวจ API log ควรเห็น `[dev_stub] would POST /me/events recurrence={"pattern":{"type":"weekly",...}}`
+
+**Force resync test** — คลิก **Resync** button → timestamp update, log แสดง `[dev_stub] would PATCH /me/events/...`
 
 ---
 

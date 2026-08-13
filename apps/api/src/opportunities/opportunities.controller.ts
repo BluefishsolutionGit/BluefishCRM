@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common'
-import { IsIn, IsInt, IsOptional, IsString, Max, Min, MinLength } from 'class-validator'
+import { IsInt, IsOptional, IsString, Max, Min, MinLength } from 'class-validator'
 import { JwtAuthGuard } from '../auth/jwt.guard'
 import { PermissionsGuard } from '../auth/permissions.guard'
 import { RequirePermissions } from '../auth/permissions.decorator'
@@ -9,37 +9,39 @@ import { auditContext } from '../common/request-context'
 import type { Request } from 'express'
 import type { ForecastDto, OpportunityDto, OpportunityStage } from '@bluefish/shared'
 
-const STAGES: OpportunityStage[] = ['Qualification', 'Proposal', 'Negotiation', 'Won', 'Lost']
-
 class CreateBody {
   @IsString() @MinLength(1) title!: string
   @IsString() customerId!: string
   @IsString() ownerId!: string
-  @IsOptional() @IsIn(STAGES) stage?: OpportunityStage
+  @IsOptional() @IsString() @MinLength(1) stage?: OpportunityStage
   @IsOptional() @IsInt() @Min(0) value?: number
   @IsOptional() @IsInt() @Min(0) @Max(100) probability?: number
   @IsOptional() @IsString() closeDate?: string
+  @IsOptional() @IsString() bidDeadline?: string
+  @IsOptional() @IsString() decisionDate?: string
   @IsOptional() @IsString() serviceOrProduct?: string
   @IsOptional() @IsString() competitor?: string
-  @IsOptional() @IsString() aiHint?: string
+  @IsOptional() @IsString() managerHint?: string
   @IsOptional() @IsString() notes?: string
 }
 class UpdateBody {
   @IsOptional() @IsString() title?: string
   @IsOptional() @IsString() customerId?: string
   @IsOptional() @IsString() ownerId?: string
-  @IsOptional() @IsIn(STAGES) stage?: OpportunityStage
+  @IsOptional() @IsString() @MinLength(1) stage?: OpportunityStage
   @IsOptional() @IsInt() @Min(0) value?: number
   @IsOptional() @IsInt() @Min(0) @Max(100) probability?: number
   @IsOptional() @IsString() closeDate?: string
+  @IsOptional() @IsString() bidDeadline?: string
+  @IsOptional() @IsString() decisionDate?: string
   @IsOptional() @IsString() serviceOrProduct?: string
   @IsOptional() @IsString() competitor?: string
   @IsOptional() @IsString() lostReason?: string
   @IsOptional() @IsString() wonReason?: string
-  @IsOptional() @IsString() aiHint?: string
+  @IsOptional() @IsString() managerHint?: string
   @IsOptional() @IsString() notes?: string
 }
-class StageBody { @IsIn(STAGES) stage!: OpportunityStage }
+class StageBody { @IsString() @MinLength(1) stage!: OpportunityStage }
 
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('opportunities')

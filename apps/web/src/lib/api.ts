@@ -85,6 +85,37 @@ async function attemptRefresh(): Promise<boolean> {
   return refreshInFlight
 }
 
+/**
+ * Fetch a binary file from the API with the bearer token attached, then trigger
+ * a browser download. Use this instead of a raw <a href={apiUrl}> — anchor tags
+ * cannot carry the Authorization header and get 401'd on protected endpoints.
+ */
+async function authDownload(path: string, fallbackFilename: string): Promise<void> {
+  const headers = new Headers()
+  const token = getToken()
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+  const res = await fetch(`${API_BASE}${path}`, { headers, credentials: 'include' })
+  if (!res.ok) {
+    let msg = res.statusText
+    try {
+      const body = (await res.json()) as { message?: string | string[] }
+      if (body.message) msg = Array.isArray(body.message) ? body.message.join(', ') : body.message
+    } catch { /* not JSON */ }
+    throw new ApiError(res.status, msg)
+  }
+  const disposition = res.headers.get('Content-Disposition') ?? ''
+  const match = disposition.match(/filename="([^"]+)"/)
+  const filename = match ? match[1] : fallbackFilename
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
 async function request<T>(path: string, init: RequestInit = {}, _retry = false): Promise<T> {
   const headers = new Headers(init.headers)
   if (!(init.body instanceof FormData)) {
@@ -119,6 +150,8 @@ export const api = {
     request<LoginResponse>('/auth/login/mfa', { method: 'POST', body: JSON.stringify({ mfaToken, code }) }),
   logout: () => request<void>('/auth/logout', { method: 'POST' }),
   me: () => request<UserDto>('/users/me'),
+  updateSelf: (patch: { name?: string; timezone?: string }) =>
+    request<UserDto>('/users/me', { method: 'PATCH', body: JSON.stringify(patch) }),
 
   customers: (query?: string, tagId?: string) => {
     const qs = new URLSearchParams()
@@ -141,6 +174,8 @@ export const api = {
 
   contacts: (customerId: string) =>
     request<ContactDto[]>(`/customers/${customerId}/contacts`),
+  searchContacts: (q: string) =>
+    request<import('@bluefish/shared').ContactSearchResultDto[]>(`/contacts/search?q=${encodeURIComponent(q)}`),
   createContact: (customerId: string, data: CreateContactDto) =>
     request<ContactDto>(`/customers/${customerId}/contacts`, { method: 'POST', body: JSON.stringify(data) }),
   updateContact: (id: string, data: UpdateContactDto) =>
@@ -158,6 +193,14 @@ export const api = {
     request<import('@bluefish/shared').TagDto[]>(`/customers/${customerId}/tags`, { method: 'PUT', body: JSON.stringify({ tagIds }) }),
 
   users: () => request<UserDto[]>('/users'),
+  roles: () => request<import('@bluefish/shared').RoleDto[]>('/roles'),
+  createUser: (data: import('@bluefish/shared').CreateUserDto) =>
+    request<UserDto>('/users', { method: 'POST', body: JSON.stringify(data) }),
+  updateUser: (id: string, data: import('@bluefish/shared').UpdateUserDto) =>
+    request<UserDto>(`/users/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deactivateUser: (id: string) => request<void>(`/users/${id}`, { method: 'DELETE' }),
+  adminResetPassword: (id: string, newPassword: string) =>
+    request<void>(`/users/${id}/reset-password`, { method: 'POST', body: JSON.stringify({ newPassword }) }),
   changePassword: (currentPassword: string, newPassword: string) =>
     request<void>('/users/me/change-password', {
       method: 'POST',
@@ -212,6 +255,10 @@ export const api = {
   },
   opportunitiesImportTemplateUrl: () => `${API_BASE}/opportunities/import-template`,
   opportunitiesExportUrl: () => `${API_BASE}/opportunities/export`,
+  downloadOpportunitiesTemplate: () =>
+    authDownload('/opportunities/import-template', 'opportunities-import-template.xlsx'),
+  downloadOpportunitiesExport: () =>
+    authDownload('/opportunities/export', 'opportunities.xlsx'),
 
   opportunities: (filter: { ownerId?: string; stage?: OpportunityStage; serviceOrProduct?: string } = {}) => {
     const p = new URLSearchParams()
@@ -336,6 +383,10 @@ export const api = {
     request<import('@bluefish/shared').InboxMessageDto>(`/inbox/threads/${threadId}/messages`, { method: 'POST', body: JSON.stringify({ text }) }),
   // ─────── Notifications ───────
   notifications: () => request<import('@bluefish/shared').NotificationDto[]>('/notifications'),
+  markNotificationRead: (key: string) =>
+    request<void>(`/notifications/${encodeURIComponent(key)}/read`, { method: 'POST' }),
+  markAllNotificationsRead: () =>
+    request<void>('/notifications/read-all', { method: 'POST' }),
 
   // ─────── Global search ───────
   globalSearch: (q: string) =>
@@ -394,10 +445,17 @@ export const api = {
   pushTest: (title: string, body: string) =>
     request<{ sent: number; skipped: number }>('/integrations/push/test', { method: 'POST', body: JSON.stringify({ title, body }) }),
   calendarAccounts: () => request<import('@bluefish/shared').CalendarAccountDto[]>('/integrations/calendar/accounts'),
+  calendarMicrosoftStatus: () => request<{ configured: boolean }>('/integrations/calendar/microsoft/status'),
+  calendarMicrosoftAuthorizeUrl: () =>
+    request<{ url: string }>('/integrations/calendar/microsoft/authorize-url', { method: 'POST' }),
   linkCalendar: (payload: { provider: 'microsoft' | 'google'; externalId: string; email: string; accessToken: string }) =>
     request<import('@bluefish/shared').CalendarAccountDto>('/integrations/calendar/accounts/link', { method: 'POST', body: JSON.stringify(payload) }),
   syncCalendar: (id: string) =>
     request<import('@bluefish/shared').CalendarSyncResultDto>(`/integrations/calendar/accounts/${id}/sync`, { method: 'POST' }),
+  resyncActivity: (id: string) =>
+    request<import('@bluefish/shared').ActivityDto>(`/activities/${id}/resync`, { method: 'POST' }),
+  disconnectCalendar: (id: string) =>
+    request<void>(`/integrations/calendar/accounts/${id}`, { method: 'DELETE' }),
   sendForSignature: (contractId: string, signerEmail: string, signerName: string) =>
     request<import('@bluefish/shared').EnvelopeDto>(`/esign/contracts/${contractId}/send`, { method: 'POST', body: JSON.stringify({ signerEmail, signerName }) }),
   esignEnvelopes: (contractId: string) =>

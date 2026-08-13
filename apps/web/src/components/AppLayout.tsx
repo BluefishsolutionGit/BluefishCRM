@@ -63,10 +63,10 @@ export default function AppLayout() {
   const [notifOpen, setNotifOpen] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
 
+  const refreshUnreadCount = () => api.notifications().then((rows) => setUnreadCount(rows.filter((r) => r.unread).length)).catch(() => {})
   useEffect(() => {
-    const loadCount = () => api.notifications().then((rows) => setUnreadCount(rows.filter((r) => r.unread).length)).catch(() => {})
-    loadCount()
-    const iv = setInterval(loadCount, 60_000)
+    refreshUnreadCount()
+    const iv = setInterval(refreshUnreadCount, 60_000)
     return () => clearInterval(iv)
   }, [])
   const [userMenuOpen, setUserMenuOpen] = useState(false)
@@ -149,7 +149,7 @@ export default function AppLayout() {
                   <div style={{ position: 'absolute', top: -2, right: -2, background: '#FF5A4D', color: '#fff', fontSize: 9.5, fontWeight: 800, borderRadius: 999, padding: unreadCount > 9 ? '1px 5px' : '1px 4px', border: '1.5px solid #2E1A6B', minWidth: 16, textAlign: 'center', lineHeight: 1.3 }}>{unreadCount > 99 ? '99+' : unreadCount}</div>
                 )}
               </div>
-              {notifOpen && <NotifPanel onClose={() => setNotifOpen(false)} />}
+              {notifOpen && <NotifPanel onClose={() => setNotifOpen(false)} onChange={refreshUnreadCount} />}
             </div>
 
             <div ref={userMenuRef} style={{ position: 'relative' }}>
@@ -255,13 +255,12 @@ const menuItem: CSSProperties = {
 
 const TONE_COLOR: Record<string, string> = { ok: '#06C755', warn: '#B4650A', bad: '#C0392B', info: '#6C55E0' }
 
-function NotifPanel({ onClose }: { onClose: () => void }) {
+function NotifPanel({ onClose, onChange }: { onClose: () => void; onChange?: () => void }) {
   const navigate = useNavigate()
   const [rows, setRows] = useState<import('@bluefish/shared').NotificationDto[] | null>(null)
 
-  useEffect(() => {
-    api.notifications().then(setRows).catch(() => setRows([]))
-  }, [])
+  const reload = () => api.notifications().then(setRows).catch(() => setRows([]))
+  useEffect(() => { reload() }, [])
 
   const timeAgo = (iso: string): string => {
     const diff = Date.now() - new Date(iso).getTime()
@@ -277,20 +276,52 @@ function NotifPanel({ onClose }: { onClose: () => void }) {
     return `${sign}${d} d${suffix}`
   }
 
-  const go = (link: string) => { onClose(); navigate(link) }
+  const go = async (row: import('@bluefish/shared').NotificationDto) => {
+    // Mark read optimistically so the badge decrement is instant, then navigate.
+    if (row.unread) {
+      setRows((cur) => cur?.map((r) => (r.id === row.id ? { ...r, unread: false } : r)) ?? cur)
+      api.markNotificationRead(row.id).then(() => onChange?.()).catch(() => reload())
+    }
+    onClose(); navigate(row.link)
+  }
+
+  const markAll = async () => {
+    if (!rows || rows.every((r) => !r.unread)) return
+    setRows((cur) => cur?.map((r) => ({ ...r, unread: false })) ?? cur)
+    try { await api.markAllNotificationsRead(); onChange?.() }
+    catch { reload() }
+  }
+
+  const dismissOne = (row: import('@bluefish/shared').NotificationDto, e: React.MouseEvent) => {
+    e.stopPropagation()  // don't trigger the row's onClick navigation
+    if (!row.unread) return
+    setRows((cur) => cur?.map((r) => (r.id === row.id ? { ...r, unread: false } : r)) ?? cur)
+    api.markNotificationRead(row.id).then(() => onChange?.()).catch(() => reload())
+  }
+
+  const unreadCount = rows?.filter((r) => r.unread).length ?? 0
 
   return (
     <div style={{ position: 'absolute', right: 0, top: 44, width: 340, background: '#fff', color: '#1E1E30', border: '1px solid #E5E7F0', borderRadius: 13, boxShadow: '0 12px 32px rgba(14,31,25,.14)', padding: 8, zIndex: 20, maxHeight: 460, overflow: 'auto' }}>
-      <div style={{ fontSize: 12, fontWeight: 700, padding: '6px 10px', color: '#5C5C74', textTransform: 'uppercase', letterSpacing: '.06em' }}>Notifications</div>
+      <div style={{ display: 'flex', alignItems: 'center', padding: '6px 10px' }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: '#5C5C74', textTransform: 'uppercase', letterSpacing: '.06em', flex: 1 }}>Notifications</div>
+        {unreadCount > 0 && (
+          <button type="button" onClick={markAll} style={{ background: 'transparent', border: 'none', fontSize: 11, fontWeight: 600, color: '#2A6FDB', cursor: 'pointer', padding: '2px 4px' }}>Mark all read</button>
+        )}
+      </div>
       {rows === null && <div style={{ padding: 16, textAlign: 'center', color: '#8888A0', fontSize: 12 }}>Loading…</div>}
       {rows?.length === 0 && <div style={{ padding: 20, textAlign: 'center', color: '#8888A0', fontSize: 12 }}>You're all caught up.</div>}
       {rows?.map((r) => (
-        <div key={r.id} onClick={() => go(r.link)} style={{ padding: '9px 10px', borderRadius: 9, display: 'flex', gap: 9, cursor: 'pointer', background: r.unread ? '#F7FAFF' : 'transparent' }}>
+        <div key={r.id} onClick={() => go(r)} style={{ padding: '9px 10px', borderRadius: 9, display: 'flex', gap: 9, cursor: 'pointer', background: r.unread ? '#F7FAFF' : 'transparent', opacity: r.unread ? 1 : 0.6, alignItems: 'flex-start' }}>
           <div style={{ width: 8, height: 8, borderRadius: '50%', background: TONE_COLOR[r.tone] ?? '#8888A0', marginTop: 5, flex: 'none' }} />
           <div style={{ fontSize: 12.5, lineHeight: 1.45, minWidth: 0, flex: 1 }}>
             <div style={{ fontWeight: r.unread ? 700 : 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.title}</div>
             <div style={{ color: '#8888A0', fontSize: 11, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.sub} · {timeAgo(r.at)}</div>
           </div>
+          {r.unread && (
+            <button type="button" onClick={(e) => dismissOne(r, e)} title="Dismiss"
+              style={{ background: 'transparent', border: 'none', color: '#8082A5', fontSize: 15, lineHeight: 1, padding: '0 4px', cursor: 'pointer', alignSelf: 'center' }}>×</button>
+          )}
         </div>
       ))}
     </div>

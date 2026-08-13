@@ -25,6 +25,23 @@ Your deals grouped by stage. Drag between stages as they progress. Click a deal 
 ### Activities
 Everything you've done or plan to do: meetings, calls, visits, follow-ups. Filter by date range or owner.
 
+**Outlook calendar sync** — meetings/calls/visits/demos sync two-way with your Outlook calendar
+once you connect in **Settings → Integrations**:
+- Anything you create in the CRM shows up in Outlook (with attendees, location, meeting link)
+- Anything in your Outlook calendar shows up as an Activity in CRM
+- Cancellations, edits, and RSVPs sync both ways within ~5 minutes
+- The **M365** chip on an activity card means it's linked; click **Resync** if it looks out of date
+- **Recurrence** — set a "Repeats" pattern (daily/weekly/monthly + end date) in the New activity
+  dialog; Outlook creates the series and CRM tracks it as one row
+
+**Attendees** — add attendees by name (autocompletes from your Contacts) or by typing an
+email + Enter. When a Contact matches, you see a blue **CONTACT** badge; unmatched attendees show
+a **+ LINK** chip you can click to pick a Contact manually.
+
+**RSVP tracking** — when someone declines or marks tentative in Outlook, you get a notification
+in the bell (top-right). Read state persists — items you dismiss with **×** or **Mark all read**
+stay dismissed.
+
 ### Quotations
 Draft a quote from any opportunity. Add products with quantities and discounts. Submit for approval; watch the status on the same page. Once approved, export the PDF.
 
@@ -48,6 +65,16 @@ Open the app on your phone at `/m` (the desktop URL + `/m`).
 - **Assign** a lead or activity by opening it and picking a new owner.
 - **@mention** a colleague in an activity note to get their attention (they see it in their activities feed).
 - **Watch** a deal to get notifications when it moves stage.
+
+## Personal settings
+
+Open **Settings** from the top-right menu:
+
+- **Profile → Timezone** — sets the timezone Outlook uses when displaying meetings you push
+  from CRM. Default `Asia/Bangkok`; change to whatever matches your local hours.
+- **Integrations → Calendar sync** — connect your Microsoft 365 account. See individual
+  synced accounts, force a sync now, or disconnect (activities stay in CRM; only the link is removed).
+- **Security** — change password, enable/disable MFA.
 
 ## Reports
 
