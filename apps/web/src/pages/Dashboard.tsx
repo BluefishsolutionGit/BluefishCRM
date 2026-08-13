@@ -1,21 +1,133 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react'
-import type { ExecutiveDashboardDto, PipelineDashboardDto, RevenueDashboardDto, SalesDashboardDto } from '@bluefish/shared'
+import { useEffect, useMemo, useState, type CSSProperties, type DragEvent, type ReactNode } from 'react'
+import type { ByServiceDashboardDto, ExecutiveDashboardDto, PipelineDashboardDto, RevenueDashboardDto, SalesDashboardDto } from '@bluefish/shared'
+import { SERVICE_LINES } from '@bluefish/shared'
 import { api, ApiError } from '../lib/api'
 import { useToast } from '../lib/ToastContext'
 
 const fmt = (n: number) => n >= 1_000_000 ? '฿' + (n / 1e6).toFixed(1) + 'M' : '฿' + Math.round(n / 1e3) + 'K'
+
+// Palette matches Pipeline.tsx / Settings.tsx so the same service reads the same colour everywhere.
+const SERVICE_COLOR: Record<string, string> = { Box: '#2A6FDB', '3S': '#0E9C7E', '3D': '#B4650A', 'AI&RPA': '#6C55E0' }
+
+/* ─────────────── Widget layout persistence ─────────────── */
+
+// v2 = multi-column layout (columns count + per-item column assignment).
+// v1 was single-column only. Load code accepts both and upgrades silently.
+const LAYOUT_KEY = 'bluefish.dashboard.layout.v2'
+const LEGACY_LAYOUT_KEY = 'bluefish.dashboard.layout.v1'
+
+type ColumnCount = 1 | 2 | 3
+
+interface WidgetLayoutEntry { id: string; visible: boolean; column: number }
+interface DashboardLayout { columns: ColumnCount; items: WidgetLayoutEntry[] }
+
+/** Ordered by desirability in a single-column stack — order also decides round-robin
+ *  distribution into multi-column layouts (item 0 → col 0, item 1 → col 1, ...). */
+const DEFAULT_ITEMS: Array<Omit<WidgetLayoutEntry, 'column'>> = [
+  { id: 'kpiRow1',          visible: true },
+  { id: 'kpiRow2',          visible: true },
+  { id: 'byServiceTarget',  visible: true },
+  { id: 'byServiceRevenue', visible: true },
+  { id: 'topDeals',         visible: true },
+  { id: 'activityBreakdown', visible: true },
+  { id: 'salesTeam',        visible: true },
+  { id: 'pipelineByStage',  visible: true },
+  { id: 'revenueMonthly',   visible: true },
+  { id: 'byIndustry',       visible: true },
+]
+
+/** KPI card rows never look right squeezed into a narrow column — force them
+ *  full-width regardless of the column count the user picked. */
+const FULL_WIDTH_WIDGETS = new Set(['kpiRow1', 'kpiRow2'])
+
+const DEFAULT_LAYOUT: DashboardLayout = {
+  columns: 1,
+  items: DEFAULT_ITEMS.map((d) => ({ ...d, column: 0 })),
+}
+
+function loadLayout(): DashboardLayout {
+  try {
+    // Try v2 first
+    const rawV2 = localStorage.getItem(LAYOUT_KEY)
+    if (rawV2) {
+      const parsed = JSON.parse(rawV2) as DashboardLayout
+      if (parsed && Array.isArray(parsed.items)) return normaliseLayout(parsed)
+    }
+    // Fall back to v1 (flat array) and migrate
+    const rawV1 = localStorage.getItem(LEGACY_LAYOUT_KEY)
+    if (rawV1) {
+      const parsed = JSON.parse(rawV1) as Array<{ id: string; visible: boolean }>
+      if (Array.isArray(parsed)) {
+        return normaliseLayout({ columns: 1, items: parsed.map((p) => ({ ...p, column: 0 })) })
+      }
+    }
+  } catch { /* fall through */ }
+  return DEFAULT_LAYOUT
+}
+
+function saveLayout(layout: DashboardLayout) {
+  try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout)) } catch { /* quota */ }
+}
+
+/** Drop unknown widget ids, append any newly-shipped widgets, and clamp column
+ *  assignments to the current column count. Idempotent — call whenever you touch
+ *  layout state. */
+function normaliseLayout(input: DashboardLayout): DashboardLayout {
+  const columns = ([1, 2, 3] as ColumnCount[]).includes(input.columns) ? input.columns : 1
+  const known = new Set(DEFAULT_ITEMS.map((d) => d.id))
+  const seen = new Set<string>()
+  const valid: WidgetLayoutEntry[] = input.items
+    .filter((it) => known.has(it.id) && !seen.has(it.id))
+    .map((it) => {
+      seen.add(it.id)
+      return { id: it.id, visible: Boolean(it.visible), column: Math.min(Math.max(0, it.column | 0), columns - 1) }
+    })
+  // Append any newly-shipped widgets round-robin into columns.
+  DEFAULT_ITEMS.forEach((d, i) => {
+    if (!seen.has(d.id)) valid.push({ ...d, column: i % columns })
+  })
+  return { columns, items: valid }
+}
+
+/** Redistribute items when the user changes column count. Full-width widgets keep
+ *  their column (they render outside the grid anyway); everything else gets an
+ *  even round-robin fill so switching 1→2→3 always yields a sensibly-populated
+ *  grid rather than leaving the extra columns empty. */
+function reshapeColumns(layout: DashboardLayout, columns: ColumnCount): DashboardLayout {
+  if (layout.columns === columns) return layout
+  let colIdx = 0
+  const items = layout.items.map((it) => {
+    if (FULL_WIDTH_WIDGETS.has(it.id)) return { ...it, column: 0 }
+    const next = { ...it, column: colIdx % columns }
+    colIdx++
+    return next
+  })
+  return normaliseLayout({ columns, items })
+}
+
+/* ─────────────── Main component ─────────────── */
 
 export default function Dashboard() {
   const [exec, setExec] = useState<ExecutiveDashboardDto | null>(null)
   const [sales, setSales] = useState<SalesDashboardDto | null>(null)
   const [pipeline, setPipeline] = useState<PipelineDashboardDto | null>(null)
   const [revenue, setRevenue] = useState<RevenueDashboardDto | null>(null)
+  const [byService, setByService] = useState<ByServiceDashboardDto | null>(null)
   const [loading, setLoading] = useState(true)
+  const [editMode, setEditMode] = useState(false)
+  const [layout, setLayout] = useState<DashboardLayout>(() => loadLayout())
+  const [dragId, setDragId] = useState<string | null>(null)
+  const [dragOverId, setDragOverId] = useState<string | null>(null)
+  const [dragOverColumn, setDragOverColumn] = useState<number | null>(null)
   const toast = useToast()
 
+  useEffect(() => { saveLayout(layout) }, [layout])
   useEffect(() => {
-    Promise.all([api.execDashboard(), api.salesDashboard(), api.pipelineDashboard(), api.revenueDashboard()])
-      .then(([e, s, p, r]) => { setExec(e); setSales(s); setPipeline(p); setRevenue(r) })
+    Promise.all([
+      api.execDashboard(), api.salesDashboard(), api.pipelineDashboard(),
+      api.revenueDashboard(), api.byServiceDashboard(),
+    ])
+      .then(([e, s, p, r, b]) => { setExec(e); setSales(s); setPipeline(p); setRevenue(r); setByService(b) })
       .catch((e) => toast(e instanceof ApiError ? e.message : 'Failed'))
       .finally(() => setLoading(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -25,35 +137,43 @@ export default function Dashboard() {
   const maxRep = useMemo(() => Math.max(1, ...(sales?.reps ?? []).map((r) => r.wonValue + r.openValue)), [sales])
 
   if (loading) return <div style={{ padding: 32, color: '#8888A0' }}>Loading dashboards…</div>
-  if (!exec || !sales || !pipeline || !revenue) return <div style={{ padding: 32, color: '#C0392B' }}>Failed to load</div>
+  if (!exec || !sales || !pipeline || !revenue || !byService) return <div style={{ padding: 32, color: '#C0392B' }}>Failed to load</div>
 
-  return (
-    <div style={{ height: '100%', overflow: 'auto', padding: '24px 28px', animation: 'fadeUp .3s ease' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16, marginBottom: 18 }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontFamily: "'Space Grotesk'", fontSize: 22, fontWeight: 600, letterSpacing: '-.01em' }}>Executive dashboard</div>
-          <div style={{ fontSize: 13, color: '#5C5C74', marginTop: 3 }}>Live from CRM · {new Date(exec.asOf).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+  // Registry of every widget the dashboard can render — id must match layout entries.
+  const widgets: Record<string, { title: string; render: () => ReactNode }> = {
+    kpiRow1: {
+      title: 'Top KPIs',
+      render: () => (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14 }}>
+          <KpiCard label="Open pipeline" value={fmt(exec.openPipeline)} grad="linear-gradient(135deg,#3BB0F5,#1E63E9)" />
+          <KpiCard label="Revenue MTD" value={fmt(exec.revenueMTD)} sub={`QTD ${fmt(exec.revenueQTD)}`} grad="linear-gradient(135deg,#2E6BE6,#1B2F8F)" />
+          <KpiCard label="New leads (7d)" value={String(exec.newLeadsPeriod)} sub={`Conversion ${exec.leadConversionRate}%`} grad="linear-gradient(135deg,#FFB047,#F5641E)" />
+          <KpiCard label="Deals won (MTD)" value={String(exec.dealsWonPeriod)} sub={`Avg ${fmt(exec.avgDealSize)}`} grad="linear-gradient(135deg,#22C9B4,#0E9C7E)" />
         </div>
-      </div>
-
-      {/* KPI cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 14 }}>
-        <KpiCard label="Open pipeline" value={fmt(exec.openPipeline)} grad="linear-gradient(135deg,#3BB0F5,#1E63E9)" />
-        <KpiCard label="Revenue MTD" value={fmt(exec.revenueMTD)} sub={`QTD ${fmt(exec.revenueQTD)}`} grad="linear-gradient(135deg,#2E6BE6,#1B2F8F)" />
-        <KpiCard label="New leads (7d)" value={String(exec.newLeadsPeriod)} sub={`Conversion ${exec.leadConversionRate}%`} grad="linear-gradient(135deg,#FFB047,#F5641E)" />
-        <KpiCard label="Deals won (MTD)" value={String(exec.dealsWonPeriod)} sub={`Avg ${fmt(exec.avgDealSize)}`} grad="linear-gradient(135deg,#22C9B4,#0E9C7E)" />
-      </div>
-
-      {/* Second row: contract + AI cost */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 14 }}>
-        <KpiCard label="Active contracts" value={String(exec.activeContracts)} grad="linear-gradient(135deg,#5B93E6,#2A6FDB)" />
-        <KpiCard label="Expiring ≤ 60d" value={String(exec.expiringContracts)} grad="linear-gradient(135deg,#FFB047,#B4650A)" />
-        <KpiCard label="Pending approvals" value={String(exec.pendingApprovals)} grad="linear-gradient(135deg,#8A5CF6,#5B2C9E)" />
-        <KpiCard label="AI spend (all time)" value={`$${exec.aiSpendUsd.toFixed(4)}`} grad="linear-gradient(135deg,#6C55E0,#4A3AB8)" />
-      </div>
-
-      {/* Top deals + activity breakdown */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 14, marginBottom: 14 }}>
+      ),
+    },
+    kpiRow2: {
+      title: 'Contracts & Ops',
+      render: () => (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14 }}>
+          <KpiCard label="Active contracts" value={String(exec.activeContracts)} grad="linear-gradient(135deg,#5B93E6,#2A6FDB)" />
+          <KpiCard label="Expiring ≤ 60d" value={String(exec.expiringContracts)} grad="linear-gradient(135deg,#FFB047,#B4650A)" />
+          <KpiCard label="Pending approvals" value={String(exec.pendingApprovals)} grad="linear-gradient(135deg,#8A5CF6,#5B2C9E)" />
+          <KpiCard label="AI spend (all time)" value={`$${exec.aiSpendUsd.toFixed(4)}`} grad="linear-gradient(135deg,#6C55E0,#4A3AB8)" />
+        </div>
+      ),
+    },
+    byServiceTarget: {
+      title: `Target attainment by service — ${byService.period}`,
+      render: () => <ByServiceTargets stats={byService.stats} />,
+    },
+    byServiceRevenue: {
+      title: `Won revenue by service — ${byService.period}`,
+      render: () => <ByServiceBars period={byService.period} monthly={byService.monthly} />,
+    },
+    topDeals: {
+      title: 'Top open deals (weighted)',
+      render: () => (
         <div style={card}>
           <div style={cardTitle}>Top open deals (weighted)</div>
           {exec.topDeals.map((d) => (
@@ -70,7 +190,11 @@ export default function Dashboard() {
           ))}
           {exec.topDeals.length === 0 && <div style={{ padding: 20, textAlign: 'center', color: '#8888A0', fontSize: 13 }}>No open deals</div>}
         </div>
-
+      ),
+    },
+    activityBreakdown: {
+      title: 'Activity breakdown',
+      render: () => (
         <div style={card}>
           <div style={cardTitle}>Activity breakdown</div>
           <div style={{ padding: '10px 18px 14px' }}>
@@ -83,10 +207,11 @@ export default function Dashboard() {
             {exec.activityBreakdown.length === 0 && <div style={{ color: '#8888A0', fontSize: 13 }}>No activities</div>}
           </div>
         </div>
-      </div>
-
-      {/* Sales team + pipeline stages */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 14, marginBottom: 14 }}>
+      ),
+    },
+    salesTeam: {
+      title: `Sales team performance · quota attainment ${sales.quotaAttainment}%`,
+      render: () => (
         <div style={card}>
           <div style={cardTitle}>Sales team performance · quota attainment {sales.quotaAttainment}%</div>
           <div style={{ padding: '10px 18px 14px' }}>
@@ -105,7 +230,11 @@ export default function Dashboard() {
             ))}
           </div>
         </div>
-
+      ),
+    },
+    pipelineByStage: {
+      title: 'Pipeline by stage',
+      render: () => (
         <div style={card}>
           <div style={cardTitle}>Pipeline by stage</div>
           <div style={{ padding: '10px 18px 14px' }}>
@@ -129,10 +258,11 @@ export default function Dashboard() {
             )}
           </div>
         </div>
-      </div>
-
-      {/* Revenue by month + by industry */}
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 14 }}>
+      ),
+    },
+    revenueMonthly: {
+      title: 'Revenue (last 12 months)',
+      render: () => (
         <div style={card}>
           <div style={cardTitle}>Revenue (last 12 months)</div>
           <div style={{ padding: '14px 18px', display: 'flex', alignItems: 'flex-end', gap: 6, height: 180 }}>
@@ -149,7 +279,11 @@ export default function Dashboard() {
             })}
           </div>
         </div>
-
+      ),
+    },
+    byIndustry: {
+      title: 'Won by industry',
+      render: () => (
         <div style={card}>
           <div style={cardTitle}>Won by industry</div>
           <div style={{ padding: '10px 18px 14px' }}>
@@ -163,10 +297,351 @@ export default function Dashboard() {
             {revenue.byIndustry.length === 0 && <div style={{ color: '#8888A0', fontSize: 13 }}>No wins yet</div>}
           </div>
         </div>
+      ),
+    },
+  }
+
+  const toggleVisible = (id: string) => setLayout((cur) => ({
+    ...cur,
+    items: cur.items.map((e) => e.id === id ? { ...e, visible: !e.visible } : e),
+  }))
+  const resetLayout = () => setLayout(DEFAULT_LAYOUT)
+  const setColumnCount = (n: ColumnCount) => setLayout((cur) => reshapeColumns(cur, n))
+
+  const onDragStart = (id: string) => (e: DragEvent<HTMLDivElement>) => {
+    setDragId(id)
+    e.dataTransfer.effectAllowed = 'move'
+  }
+  const onDragOverItem = (id: string, column: number) => (e: DragEvent<HTMLDivElement>) => {
+    if (!dragId || dragId === id) return
+    e.preventDefault()
+    setDragOverId(id); setDragOverColumn(column)
+  }
+  /** Drop onto another widget → insert dragged item right before it (same column
+   *  as target). Preserves order across the whole flat list to keep drag+visibility
+   *  logic simple. */
+  const onDropOnItem = (targetId: string) => (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    setDragOverId(null); setDragOverColumn(null)
+    if (!dragId || dragId === targetId) return
+    setLayout((cur) => {
+      const from = cur.items.findIndex((x) => x.id === dragId)
+      const to = cur.items.findIndex((x) => x.id === targetId)
+      if (from < 0 || to < 0) return cur
+      const targetColumn = cur.items[to].column
+      const next = [...cur.items]
+      const [moved] = next.splice(from, 1)
+      // After splice `to` may have shifted by one if from < to.
+      const insertAt = from < to ? to - 1 : to
+      next.splice(insertAt, 0, { ...moved, column: targetColumn })
+      return { ...cur, items: next }
+    })
+    setDragId(null)
+  }
+  /** Drop onto an empty column → append to that column at the end. */
+  const onDropOnColumn = (column: number) => (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    setDragOverId(null); setDragOverColumn(null)
+    if (!dragId) return
+    setLayout((cur) => {
+      const from = cur.items.findIndex((x) => x.id === dragId)
+      if (from < 0) return cur
+      const next = [...cur.items]
+      const [moved] = next.splice(from, 1)
+      moved.column = column
+      // Append at the end — visually goes to the bottom of that column.
+      next.push(moved)
+      return { ...cur, items: next }
+    })
+    setDragId(null)
+  }
+
+  const visibleCount = layout.items.filter((l) => l.visible).length
+
+  return (
+    <div style={{ height: '100%', overflow: 'auto', padding: '24px 28px', animation: 'fadeUp .3s ease' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16, marginBottom: 18 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontFamily: "'Space Grotesk'", fontSize: 22, fontWeight: 600, letterSpacing: '-.01em' }}>Executive dashboard</div>
+          <div style={{ fontSize: 13, color: '#5C5C74', marginTop: 3 }}>Live from CRM · {new Date(exec.asOf).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+        </div>
+        <button type="button" onClick={() => setEditMode((v) => !v)}
+          style={{
+            background: editMode ? '#2A6FDB' : '#fff', color: editMode ? '#fff' : '#3B3B52',
+            border: `1px solid ${editMode ? '#2A6FDB' : '#E5E7F0'}`, borderRadius: 9,
+            padding: '7px 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
+          }}>
+          {editMode ? 'Done editing' : '⚙ Edit dashboard'}
+        </button>
+      </div>
+
+      {editMode && (
+        <EditPanel
+          layout={layout} widgets={widgets}
+          onToggle={toggleVisible} onReset={resetLayout} onColumns={setColumnCount}
+        />
+      )}
+
+      {/* Full-width row for KPI widgets that always span every column. Rendered
+          above the column grid so they read left-to-right even in multi-col mode. */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: layout.columns > 1 ? 14 : 0 }}>
+        {layout.items
+          .filter((it) => it.visible && FULL_WIDTH_WIDGETS.has(it.id) && widgets[it.id])
+          .map((it) => renderWidget(it))}
+      </div>
+
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: `repeat(${layout.columns}, minmax(0, 1fr))`,
+        gap: 14,
+        alignItems: 'start',
+      }}>
+        {Array.from({ length: layout.columns }).map((_, col) => {
+          const columnItems = layout.items.filter((it) => it.visible && it.column === col && !FULL_WIDTH_WIDGETS.has(it.id) && widgets[it.id])
+          const isDropTarget = dragOverColumn === col && dragOverId === null
+          return (
+            <div
+              key={col}
+              onDragOver={editMode ? (e) => { if (dragId) { e.preventDefault(); setDragOverColumn(col); setDragOverId(null) } } : undefined}
+              onDrop={editMode ? onDropOnColumn(col) : undefined}
+              style={{
+                display: 'flex', flexDirection: 'column', gap: 14,
+                minHeight: editMode ? 200 : undefined,
+                background: editMode ? 'rgba(244, 241, 253, 0.4)' : 'transparent',
+                border: editMode ? `1px dashed ${isDropTarget ? '#2A6FDB' : '#C9CDE0'}` : 'none',
+                borderRadius: 12, padding: editMode ? 10 : 0,
+              }}
+            >
+              {editMode && (
+                <div style={{ fontSize: 10.5, fontWeight: 700, color: '#8082A5', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  Column {col + 1}
+                </div>
+              )}
+              {columnItems.map((it) => renderWidget(it))}
+              {editMode && columnItems.length === 0 && (
+                <div style={{ padding: 30, textAlign: 'center', color: '#8082A5', fontSize: 11.5, border: '1px dashed #C9CDE0', borderRadius: 10 }}>
+                  Drop a widget here
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {visibleCount === 0 && (
+        <div style={{ padding: 40, textAlign: 'center', color: '#8888A0', fontSize: 13, background: '#F7F8FC', borderRadius: 14 }}>
+          All widgets hidden. Click <b>⚙ Edit dashboard</b> to re-enable.
+        </div>
+      )}
+    </div>
+  )
+
+  /** Renders one widget wrapper — used by both the full-width row and the column grid. */
+  function renderWidget(entry: WidgetLayoutEntry): ReactNode {
+    const widget = widgets[entry.id]
+    if (!widget) return null
+    const dragging = dragId === entry.id
+    const dragTarget = dragOverId === entry.id
+    return (
+      <div
+        key={entry.id}
+        draggable={editMode}
+        onDragStart={editMode ? onDragStart(entry.id) : undefined}
+        onDragOver={editMode ? onDragOverItem(entry.id, entry.column) : undefined}
+        onDragLeave={editMode ? () => setDragOverId(null) : undefined}
+        onDrop={editMode ? onDropOnItem(entry.id) : undefined}
+        onDragEnd={() => { setDragId(null); setDragOverId(null); setDragOverColumn(null) }}
+        style={{
+          position: 'relative',
+          outline: dragTarget ? '2px dashed #2A6FDB' : editMode ? '1px dashed #C9CDE0' : 'none',
+          outlineOffset: editMode ? 4 : 0,
+          opacity: dragging ? 0.5 : 1,
+          cursor: editMode ? 'grab' : 'default',
+          borderRadius: 14,
+        }}
+      >
+        {editMode && (
+          <div style={{ position: 'absolute', top: -10, left: 10, zIndex: 5, background: '#2E1A6B', color: '#fff', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 5, letterSpacing: 0.3, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span>⋮⋮ {widget.title}</span>
+            <button type="button" onClick={() => toggleVisible(entry.id)}
+              title="Hide this widget"
+              style={{ background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 12, padding: 0, lineHeight: 1 }}>×</button>
+          </div>
+        )}
+        {widget.render()}
+      </div>
+    )
+  }
+}
+
+/* ─────────────── Edit panel ─────────────── */
+
+function EditPanel({
+  layout, widgets, onToggle, onReset, onColumns,
+}: {
+  layout: DashboardLayout
+  widgets: Record<string, { title: string; render: () => ReactNode }>
+  onToggle: (id: string) => void
+  onReset: () => void
+  onColumns: (n: ColumnCount) => void
+}) {
+  return (
+    <div style={{ background: '#F4F1FD', border: '1px solid #C9B8FA', borderRadius: 12, padding: '12px 16px', marginBottom: 16, display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+      <div style={{ fontSize: 12.5, color: '#4A3AB8', fontWeight: 700, marginRight: 4 }}>Edit mode</div>
+      <div style={{ fontSize: 11.5, color: '#5C5C74', lineHeight: 1.5, flex: 1, minWidth: 200 }}>
+        Drag widgets by their grip · drop into a different column to move · click ✕ or the checkbox below to hide.
+      </div>
+      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ fontSize: 11.5, color: '#5C5C74', fontWeight: 600 }}>Columns</span>
+        <div style={{ display: 'inline-flex', background: '#fff', border: '1px solid #E5E7F0', borderRadius: 8, padding: 2 }}>
+          {([1, 2, 3] as ColumnCount[]).map((n) => (
+            <button key={n} type="button" onClick={() => onColumns(n)}
+              style={{
+                background: layout.columns === n ? '#2E1A6B' : 'transparent',
+                color: layout.columns === n ? '#fff' : '#5C5C74',
+                border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 11.5,
+                fontWeight: 700, cursor: 'pointer',
+              }}>
+              {n}
+            </button>
+          ))}
+        </div>
+      </div>
+      <button type="button" onClick={onReset}
+        style={{ background: '#fff', color: '#5C5C74', border: '1px solid #E5E7F0', borderRadius: 8, padding: '5px 12px', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}>
+        Reset to defaults
+      </button>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, flexBasis: '100%' }}>
+        {layout.items.map((e) => {
+          const w = widgets[e.id]
+          if (!w) return null
+          return (
+            <label key={e.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: '#fff', border: '1px solid #E5E7F0', borderRadius: 999, padding: '4px 10px', fontSize: 11.5, cursor: 'pointer' }}>
+              <input type="checkbox" checked={e.visible} onChange={() => onToggle(e.id)} />
+              {w.title}
+            </label>
+          )
+        })}
       </div>
     </div>
   )
 }
+
+/* ─────────────── By-service charts ─────────────── */
+
+function ByServiceBars({ period, monthly }: { period: string; monthly: ByServiceDashboardDto['monthly'] }) {
+  // Global max across all service bars in every month — one shared y-scale keeps
+  // months visually comparable to each other (a huge outlier month doesn't dwarf the rest).
+  const max = Math.max(
+    1,
+    ...monthly.flatMap((m) => SERVICE_LINES.map((s) => m.byService[s] ?? 0)),
+  )
+  const chartHeight = 180
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+  return (
+    <div style={card}>
+      <div style={cardTitle}>Won revenue by service — {period} (monthly)</div>
+      <div style={{ padding: '18px 22px 8px', overflowX: 'auto' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: chartHeight, minWidth: 640 }}>
+          {monthly.map((m, i) => {
+            const monthTotal = SERVICE_LINES.reduce((a, s) => a + (m.byService[s] ?? 0), 0)
+            return (
+              <div key={m.month} style={{ flex: 1, minWidth: 40, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                <div style={{ display: 'flex', alignItems: 'flex-end', height: chartHeight - 26, gap: 1.5 }}>
+                  {SERVICE_LINES.map((service) => {
+                    const value = m.byService[service] ?? 0
+                    const h = value > 0 ? Math.max(2, (value / max) * (chartHeight - 40)) : 0
+                    const color = SERVICE_COLOR[service] ?? '#5C5C74'
+                    return (
+                      <div key={service}
+                        title={`${monthNames[i]} · ${service}: ${fmt(value)}`}
+                        style={{
+                          width: 8, height: h,
+                          background: value > 0 ? color : 'transparent',
+                          borderRadius: '2px 2px 0 0',
+                        }} />
+                    )
+                  })}
+                </div>
+                <div style={{ fontSize: 10, color: '#8082A5', fontFamily: "'IBM Plex Mono', monospace" }}>{monthNames[i]}</div>
+                <div style={{ fontSize: 9.5, color: monthTotal > 0 ? '#3B3B52' : '#B4B4C4', fontFamily: "'IBM Plex Mono', monospace" }}>
+                  {monthTotal > 0 ? fmt(monthTotal) : '—'}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+      <div style={{ padding: '4px 22px 14px', fontSize: 10.5, color: '#8082A5', display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+        {SERVICE_LINES.map((s) => (
+          <span key={s} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ width: 10, height: 10, borderRadius: 2, background: SERVICE_COLOR[s] ?? '#5C5C74' }} />
+            <span style={{ color: '#3B3B52', fontWeight: 600 }}>{s}</span>
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function ByServiceTargets({ stats }: { stats: ByServiceDashboardDto['stats'] }) {
+  return (
+    <div style={card}>
+      <div style={cardTitle}>Target attainment by service</div>
+      <div style={{ padding: '20px 22px', display: 'grid', gridTemplateColumns: `repeat(${stats.length}, 1fr)`, gap: 16 }}>
+        {stats.map((s) => <Donut key={s.service} stat={s} />)}
+      </div>
+    </div>
+  )
+}
+
+function Donut({ stat }: { stat: ByServiceDashboardDto['stats'][number] }) {
+  const color = SERVICE_COLOR[stat.service] ?? '#5C5C74'
+  const size = 130, stroke = 14, r = (size - stroke) / 2, c = 2 * Math.PI * r
+  // Fill fraction is capped at 100% visually (over-hits render as a full ring + label).
+  const frac = stat.target > 0 ? Math.min(1, stat.won / stat.target) : 0
+  const dash = c * frac
+  const gap = c - dash
+  const noTarget = stat.target === 0
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+      <div style={{ position: 'relative', width: size, height: size }}>
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ transform: 'rotate(-90deg)' }}>
+          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#EEF0F7" strokeWidth={stroke} />
+          {!noTarget && (
+            <circle
+              cx={size / 2} cy={size / 2} r={r} fill="none"
+              stroke={color} strokeWidth={stroke} strokeLinecap="round"
+              strokeDasharray={`${dash} ${gap}`}
+            />
+          )}
+        </svg>
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+          {noTarget ? (
+            <>
+              <div style={{ fontFamily: "'Space Grotesk'", fontSize: 14, fontWeight: 700, color: '#8082A5' }}>—</div>
+              <div style={{ fontSize: 9.5, color: '#8082A5', marginTop: 2 }}>no target</div>
+            </>
+          ) : (
+            <>
+              <div style={{ fontFamily: "'Space Grotesk'", fontSize: 22, fontWeight: 700, color: stat.pctOfTarget >= 100 ? '#0E6E4E' : color }}>
+                {stat.pctOfTarget}%
+              </div>
+              <div style={{ fontSize: 10, color: '#5C5C74', marginTop: 2 }}>of target</div>
+            </>
+          )}
+        </div>
+      </div>
+      <div style={{ fontSize: 12.5, fontWeight: 700, color }}>{stat.service}</div>
+      <div style={{ fontSize: 10.5, color: '#5C5C74', fontFamily: "'IBM Plex Mono', monospace" }}>
+        {fmt(stat.won)}{stat.target > 0 ? ` / ${fmt(stat.target)}` : ''}
+      </div>
+    </div>
+  )
+}
+
+/* ─────────────── Shared bits ─────────────── */
 
 function KpiCard({ label, value, sub, grad }: { label: string; value: string; sub?: string; grad: string }) {
   return (

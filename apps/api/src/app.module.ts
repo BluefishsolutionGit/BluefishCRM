@@ -23,6 +23,7 @@ import { SearchModule } from './search/search.module'
 import { NotificationsModule } from './notifications/notifications.module'
 import { AiModule } from './ai/ai.module'
 import { DashboardsModule } from './dashboards/dashboards.module'
+import { SalesTargetsModule } from './sales-targets/sales-targets.module'
 import { ReportsModule } from './reports/reports.module'
 import { InboxModule } from './inbox/inbox.module'
 import { IntegrationsModule } from './integrations/integrations.module'
@@ -57,6 +58,7 @@ import { HealthController } from './health.controller'
     NotificationsModule,
     AiModule,
     DashboardsModule,
+    SalesTargetsModule,
     ReportsModule,
     InboxModule,
     IntegrationsModule,

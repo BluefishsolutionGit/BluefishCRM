@@ -1,9 +1,11 @@
 import { Injectable } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
 import type {
+  ByServiceDashboardDto, ByServiceStatDto,
   ExecutiveDashboardDto, PipelineDashboardDto,
   RevenueDashboardDto, SalesDashboardDto, SalesRepStatsDto,
 } from '@bluefish/shared'
+import { SERVICE_LINES } from '@bluefish/shared'
 
 const OPEN_STAGES = ['Qualification', 'Proposal', 'Negotiation']
 
@@ -167,5 +169,62 @@ export class DashboardsService {
     const byIndustry = [...industryMap.entries()].map(([industry, v]) => ({ industry, count: v.count, won: v.won }))
 
     return { monthly, bySource, byIndustry }
+  }
+
+  /**
+   * Revenue by service line for the given year, joined with any SalesTarget set for
+   * that period. Emits a row per known service line even if won=0 or target=0 so the
+   * UI charts always render the full palette; pctOfTarget is 0 when target is unset
+   * (avoids showing "Infinity%" attainment).
+   */
+  async byService(periodInput?: string): Promise<ByServiceDashboardDto> {
+    const period = periodInput && /^\d{4}$/.test(periodInput) ? periodInput : String(new Date().getFullYear())
+    const yearStart = new Date(Number(period), 0, 1)
+    const yearEnd = new Date(Number(period) + 1, 0, 1)
+
+    const [wonOpps, targets] = await Promise.all([
+      this.prisma.opportunity.findMany({
+        where: { stage: 'Won', updatedAt: { gte: yearStart, lt: yearEnd } },
+        select: { serviceOrProduct: true, value: true, updatedAt: true },
+      }),
+      this.prisma.salesTarget.findMany({ where: { period } }),
+    ])
+
+    const wonMap = new Map<string, { won: number; count: number }>()
+    // month key ("YYYY-MM") → service → sum(won)
+    const monthlyMap = new Map<string, Map<string, number>>()
+    for (const o of wonOpps) {
+      const key = o.serviceOrProduct ?? '_unassigned'
+      const cur = wonMap.get(key) ?? { won: 0, count: 0 }
+      cur.won += o.value; cur.count++
+      wonMap.set(key, cur)
+      // Grouped-monthly aggregate. `_unassigned` events would slot into an "Other"
+      // service on the client; skip them here to avoid a fifth bar in the chart.
+      if (!o.serviceOrProduct) continue
+      const monthKey = `${period}-${String(o.updatedAt.getMonth() + 1).padStart(2, '0')}`
+      const monthEntry = monthlyMap.get(monthKey) ?? new Map<string, number>()
+      monthEntry.set(o.serviceOrProduct, (monthEntry.get(o.serviceOrProduct) ?? 0) + o.value)
+      monthlyMap.set(monthKey, monthEntry)
+    }
+    const targetMap = new Map(targets.map((t) => [t.service, t.amount]))
+
+    const stats: ByServiceStatDto[] = SERVICE_LINES.map((service) => {
+      const w = wonMap.get(service) ?? { won: 0, count: 0 }
+      const target = targetMap.get(service) ?? 0
+      const pctOfTarget = target > 0 ? Math.round((w.won / target) * 100) : 0
+      return { service, target, won: w.won, count: w.count, pctOfTarget }
+    })
+
+    // Zero-fill all 12 months + every service so the chart always renders a full
+    // Jan-Dec x-axis with a slot per bar (even if the value is 0).
+    const monthly = Array.from({ length: 12 }, (_, i) => {
+      const monthKey = `${period}-${String(i + 1).padStart(2, '0')}`
+      const entry = monthlyMap.get(monthKey)
+      const byService: Record<string, number> = {}
+      for (const s of SERVICE_LINES) byService[s] = entry?.get(s) ?? 0
+      return { month: monthKey, byService }
+    })
+
+    return { period, stats, monthly }
   }
 }

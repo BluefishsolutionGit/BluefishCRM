@@ -1,10 +1,10 @@
-import { Controller, Get, UseGuards } from '@nestjs/common'
+import { Controller, Get, Query, UseGuards } from '@nestjs/common'
 import { JwtAuthGuard } from '../auth/jwt.guard'
 import { PermissionsGuard } from '../auth/permissions.guard'
 import { RequirePermissions } from '../auth/permissions.decorator'
 import { PERMISSIONS } from '../auth/permissions'
 import { DashboardsService } from './dashboards.service'
-import type { ExecutiveDashboardDto, PipelineDashboardDto, RevenueDashboardDto, SalesDashboardDto } from '@bluefish/shared'
+import type { ByServiceDashboardDto, ExecutiveDashboardDto, PipelineDashboardDto, RevenueDashboardDto, SalesDashboardDto } from '@bluefish/shared'
 
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('dashboards')
@@ -33,5 +33,11 @@ export class DashboardsController {
   @RequirePermissions(PERMISSIONS.OPPORTUNITY_READ)
   revenue(): Promise<RevenueDashboardDto> {
     return this.dashboards.revenue()
+  }
+
+  @Get('by-service')
+  @RequirePermissions(PERMISSIONS.OPPORTUNITY_READ)
+  byService(@Query('period') period?: string): Promise<ByServiceDashboardDto> {
+    return this.dashboards.byService(period)
   }
 }

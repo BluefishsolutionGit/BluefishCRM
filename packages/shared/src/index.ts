@@ -834,6 +834,32 @@ export interface ExecutiveDashboardDto {
   activityBreakdown: Array<{ type: string; count: number }>
 }
 
+export interface SalesTargetDto {
+  service: string
+  period: string  // 'YYYY'
+  amount: number  // ฿ annual target
+}
+
+export interface ByServiceStatDto {
+  service: string
+  target: number     // 0 when the admin hasn't set one for this year
+  won: number        // aggregate value of Won deals in the period
+  count: number      // number of Won deals
+  pctOfTarget: number // 0-100+; 100+ means over-hit
+}
+
+export interface MonthlyByServiceDto {
+  month: string             // 'YYYY-MM'
+  byService: Record<string, number>  // service → won revenue in that month
+}
+
+export interface ByServiceDashboardDto {
+  period: string
+  stats: ByServiceStatDto[]
+  /** 12 months of the requested year (Jan → Dec). Zero-filled for months with no wins. */
+  monthly: MonthlyByServiceDto[]
+}
+
 export interface SalesRepStatsDto {
   ownerId: string
   ownerName: string

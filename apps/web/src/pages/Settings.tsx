@@ -94,6 +94,7 @@ export default function Settings() {
       {tab === 'integrations' && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 16, alignItems: 'start' }}>
           <CalendarSyncCard onToast={toast} />
+          {canManageUsers && <SalesTargetsCard onToast={toast} />}
         </div>
       )}
 
@@ -147,6 +148,69 @@ function TimezoneField() {
         {TIMEZONE_OPTIONS.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
       </select>
       {saving && <span style={{ fontSize: 11, color: '#8082A5' }}>Saving…</span>}
+    </div>
+  )
+}
+
+/* ═══════════════════════ Annual sales targets (per service line) ═══════════════════════ */
+
+const SERVICE_COLORS: Record<string, string> = { Box: '#2A6FDB', '3S': '#0E9C7E', '3D': '#B4650A', 'AI&RPA': '#6C55E0' }
+
+function SalesTargetsCard({ onToast }: { onToast: (msg: string) => void }) {
+  const [year] = useState(String(new Date().getFullYear()))
+  const [targets, setTargets] = useState<Record<string, number>>({})
+  const [initial, setInitial] = useState<Record<string, number>>({})
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    api.salesTargets(year).then((rows) => {
+      const map: Record<string, number> = {}
+      for (const s of SERVICE_LINES) map[s] = 0
+      for (const r of rows) map[r.service] = r.amount
+      setTargets(map); setInitial({ ...map })
+    }).catch(() => {})
+  }, [year])
+
+  const dirty = SERVICE_LINES.some((s) => (targets[s] ?? 0) !== (initial[s] ?? 0))
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      const changed = SERVICE_LINES.filter((s) => (targets[s] ?? 0) !== (initial[s] ?? 0))
+      await Promise.all(changed.map((s) => api.setSalesTarget(s, year, targets[s] ?? 0)))
+      setInitial({ ...targets })
+      onToast(`Sales targets saved for ${year}`)
+    } catch (e) {
+      onToast(e instanceof ApiError ? e.message : 'Failed to save targets')
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <div style={card}>
+      <div style={cardTitle}>Annual sales targets — {year}</div>
+      <div style={{ padding: '14px 20px 18px', fontSize: 13, color: '#3B3B52' }}>
+        <div style={{ color: '#5C5C74', marginBottom: 12, lineHeight: 1.55 }}>
+          Set the ฿ target per service line for {year}. The Home dashboard shows attainment
+          (won / target) per service.
+        </div>
+        {SERVICE_LINES.map((s) => (
+          <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+            <span style={{ width: 8, height: 8, borderRadius: 2, background: SERVICE_COLORS[s], flex: 'none' }} />
+            <span style={{ width: 72, fontWeight: 700 }}>{s}</span>
+            <input type="number" min={0} step={100000}
+              value={targets[s] ?? 0}
+              onChange={(e) => setTargets({ ...targets, [s]: Math.max(0, Number(e.target.value) || 0) })}
+              style={{ ...inputStyle, flex: 1, padding: '6px 10px', fontSize: 12.5 }} />
+            <span style={{ fontSize: 11, color: '#8082A5', width: 30 }}>฿</span>
+          </div>
+        ))}
+        <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
+          <button type="button" onClick={save} disabled={!dirty || saving}
+            style={{ ...primaryBtn, padding: '7px 16px', opacity: !dirty || saving ? 0.5 : 1, cursor: !dirty || saving ? 'not-allowed' : 'pointer' }}>
+            {saving ? 'Saving…' : 'Save targets'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

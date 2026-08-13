@@ -466,6 +466,14 @@ export const api = {
   salesDashboard: () => request<import('@bluefish/shared').SalesDashboardDto>('/dashboards/sales'),
   pipelineDashboard: () => request<import('@bluefish/shared').PipelineDashboardDto>('/dashboards/pipeline'),
   revenueDashboard: () => request<import('@bluefish/shared').RevenueDashboardDto>('/dashboards/revenue'),
+  byServiceDashboard: (period?: string) =>
+    request<import('@bluefish/shared').ByServiceDashboardDto>(`/dashboards/by-service${period ? `?period=${period}` : ''}`),
+  salesTargets: (period?: string) =>
+    request<import('@bluefish/shared').SalesTargetDto[]>(`/sales-targets${period ? `?period=${period}` : ''}`),
+  setSalesTarget: (service: string, period: string, amount: number) =>
+    request<import('@bluefish/shared').SalesTargetDto>(`/sales-targets/${encodeURIComponent(service)}`, {
+      method: 'PUT', body: JSON.stringify({ period, amount }),
+    }),
 
   // ─────── Reports ───────
   reports: () => request<import('@bluefish/shared').ReportDefinitionDto[]>('/reports'),

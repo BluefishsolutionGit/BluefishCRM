@@ -754,6 +754,21 @@ model ReportSchedule {
   @@index([isActive])
 }
 
+/// Annual sales target per service line. Uniqueness on (service, period) so admins
+/// can set one row per service/year. `period` is a 4-digit year string for MVP;
+/// widening to quarters later is additive without a data migration.
+model SalesTarget {
+  id        String   @id @default(cuid())
+  service   String
+  period    String   // 'YYYY'
+  amount    Int      // target amount in ฿
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([service, period])
+  @@index([period])
+}
+
 /// Read-receipt for the derived notification feed. The feed itself is computed on
 /// the fly from audit log + activities + approvals, so notifications don't live in
 /// their own table — but "have I seen this?" needs to persist. `key` matches the id
