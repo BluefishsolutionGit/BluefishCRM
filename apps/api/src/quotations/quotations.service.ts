@@ -1,6 +1,7 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common'
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
 import { AuditService } from '../audit/audit.service'
+import { FlowaccountService } from '../integrations/flowaccount/flowaccount.service'
 import { nextQuotationNo } from './quotation-numbers'
 import type {
   CreateQuotationDto,
@@ -25,7 +26,24 @@ function calcLine(line: { quantity: number; unitPrice: number; discountPct: numb
 
 @Injectable()
 export class QuotationsService {
-  constructor(private prisma: PrismaService, private audit: AuditService) {}
+  private readonly logger = new Logger(QuotationsService.name)
+
+  constructor(
+    private prisma: PrismaService,
+    private audit: AuditService,
+    private flowaccount: FlowaccountService,
+  ) {}
+
+  /** Fire an outbound FlowAccount push without blocking the caller — approval workflow
+   *  should never fail because the accounting integration returned 5xx. Errors are
+   *  logged; user can hit the manual "Re-push" button as a recovery path. */
+  private async safeFlowaccountPush(quotationId: string, ctx: AuditRequestContext, trigger: string): Promise<void> {
+    try { await this.flowaccount.pushQuotation(quotationId, ctx) }
+    catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      this.logger.warn(`Auto-push to FlowAccount failed (${trigger}) for quotation ${quotationId}: ${msg}`)
+    }
+  }
 
   async list(): Promise<QuotationDto[]> {
     const rows = await this.prisma.quotation.findMany({
@@ -152,6 +170,12 @@ export class QuotationsService {
       await this.prisma.quotation.update({ where: { id }, data: { approvalStep: q.approvalStep + 1 } })
     }
     await this.audit.log({ ...ctx, userId, action: 'quotation.approve', entity: 'quotation', entityId: id, metadata: { step: q.approvalStep, isFinal } })
+    // Final approval = the quotation is now allowed to hit FlowAccount. First approval
+    // creates the doc; subsequent revisions PATCH the same one (pushQuotation checks
+    // flowaccountId and picks create vs update automatically).
+    if (isFinal) {
+      await this.safeFlowaccountPush(id, ctx, 'final-approve')
+    }
     return this.findOne(id)
   }
 
@@ -253,6 +277,7 @@ export class QuotationsService {
       flowaccountDocumentNumber: row.flowaccountDocumentNumber,
       flowaccountStatus: row.flowaccountStatus,
       flowaccountLastSyncedAt: row.flowaccountLastSyncedAt?.toISOString() ?? null,
+      flowaccountDeepLink: this.flowaccount.deepLinkFor(row.flowaccountId),
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
     }

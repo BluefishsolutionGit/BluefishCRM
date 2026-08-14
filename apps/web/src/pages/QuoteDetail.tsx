@@ -389,21 +389,29 @@ function FlowaccountPanel({ q, canWrite, onChanged }: { q: QuotationDto; canWrit
           </div>
         ) : (
           <div style={{ flex: 1, fontSize: 12, color: '#5C5C74' }}>
-            {canPush
-              ? 'Quotation is ready — push to FlowAccount to create the accounting document.'
-              : `Push available when quotation is Approved/Sent (currently ${q.status}).`}
+            {q.status === 'Approved' || q.status === 'Sent' || q.status === 'Accepted'
+              ? 'Auto-push should have fired on approval — click Push if the doc is missing.'
+              : `Auto-push runs on final approval (currently ${q.status}).`}
           </div>
         )}
 
         <div style={{ display: 'flex', gap: 8 }}>
+          {pushed && q.flowaccountDeepLink && (
+            <a href={q.flowaccountDeepLink} target="_blank" rel="noopener noreferrer"
+              style={{ ...outlineBtn, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              title="Open this quotation in FlowAccount">
+              Open in FlowAccount ↗
+            </a>
+          )}
           {pushed && (
             <div onClick={busy ? undefined : sync} style={{ ...outlineBtn, opacity: busy ? 0.5 : 1 }}>
               {busy === 'sync' ? 'Syncing…' : 'Sync status'}
             </div>
           )}
           {canPush && (
-            <div onClick={busy ? undefined : push} style={{ ...primaryBtn, background: '#0055FF', opacity: busy ? 0.5 : 1 }}>
-              {busy === 'push' ? 'Pushing…' : pushed ? 'Re-push' : 'Push to FlowAccount'}
+            <div onClick={busy ? undefined : push} style={{ ...primaryBtn, background: '#0055FF', opacity: busy ? 0.5 : 1 }}
+              title={pushed ? 'Force a re-push if the doc drifted' : 'Manual override — normally auto-pushed on approval'}>
+              {busy === 'push' ? 'Pushing…' : pushed ? 'Re-push' : 'Push now'}
             </div>
           )}
         </div>

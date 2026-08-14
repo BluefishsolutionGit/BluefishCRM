@@ -524,6 +524,9 @@ export interface QuotationDto {
   flowaccountDocumentNumber: string | null
   flowaccountStatus: string | null
   flowaccountLastSyncedAt: string | null
+  /** Deep-link to the FlowAccount web app page for this quotation. Null when
+   *  the quotation hasn't been pushed yet. */
+  flowaccountDeepLink: string | null
   createdAt: string
   updatedAt: string
 }

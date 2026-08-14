@@ -45,6 +45,17 @@ export class FlowaccountService {
   private get culture(): string { return this.cfg.get<string>('FLOWACCOUNT_CULTURE') ?? 'th' }
   private get baseUrl(): string { return this.cfg.get<string>('FLOWACCOUNT_BASE_URL') ?? 'https://openapi.flowaccount.com/sandbox' }
   private get tokenUrl(): string { return this.cfg.get<string>('FLOWACCOUNT_TOKEN_URL') ?? 'https://openapi.flowaccount.com/v1/token' }
+  /** Base of the FlowAccount web UI (not the API). Admins point this at sandbox or
+   *  production without rebuilding the client. */
+  private get webBaseUrl(): string { return this.cfg.get<string>('FLOWACCOUNT_WEB_BASE_URL') ?? 'https://member.flowaccount.com' }
+
+  /** Deep-link to the FlowAccount web app for a given quotation. Returns null when
+   *  we don't have an id yet — callers should render an "Open in FlowAccount" button
+   *  only when this is set. */
+  deepLinkFor(flowaccountId: string | null): string | null {
+    if (!flowaccountId) return null
+    return `${this.webBaseUrl}/documents/quotations/${encodeURIComponent(flowaccountId)}`
+  }
 
   status(): FlowaccountStatusDto {
     return {
