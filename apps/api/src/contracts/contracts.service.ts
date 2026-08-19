@@ -5,6 +5,7 @@ import { PERMISSIONS, permissionsFor, type Permission } from '../auth/permission
 import { ContractTemplatesService } from './templates.service'
 import { analyzeContractText, overallRisk } from './risk-detection'
 import { nextContractNo } from './contract-numbers'
+import { SERVICE_LINES } from '@bluefish/shared'
 import type {
   ContractApprovalDto,
   ContractDto,
@@ -16,8 +17,24 @@ import type {
   ObligationDto,
   ObligationKind,
   RiskLevel,
+  ServiceLine,
   UpdateContractDto,
 } from '@bluefish/shared'
+
+const sanitizeServiceLines = (values: readonly string[] | undefined | null): ServiceLine[] => {
+  if (!values) return []
+  const set = new Set<ServiceLine>()
+  for (const v of values) {
+    if ((SERVICE_LINES as readonly string[]).includes(v)) set.add(v as ServiceLine)
+  }
+  return [...set]
+}
+
+const toList = (v: string | string[] | undefined): string[] => {
+  if (v === undefined) return []
+  const arr = Array.isArray(v) ? v : v.split(',')
+  return arr.map((s) => s.trim()).filter(Boolean)
+}
 import type { AuditRequestContext } from '../common/request-context'
 
 const APPROVAL_CHAIN = [
@@ -42,9 +59,17 @@ export class ContractsService {
     private templates: ContractTemplatesService,
   ) {}
 
-  async list(filter: { status?: string; customerId?: string } = {}): Promise<ContractDto[]> {
+  async list(filter: { status?: string | string[]; customerId?: string; service?: string | string[] } = {}): Promise<ContractDto[]> {
+    const where: Record<string, unknown> = {}
+    if (filter.customerId) where.customerId = filter.customerId
+    const statuses = toList(filter.status)
+    if (statuses.length === 1) where.status = statuses[0]
+    else if (statuses.length > 1) where.status = { in: statuses }
+    const services = toList(filter.service).filter((s) => (SERVICE_LINES as readonly string[]).includes(s))
+    if (services.length === 1) where.serviceLines = { has: services[0] }
+    else if (services.length > 1) where.serviceLines = { hasSome: services }
     const rows = await this.prisma.contract.findMany({
-      where: filter,
+      where,
       include: this.includeAll(),
       orderBy: { createdAt: 'desc' },
     })
@@ -77,6 +102,7 @@ export class ContractsService {
       type: template.type, title: `${template.type} — ${customer.name}`, body,
       value: input.value, startDate: input.startDate, endDate: input.endDate,
       templateId: template.id, autoRenew: input.autoRenew,
+      serviceLines: sanitizeServiceLines(input.serviceLines),
     }, userId, ctx)
   }
 
@@ -89,18 +115,21 @@ export class ContractsService {
       body: input.body ?? `${input.type} for ${customer.name}. Standard terms apply.`,
       value: input.value, startDate: input.startDate, endDate: input.endDate,
       autoRenew: input.autoRenew,
+      serviceLines: sanitizeServiceLines(input.serviceLines),
     }, userId, ctx)
   }
 
   private async createInternal(data: {
     customerId: string; opportunityId?: string; type: string; title: string; body: string
     value?: number; startDate?: string; endDate?: string; templateId?: string; autoRenew?: boolean
+    serviceLines?: ServiceLine[]
   }, userId: string, ctx: AuditRequestContext): Promise<ContractDto> {
     const no = await nextContractNo(this.prisma)
     const contract = await this.prisma.contract.create({
       data: {
         no, customerId: data.customerId, opportunityId: data.opportunityId ?? null, ownerId: userId,
         type: data.type, status: 'Draft', autoRenew: data.autoRenew ?? false,
+        serviceLines: data.serviceLines ?? [],
         value: data.value ?? 0,
         startDate: data.startDate ? new Date(data.startDate) : null,
         endDate: data.endDate ? new Date(data.endDate) : null,
@@ -135,6 +164,7 @@ export class ContractsService {
     if (input.autoRenew !== undefined) scalarUpdate.autoRenew = input.autoRenew
     if (input.startDate !== undefined) scalarUpdate.startDate = input.startDate ? new Date(input.startDate) : null
     if (input.endDate !== undefined) scalarUpdate.endDate = input.endDate ? new Date(input.endDate) : null
+    if (input.serviceLines !== undefined) scalarUpdate.serviceLines = { set: sanitizeServiceLines(input.serviceLines) }
     if (Object.keys(scalarUpdate).length) {
       await this.prisma.contract.update({ where: { id }, data: scalarUpdate })
     }
@@ -253,6 +283,7 @@ export class ContractsService {
       startDate: input.newStart, endDate: input.newEnd,
       templateId: source.currentVersion.templateId ?? undefined,
       autoRenew: source.autoRenew,
+      serviceLines: sanitizeServiceLines(source.serviceLines),
     }, userId, ctx)
 
     await this.prisma.contract.update({ where: { id: created.id }, data: { parentContractId: source.id } })
@@ -323,7 +354,7 @@ export class ContractsService {
 
   private toDto = (row: {
     id: string; no: string; customerId: string; opportunityId: string | null; ownerId: string
-    type: string; status: string; approvalStep: number; value: number; currency: string; risk: string
+    type: string; serviceLines: string[]; status: string; approvalStep: number; value: number; currency: string; risk: string
     startDate: Date | null; endDate: Date | null; signedAt: Date | null; terminatedAt: Date | null
     autoRenew: boolean; parentContractId: string | null; createdAt: Date; updatedAt: Date
     customer: { name: string }
@@ -351,7 +382,8 @@ export class ContractsService {
       customerId: row.customerId, customerName: row.customer.name,
       opportunityId: row.opportunityId, opportunityTitle: row.opportunity?.title ?? null,
       ownerId: row.ownerId, ownerName: row.owner.name,
-      type: row.type, status: row.status as ContractStatus,
+      type: row.type, serviceLines: sanitizeServiceLines(row.serviceLines),
+      status: row.status as ContractStatus,
       approvalStep: row.approvalStep,
       value: row.value, currency: row.currency, risk: row.risk as RiskLevel,
       startDate: row.startDate?.toISOString() ?? null,

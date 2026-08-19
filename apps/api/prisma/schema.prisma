@@ -383,6 +383,7 @@ model Contract {
   opportunityId     String?
   ownerId           String
   type              String
+  serviceLines      String[]  @default([])
   status            String    @default("Draft")
   approvalStep      Int       @default(0)
   currentVersionId  String?   @unique

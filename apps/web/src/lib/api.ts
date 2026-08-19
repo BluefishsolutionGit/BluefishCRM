@@ -336,15 +336,26 @@ export const api = {
   documentDownloadUrl: (versionId: string) => `${API_BASE}/documents/versions/${versionId}/download`,
 
   // ─────── Contracts ───────
-  contracts: (filter: { status?: string; customerId?: string } = {}) => {
+  contracts: (filter: { status?: string | string[]; customerId?: string; service?: string | string[] } = {}) => {
     const p = new URLSearchParams()
-    if (filter.status) p.set('status', filter.status)
+    const statusCsv = Array.isArray(filter.status) ? filter.status.join(',') : filter.status
+    const serviceCsv = Array.isArray(filter.service) ? filter.service.join(',') : filter.service
+    if (statusCsv) p.set('status', statusCsv)
     if (filter.customerId) p.set('customerId', filter.customerId)
+    if (serviceCsv) p.set('service', serviceCsv)
     const qs = p.toString()
     return request<ContractDto[]>(`/contracts${qs ? `?${qs}` : ''}`)
   },
   contract: (id: string) => request<ContractDto>(`/contracts/${id}`),
-  contractDashboard: () => request<ContractDashboardDto>('/contracts/dashboard'),
+  contractDashboard: (filter: { status?: string | string[]; service?: string | string[] } = {}) => {
+    const p = new URLSearchParams()
+    const statusCsv = Array.isArray(filter.status) ? filter.status.join(',') : filter.status
+    const serviceCsv = Array.isArray(filter.service) ? filter.service.join(',') : filter.service
+    if (statusCsv) p.set('status', statusCsv)
+    if (serviceCsv) p.set('service', serviceCsv)
+    const qs = p.toString()
+    return request<ContractDashboardDto>(`/contracts/dashboard${qs ? `?${qs}` : ''}`)
+  },
   contractTemplates: () => request<ContractTemplateDto[]>('/contract-templates'),
   createContract: (data: CreateContractDto) => request<ContractDto>('/contracts', { method: 'POST', body: JSON.stringify(data) }),
   createContractFromTemplate: (data: CreateContractFromTemplateDto) =>
@@ -361,12 +372,16 @@ export const api = {
   renewContract: (id: string, data: { newStart: string; newEnd: string; newValue?: number }) =>
     request<ContractDto>(`/contracts/${id}/renew`, { method: 'POST', body: JSON.stringify(data) }),
 
-  obligations: (filter: { from?: Date; to?: Date; status?: string; contractId?: string } = {}) => {
+  obligations: (filter: { from?: Date; to?: Date; status?: string; contractId?: string; contractStatus?: string | string[]; contractService?: string | string[] } = {}) => {
     const p = new URLSearchParams()
     if (filter.from) p.set('from', filter.from.toISOString())
     if (filter.to) p.set('to', filter.to.toISOString())
     if (filter.status) p.set('status', filter.status)
     if (filter.contractId) p.set('contractId', filter.contractId)
+    const csCsv = Array.isArray(filter.contractStatus) ? filter.contractStatus.join(',') : filter.contractStatus
+    const svCsv = Array.isArray(filter.contractService) ? filter.contractService.join(',') : filter.contractService
+    if (csCsv) p.set('contractStatus', csCsv)
+    if (svCsv) p.set('contractService', svCsv)
     const qs = p.toString()
     return request<ObligationDto[]>(`/obligations${qs ? `?${qs}` : ''}`)
   },

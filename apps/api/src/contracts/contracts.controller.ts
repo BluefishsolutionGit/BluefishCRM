@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, Req, UnauthorizedException, UseGuards } from '@nestjs/common'
-import { IsBoolean, IsInt, IsISO8601, IsOptional, IsString, MinLength } from 'class-validator'
+import { ArrayUnique, IsArray, IsBoolean, IsIn, IsInt, IsISO8601, IsOptional, IsString, MinLength } from 'class-validator'
+import { SERVICE_LINES, type ServiceLine } from '@bluefish/shared'
 import { JwtAuthGuard } from '../auth/jwt.guard'
 import { PermissionsGuard } from '../auth/permissions.guard'
 import { RequirePermissions } from '../auth/permissions.decorator'
@@ -23,6 +24,7 @@ class CreateFromTemplateBody {
   @IsOptional() @IsISO8601() endDate?: string
   @IsOptional() variables?: Record<string, string>
   @IsOptional() @IsBoolean() autoRenew?: boolean
+  @IsOptional() @IsArray() @ArrayUnique() @IsIn(SERVICE_LINES as readonly string[], { each: true }) serviceLines?: ServiceLine[]
 }
 class CreateContractBody {
   @IsString() customerId!: string
@@ -34,6 +36,7 @@ class CreateContractBody {
   @IsOptional() @IsISO8601() startDate?: string
   @IsOptional() @IsISO8601() endDate?: string
   @IsOptional() @IsBoolean() autoRenew?: boolean
+  @IsOptional() @IsArray() @ArrayUnique() @IsIn(SERVICE_LINES as readonly string[], { each: true }) serviceLines?: ServiceLine[]
 }
 class UpdateContractBody {
   @IsOptional() @IsString() type?: string
@@ -44,6 +47,7 @@ class UpdateContractBody {
   @IsOptional() @IsISO8601() endDate?: string
   @IsOptional() @IsString() risk?: 'Low' | 'Med' | 'High'
   @IsOptional() @IsBoolean() autoRenew?: boolean
+  @IsOptional() @IsArray() @ArrayUnique() @IsIn(SERVICE_LINES as readonly string[], { each: true }) serviceLines?: ServiceLine[]
 }
 class ApproveBody { @IsOptional() @IsString() comment?: string }
 class RejectBody { @IsString() @MinLength(1) comment!: string }
@@ -81,16 +85,20 @@ export class ContractsController {
   // ─── Dashboard ───
   @Get('contracts/dashboard')
   @RequirePermissions(PERMISSIONS.CONTRACT_READ)
-  dashboardSummary(): Promise<ContractDashboardDto> {
-    return this.dashboard.summary()
+  dashboardSummary(@Query('status') status?: string, @Query('service') service?: string): Promise<ContractDashboardDto> {
+    return this.dashboard.summary({ status, service })
   }
 
   // ─── Obligations ───
   @Get('obligations')
   @RequirePermissions(PERMISSIONS.CONTRACT_READ)
-  listObligations(@Query('from') from?: string, @Query('to') to?: string, @Query('status') status?: string, @Query('contractId') contractId?: string): Promise<ObligationDto[]> {
+  listObligations(
+    @Query('from') from?: string, @Query('to') to?: string, @Query('status') status?: string, @Query('contractId') contractId?: string,
+    @Query('contractStatus') contractStatus?: string, @Query('contractService') contractService?: string,
+  ): Promise<ObligationDto[]> {
     return this.obligations.list({
       contractId, status,
+      contractStatus, contractService,
       from: from ? new Date(from) : undefined, to: to ? new Date(to) : undefined,
     })
   }
@@ -117,8 +125,8 @@ export class ContractsController {
   // ─── Contracts ───
   @Get('contracts')
   @RequirePermissions(PERMISSIONS.CONTRACT_READ)
-  list(@Query('status') status?: string, @Query('customerId') customerId?: string): Promise<ContractDto[]> {
-    return this.contracts.list({ status, customerId })
+  list(@Query('status') status?: string, @Query('customerId') customerId?: string, @Query('service') service?: string): Promise<ContractDto[]> {
+    return this.contracts.list({ status, customerId, service })
   }
 
   @Get('contracts/:id')

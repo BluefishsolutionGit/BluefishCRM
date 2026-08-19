@@ -3,8 +3,9 @@ import type {
   CompetitorContractDto, CompetitorContractStatus, CompetitorDto,
   ContractDashboardDto, ContractDto, ContractStatus, ContractTemplateDto,
   CreateCompetitorContractDto, CreateCompetitorDto, CustomerDto, ObligationDto,
-  UpdateCompetitorContractDto,
+  ServiceLine, UpdateCompetitorContractDto,
 } from '@bluefish/shared'
+import { SERVICE_LINES } from '@bluefish/shared'
 import { api, ApiError } from '../lib/api'
 import { icons } from '../lib/icons'
 import { useToast } from '../lib/ToastContext'
@@ -39,6 +40,37 @@ const KIND_COLOR: Record<string, string> = {
 const RISK_STYLE: Record<string, { bg: string; fg: string }> = {
   High: { bg: '#FDECEA', fg: '#C0392B' }, Med: { bg: '#FEF3E2', fg: '#B4650A' }, Low: { bg: '#EAF3EC', fg: '#1E8A4C' },
 }
+const SERVICE_STYLE: Record<ServiceLine, { bg: string; fg: string }> = {
+  '3D':     { bg: '#EEF0FA', fg: '#4A3AB8' },
+  '3S':     { bg: '#E4EDFC', fg: '#2A6FDB' },
+  'Box':    { bg: '#FEF3E2', fg: '#B4650A' },
+  'AI&RPA': { bg: '#E5F8ED', fg: '#0E6E4E' },
+}
+
+function ServicePill({ s, sm }: { s: ServiceLine; sm?: boolean }) {
+  const st = SERVICE_STYLE[s]
+  return <span style={{ background: st.bg, color: st.fg, borderRadius: 6, fontSize: sm ? 9.5 : 10.5, fontWeight: 700, padding: sm ? '1px 5px' : '2px 6px', whiteSpace: 'nowrap' }}>{s}</span>
+}
+
+function ServiceLineChips({ selected, onChange, sm }: { selected: ServiceLine[]; onChange: (next: ServiceLine[]) => void; sm?: boolean }) {
+  const toggle = (s: ServiceLine) => onChange(selected.includes(s) ? selected.filter((x) => x !== s) : [...selected, s])
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+      {SERVICE_LINES.map((s) => {
+        const on = selected.includes(s)
+        const st = SERVICE_STYLE[s]
+        return (
+          <div key={s} onClick={() => toggle(s)} style={{
+            cursor: 'pointer', border: `1px solid ${on ? st.fg : '#E5E7F0'}`,
+            background: on ? st.bg : '#fff', color: on ? st.fg : '#5C5C74',
+            borderRadius: 8, padding: sm ? '3px 8px' : '5px 10px',
+            fontSize: sm ? 11 : 12, fontWeight: 700,
+          }}>{s}</div>
+        )
+      })}
+    </div>
+  )
+}
 
 const fmt = (n: number) => n >= 1_000_000 ? '฿' + (n / 1e6).toFixed(1) + 'M' : '฿' + Math.round(n / 1e3) + 'K'
 
@@ -46,7 +78,11 @@ export default function Contracts() {
   const [sub, setSub] = useState<Sub>('dashboard')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [newFromTemplate, setNewFromTemplate] = useState(false)
+  const [statusFilters, setStatusFilters] = useState<ContractStatus[]>([])
+  const [serviceFilters, setServiceFilters] = useState<ServiceLine[]>([])
   const toast = useToast()
+
+  const showFilterBar = sub !== 'competitors'
 
   return (
     <div style={{ height: '100%', display: 'flex', overflow: 'hidden', background: '#F7F8FC' }}>
@@ -72,12 +108,21 @@ export default function Contracts() {
         <div style={{ height: 52, minHeight: 52, background: '#fff', borderBottom: '1px solid #E5E7F0', display: 'flex', alignItems: 'center', gap: 12, padding: '0 24px' }}>
           <div style={{ fontFamily: "'Space Grotesk'", fontSize: 17, fontWeight: 600 }}>{SUB_DEFS.find((s) => s.id === sub)?.label}</div>
         </div>
-        <div style={{ padding: '22px 24px' }}>
-          {sub === 'dashboard' && <DashboardTab onOpenContract={(id) => { setSelectedId(id); setSub('repository') }} />}
-          {sub === 'repository' && <RepositoryTab selectedId={selectedId} onSelect={setSelectedId} onNewFromTemplate={() => setNewFromTemplate(true)} onToast={toast} />}
-          {sub === 'calendar' && <CalendarTab />}
-          {sub === 'approvals' && <ApprovalsTab onToast={toast} />}
-          {sub === 'obligations' && <ObligationsTab onToast={toast} />}
+        {showFilterBar && (
+          <div style={{ padding: '14px 24px 0' }}>
+            <ContractFilterBar
+              statusFilters={statusFilters} setStatusFilters={setStatusFilters}
+              serviceFilters={serviceFilters} setServiceFilters={setServiceFilters}
+              hint={sub === 'approvals' ? 'Approvals defaults to Pending Approval when no status is picked.' : undefined}
+            />
+          </div>
+        )}
+        <div style={{ padding: '18px 24px 22px' }}>
+          {sub === 'dashboard' && <DashboardTab statusFilters={statusFilters} serviceFilters={serviceFilters} onOpenContract={(id) => { setSelectedId(id); setSub('repository') }} />}
+          {sub === 'repository' && <RepositoryTab statusFilters={statusFilters} serviceFilters={serviceFilters} selectedId={selectedId} onSelect={setSelectedId} onNewFromTemplate={() => setNewFromTemplate(true)} onToast={toast} />}
+          {sub === 'calendar' && <CalendarTab statusFilters={statusFilters} serviceFilters={serviceFilters} />}
+          {sub === 'approvals' && <ApprovalsTab statusFilters={statusFilters} serviceFilters={serviceFilters} onToast={toast} />}
+          {sub === 'obligations' && <ObligationsTab statusFilters={statusFilters} serviceFilters={serviceFilters} onToast={toast} />}
           {sub === 'competitors' && <CompetitorTrackerTab onToast={toast} />}
         </div>
       </div>
@@ -87,12 +132,68 @@ export default function Contracts() {
   )
 }
 
+const STATUS_FILTER_OPTIONS: ContractStatus[] = ['Draft', 'Pending Approval', 'Active', 'Expiring', 'Signed']
+
+function ContractFilterBar({ statusFilters, setStatusFilters, serviceFilters, setServiceFilters, hint }: {
+  statusFilters: ContractStatus[]; setStatusFilters: (v: ContractStatus[]) => void
+  serviceFilters: ServiceLine[]; setServiceFilters: (v: ServiceLine[]) => void
+  hint?: string
+}) {
+  const toggleStatus = (s: ContractStatus) => setStatusFilters(statusFilters.includes(s) ? statusFilters.filter((x) => x !== s) : [...statusFilters, s])
+  const toggleService = (s: ServiceLine) => setServiceFilters(serviceFilters.includes(s) ? serviceFilters.filter((x) => x !== s) : [...serviceFilters, s])
+  const anyOn = statusFilters.length > 0 || serviceFilters.length > 0
+
+  return (
+    <div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+        <span style={{ fontSize: 10.5, fontWeight: 700, color: '#8888A0', letterSpacing: '.05em', textTransform: 'uppercase', marginRight: 2 }}>Status</span>
+        <div onClick={() => setStatusFilters([])} style={{ border: `1px solid ${statusFilters.length === 0 ? '#2A6FDB' : '#E5E7F0'}`, background: statusFilters.length === 0 ? '#2A6FDB' : '#fff', color: statusFilters.length === 0 ? '#fff' : '#5C5C74', borderRadius: 8, padding: '6px 13px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>All</div>
+        {STATUS_FILTER_OPTIONS.map((f) => {
+          const on = statusFilters.includes(f)
+          const st = STATUS_STYLE[f]
+          return (
+            <div key={f} onClick={() => toggleStatus(f)} style={{
+              border: `1px solid ${on ? st.fg : '#E5E7F0'}`, background: on ? st.bg : '#fff', color: on ? st.fg : '#5C5C74',
+              borderRadius: 8, padding: '6px 13px', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+            }}>{on && <span style={{ fontSize: 10 }}>✓</span>}{f}</div>
+          )
+        })}
+        <div style={{ width: 1, alignSelf: 'stretch', background: '#E5E7F0', margin: '0 4px' }} />
+        <span style={{ fontSize: 10.5, fontWeight: 700, color: '#8888A0', letterSpacing: '.05em', textTransform: 'uppercase', marginRight: 2 }}>Service</span>
+        <div onClick={() => setServiceFilters([])} style={{ border: `1px solid ${serviceFilters.length === 0 ? '#2A6FDB' : '#E5E7F0'}`, background: serviceFilters.length === 0 ? '#2A6FDB' : '#fff', color: serviceFilters.length === 0 ? '#fff' : '#5C5C74', borderRadius: 8, padding: '6px 13px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>All</div>
+        {SERVICE_LINES.map((s) => {
+          const on = serviceFilters.includes(s)
+          const st = SERVICE_STYLE[s]
+          return (
+            <div key={s} onClick={() => toggleService(s)} style={{
+              border: `1px solid ${on ? st.fg : '#E5E7F0'}`, background: on ? st.bg : '#fff', color: on ? st.fg : '#5C5C74',
+              borderRadius: 8, padding: '6px 13px', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+            }}>{on && <span style={{ fontSize: 10 }}>✓</span>}{s}</div>
+          )
+        })}
+        {anyOn && (
+          <div onClick={() => { setStatusFilters([]); setServiceFilters([]) }} style={{ marginLeft: 'auto', fontSize: 11.5, color: '#8888A0', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}>Clear all</div>
+        )}
+      </div>
+      {hint && <div style={{ marginTop: 6, fontSize: 11, color: '#8888A0' }}>{hint}</div>}
+    </div>
+  )
+}
+
 // ─── Dashboard ───
-function DashboardTab({ onOpenContract }: { onOpenContract: (id: string) => void }) {
+function DashboardTab({ statusFilters, serviceFilters, onOpenContract }: { statusFilters: ContractStatus[]; serviceFilters: ServiceLine[]; onOpenContract: (id: string) => void }) {
   const [data, setData] = useState<ContractDashboardDto | null>(null)
   const toast = useToast()
 
-  useEffect(() => { api.contractDashboard().then(setData).catch((e) => toast(e instanceof ApiError ? e.message : 'Failed')) /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [])
+  useEffect(() => {
+    setData(null)
+    api.contractDashboard({ status: statusFilters.length ? statusFilters : undefined, service: serviceFilters.length ? serviceFilters : undefined })
+      .then(setData)
+      .catch((e) => toast(e instanceof ApiError ? e.message : 'Failed'))
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [statusFilters, serviceFilters])
 
   if (!data) return <div style={{ color: '#8888A0' }}>Loading…</div>
 
@@ -155,29 +256,26 @@ function DashboardTab({ onOpenContract }: { onOpenContract: (id: string) => void
 }
 
 // ─── Repository ───
-function RepositoryTab({ selectedId, onSelect, onNewFromTemplate: _onNewFromTemplate, onToast }: { selectedId: string | null; onSelect: (id: string) => void; onNewFromTemplate: () => void; onToast: (m: string) => void }) {
+function RepositoryTab({ statusFilters, serviceFilters, selectedId, onSelect, onNewFromTemplate: _onNewFromTemplate, onToast }: { statusFilters: ContractStatus[]; serviceFilters: ServiceLine[]; selectedId: string | null; onSelect: (id: string) => void; onNewFromTemplate: () => void; onToast: (m: string) => void }) {
   const [rows, setRows] = useState<ContractDto[]>([])
-  const [filter, setFilter] = useState('')
   const [loading, setLoading] = useState(true)
 
   const reload = async () => {
     setLoading(true)
-    try { setRows(await api.contracts(filter && filter !== 'All' ? { status: filter } : {})) }
-    catch (e) { onToast(e instanceof ApiError ? e.message : 'Failed') }
+    try {
+      const query: { status?: string[]; service?: string[] } = {}
+      if (statusFilters.length) query.status = statusFilters
+      if (serviceFilters.length) query.service = serviceFilters
+      setRows(await api.contracts(query))
+    } catch (e) { onToast(e instanceof ApiError ? e.message : 'Failed') }
     finally { setLoading(false) }
   }
-  useEffect(() => { reload() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [filter])
+  useEffect(() => { reload() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [statusFilters, serviceFilters])
 
-  const filters = ['All', 'Draft', 'Pending Approval', 'Active', 'Expiring', 'Signed']
   const selected = rows.find((r) => r.id === selectedId)
 
   return (
     <>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-        {filters.map((f) => (
-          <div key={f} onClick={() => setFilter(f)} style={{ border: `1px solid ${filter === f ? '#2A6FDB' : '#E5E7F0'}`, background: filter === f ? '#2A6FDB' : '#fff', color: filter === f ? '#fff' : '#5C5C74', borderRadius: 8, padding: '6px 13px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>{f}</div>
-        ))}
-      </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: selected ? '1fr 460px' : '1fr', gap: 14, alignItems: 'start' }}>
         <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
@@ -196,7 +294,14 @@ function RepositoryTab({ selectedId, onSelect, onNewFromTemplate: _onNewFromTemp
                   <div style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.customerName}</div>
                   <div style={{ fontSize: 11, color: '#8888A0' }}>{c.startDate ? new Date(c.startDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'} → {c.endDate ? new Date(c.endDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</div>
                 </div>
-                <div style={{ fontSize: 11.5, color: '#5C5C74' }}>{c.type}</div>
+                <div style={{ fontSize: 11.5, color: '#5C5C74', minWidth: 0 }}>
+                  <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.type}</div>
+                  {c.serviceLines.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginTop: 3 }}>
+                      {c.serviceLines.map((s) => <ServicePill key={s} s={s} sm />)}
+                    </div>
+                  )}
+                </div>
                 <div style={{ textAlign: 'right', fontFamily: "'Space Grotesk'", fontSize: 12.5, fontWeight: 600 }}>{c.value ? fmt(c.value) : '—'}</div>
                 <div><span style={{ background: s.bg, color: s.fg, borderRadius: 7, fontSize: 11, fontWeight: 700, padding: '3px 9px', whiteSpace: 'nowrap' }}>{c.status}</span></div>
                 <div style={{ textAlign: 'right' }}><span style={{ background: r.bg, color: r.fg, borderRadius: 7, fontSize: 11, fontWeight: 700, padding: '3px 9px' }}>{c.risk}</span></div>
@@ -215,6 +320,19 @@ function ContractDetailPanel({ contract, onClose, onReload, onToast }: { contrac
   const cv = contract.currentVersion
   const currentApproval = contract.approvals.find((a) => a.decision === 'pending' && a.step === contract.approvalStep)
   const { hasPermission } = useAuth()
+  const [editingServices, setEditingServices] = useState(false)
+  const [serviceDraft, setServiceDraft] = useState<ServiceLine[]>(contract.serviceLines)
+  const [savingServices, setSavingServices] = useState(false)
+  useEffect(() => { setServiceDraft(contract.serviceLines); setEditingServices(false) }, [contract.id, contract.serviceLines])
+
+  const saveServices = async () => {
+    setSavingServices(true)
+    try {
+      await api.updateContract(contract.id, { serviceLines: serviceDraft })
+      onToast('Services updated'); setEditingServices(false); onReload()
+    } catch (e) { onToast(e instanceof ApiError ? e.message : 'Failed') }
+    finally { setSavingServices(false) }
+  }
 
   const submit = async () => { try { await api.submitContract(contract.id); onToast('Submitted for approval'); onReload() } catch (e) { onToast(e instanceof ApiError ? e.message : 'Failed') } }
   const approve = async () => { try { await api.approveContract(contract.id); onToast('Approved'); onReload() } catch (e) { onToast(e instanceof ApiError ? e.message : 'Failed') } }
@@ -252,6 +370,27 @@ function ContractDetailPanel({ contract, onClose, onReload, onToast }: { contrac
         <div><b style={{ color: '#8888A0' }}>Value:</b> {contract.value ? '฿' + contract.value.toLocaleString('en-US') : '—'}</div>
         <div><b style={{ color: '#8888A0' }}>Period:</b> {contract.startDate ? new Date(contract.startDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'} → {contract.endDate ? new Date(contract.endDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'} {contract.daysLeft != null && <span style={{ color: contract.daysLeft <= 30 ? '#C0392B' : contract.daysLeft <= 90 ? '#B4650A' : '#5C5C74' }}>({contract.daysLeft} days left)</span>}</div>
         <div><b style={{ color: '#8888A0' }}>Auto-renew:</b> {contract.autoRenew ? 'yes' : 'no'}</div>
+
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
+          <b style={{ color: '#8888A0', flex: 'none', paddingTop: 2 }}>Services:</b>
+          {editingServices ? (
+            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <ServiceLineChips selected={serviceDraft} onChange={setServiceDraft} sm />
+              <div style={{ display: 'flex', gap: 6 }}>
+                <div onClick={saveServices} style={{ ...primaryBtn, opacity: savingServices ? 0.5 : 1, padding: '5px 12px', fontSize: 11.5 }}>{savingServices ? 'Saving…' : 'Save'}</div>
+                <div onClick={() => { setServiceDraft(contract.serviceLines); setEditingServices(false) }} style={{ ...outlineBtn, padding: '5px 12px', fontSize: 11.5 }}>Cancel</div>
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, alignItems: 'center', flex: 1 }}>
+              {contract.serviceLines.length === 0 && <span style={{ color: '#8888A0' }}>—</span>}
+              {contract.serviceLines.map((s) => <ServicePill key={s} s={s} />)}
+              {hasPermission('contract:write') && (
+                <div onClick={() => setEditingServices(true)} style={{ fontSize: 11, color: '#2A6FDB', fontWeight: 700, cursor: 'pointer', marginLeft: 4 }}>Edit</div>
+              )}
+            </div>
+          )}
+        </div>
 
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
           {contract.status === 'Draft' && hasPermission('contract:write') && (
@@ -330,7 +469,17 @@ function ContractDetailPanel({ contract, onClose, onReload, onToast }: { contrac
 }
 
 // ─── Calendar ───
-function CalendarTab() {
+const DOW_TONE: Record<number, { bg: string; head: string; num: string }> = {
+  0: { bg: '#FFF5F5', head: '#FDECEA', num: '#C0392B' }, // Sunday
+  1: { bg: '#fff',    head: '#F7F8FC', num: '#3B3B52' },
+  2: { bg: '#fff',    head: '#F7F8FC', num: '#3B3B52' },
+  3: { bg: '#fff',    head: '#F7F8FC', num: '#3B3B52' },
+  4: { bg: '#fff',    head: '#F7F8FC', num: '#3B3B52' },
+  5: { bg: '#fff',    head: '#F7F8FC', num: '#3B3B52' },
+  6: { bg: '#F1F5FE', head: '#E4EDFC', num: '#2A6FDB' }, // Saturday
+}
+
+function CalendarTab({ statusFilters, serviceFilters }: { statusFilters: ContractStatus[]; serviceFilters: ServiceLine[] }) {
   const [obligations, setObligations] = useState<ObligationDto[]>([])
   const [monthStart, setMonthStart] = useState(() => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d })
   const toast = useToast()
@@ -338,58 +487,110 @@ function CalendarTab() {
   const monthEnd = useMemo(() => { const d = new Date(monthStart); d.setMonth(d.getMonth() + 1); return d }, [monthStart])
 
   useEffect(() => {
-    api.obligations({ from: monthStart, to: monthEnd })
+    api.obligations({
+      from: monthStart, to: monthEnd,
+      contractStatus: statusFilters.length ? statusFilters : undefined,
+      contractService: serviceFilters.length ? serviceFilters : undefined,
+    })
       .then(setObligations)
       .catch((e) => toast(e instanceof ApiError ? e.message : 'Failed'))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [monthStart])
+  }, [monthStart, statusFilters, serviceFilters])
 
   const dayCount = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate()
   const leadEmpty = monthStart.getDay() // Sunday-first
-  const cells: Array<null | { d: number; kinds: string[] }> = []
+  const cells: Array<null | { d: number; items: ObligationDto[] }> = []
   for (let i = 0; i < leadEmpty; i++) cells.push(null)
   for (let d = 1; d <= dayCount; d++) {
     const items = obligations.filter((o) => new Date(o.dueDate).getDate() === d)
-    cells.push({ d, kinds: items.map((i) => i.kind) })
+    cells.push({ d, items })
   }
+  // Trail pad so the grid always ends on a Saturday
+  while (cells.length % 7 !== 0) cells.push(null)
+
   const dayNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
+  const today = new Date()
+  const isThisMonth = today.getFullYear() === monthStart.getFullYear() && today.getMonth() === monthStart.getMonth()
+  const todayNum = today.getDate()
 
   const shift = (dir: number) => { const d = new Date(monthStart); d.setMonth(d.getMonth() + dir); setMonthStart(d) }
 
   return (
     <>
-      <div style={{ marginBottom: 12, display: 'flex', gap: 12, alignItems: 'center' }}>
+      <div style={{ marginBottom: 12, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
         {Object.entries(KIND_COLOR).map(([k, c]) => (
-          <span key={k} style={{ fontSize: 11, color: '#5C5C74' }}>
-            <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: c, marginRight: 5 }} />{k}
+          <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: c + '18', color: c, borderRadius: 999, padding: '4px 10px', fontSize: 11, fontWeight: 700 }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: c }} />{k}
           </span>
         ))}
+        <span style={{ flex: 1 }} />
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#C0392B', fontWeight: 700 }}>
+          <span style={{ width: 12, height: 12, borderRadius: 3, background: '#FFF5F5', border: '1px solid #F5B7B1' }} />Sunday
+        </span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#2A6FDB', fontWeight: 700 }}>
+          <span style={{ width: 12, height: 12, borderRadius: 3, background: '#F1F5FE', border: '1px solid #B7CDF4' }} />Saturday
+        </span>
       </div>
 
       <div style={{ ...card, padding: '16px 18px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
-          <div style={{ fontFamily: "'Space Grotesk'", fontSize: 16, fontWeight: 600, flex: 1 }}>{monthStart.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}</div>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
+          <div style={{ fontFamily: "'Space Grotesk'", fontSize: 18, fontWeight: 700, flex: 1, background: 'linear-gradient(90deg,#2E6BE6,#7C3AED)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>{monthStart.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}</div>
           <div style={{ display: 'flex', gap: 6 }}>
             <div onClick={() => shift(-1)} style={navBtn}>‹</div>
+            <div onClick={() => { const d = new Date(); d.setDate(1); d.setHours(0,0,0,0); setMonthStart(d) }} style={{ ...navBtn, width: 'auto', padding: '0 12px', fontSize: 11.5, fontWeight: 700, color: '#2A6FDB' }}>Today</div>
             <div onClick={() => shift(1)} style={navBtn}>›</div>
           </div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', borderBottom: '1px solid #F2F3F9', padding: '8px 0' }}>
-          {dayNames.map((d) => <div key={d} style={{ textAlign: 'center', fontSize: 10, fontWeight: 700, letterSpacing: '.05em', color: '#8888A0' }}>{d}</div>)}
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)' }}>
-          {cells.map((cell, i) => (
-            <div key={i} style={{ padding: '5px 0', textAlign: 'center', minHeight: 46 }}>
-              {cell && (
-                <>
-                  <div style={{ fontSize: 13, fontWeight: 500, color: '#3B3B52' }}>{cell.d}</div>
-                  <div style={{ display: 'flex', gap: 3, justifyContent: 'center', height: 6, marginTop: 2 }}>
-                    {cell.kinds.slice(0, 3).map((k, j) => <div key={j} style={{ width: 5, height: 5, borderRadius: '50%', background: KIND_COLOR[k] ?? '#5C5C74' }} />)}
-                  </div>
-                </>
-              )}
-            </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', border: '1px solid #E5E7F0', borderBottom: 'none', borderTopLeftRadius: 10, borderTopRightRadius: 10, overflow: 'hidden' }}>
+          {dayNames.map((d, i) => (
+            <div key={d} style={{ textAlign: 'center', fontSize: 11, fontWeight: 800, letterSpacing: '.08em', padding: '9px 0', background: DOW_TONE[i].head, color: DOW_TONE[i].num, borderRight: i < 6 ? '1px solid #E5E7F0' : 'none' }}>{d}</div>
           ))}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', border: '1px solid #E5E7F0', borderBottomLeftRadius: 10, borderBottomRightRadius: 10, overflow: 'hidden' }}>
+          {cells.map((cell, i) => {
+            const dow = i % 7
+            const tone = DOW_TONE[dow]
+            const isToday = cell && isThisMonth && cell.d === todayNum
+            const rightBorder = dow < 6 ? '1px solid #E5E7F0' : 'none'
+            const bottomBorder = i < cells.length - 7 ? '1px solid #E5E7F0' : 'none'
+            return (
+              <div key={i} style={{
+                minHeight: 96, padding: '6px 6px 4px', position: 'relative',
+                background: cell ? (isToday ? '#FFF8E1' : tone.bg) : '#FAFAFC',
+                borderRight: rightBorder, borderBottom: bottomBorder,
+                boxShadow: isToday ? 'inset 0 0 0 2px #F5A623' : undefined,
+              }}>
+                {cell && (
+                  <>
+                    <div style={{
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      minWidth: 22, height: 22, padding: '0 6px', borderRadius: 999,
+                      fontFamily: "'Space Grotesk'", fontSize: 12.5, fontWeight: 700,
+                      background: isToday ? '#F5A623' : 'transparent',
+                      color: isToday ? '#fff' : tone.num,
+                    }}>{cell.d}</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 4 }}>
+                      {cell.items.slice(0, 3).map((o) => {
+                        const c = KIND_COLOR[o.kind] ?? '#5C5C74'
+                        return (
+                          <div key={o.id} title={`${o.kind} · ${o.title}`} style={{
+                            display: 'flex', alignItems: 'center', gap: 4,
+                            background: c + '1A', color: c, borderLeft: `3px solid ${c}`,
+                            borderRadius: 4, padding: '2px 5px',
+                            fontSize: 10, fontWeight: 700, lineHeight: 1.25,
+                            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                          }}>{o.title}</div>
+                        )
+                      })}
+                      {cell.items.length > 3 && (
+                        <div style={{ fontSize: 10, fontWeight: 700, color: '#5C5C74', paddingLeft: 4 }}>+{cell.items.length - 3} more</div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            )
+          })}
         </div>
       </div>
 
@@ -414,10 +615,17 @@ function CalendarTab() {
 }
 
 // ─── Approvals ───
-function ApprovalsTab({ onToast }: { onToast: (m: string) => void }) {
+function ApprovalsTab({ statusFilters, serviceFilters, onToast }: { statusFilters: ContractStatus[]; serviceFilters: ServiceLine[]; onToast: (m: string) => void }) {
   const [rows, setRows] = useState<ContractDto[]>([])
-  const reload = async () => { try { setRows(await api.contracts({ status: 'Pending Approval' })) } catch (e) { onToast(e instanceof ApiError ? e.message : 'Failed') } }
-  useEffect(() => { reload() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [])
+  const reload = async () => {
+    try {
+      const query: { status?: string[]; service?: string[] } = {}
+      query.status = statusFilters.length ? statusFilters : ['Pending Approval']
+      if (serviceFilters.length) query.service = serviceFilters
+      setRows(await api.contracts(query))
+    } catch (e) { onToast(e instanceof ApiError ? e.message : 'Failed') }
+  }
+  useEffect(() => { reload() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [statusFilters, serviceFilters])
 
   return (
     <div style={{ ...card, padding: '16px 20px' }}>
@@ -462,10 +670,17 @@ function ApprovalsTab({ onToast }: { onToast: (m: string) => void }) {
 }
 
 // ─── Obligations tab (full table) ───
-function ObligationsTab({ onToast }: { onToast: (m: string) => void }) {
+function ObligationsTab({ statusFilters, serviceFilters, onToast }: { statusFilters: ContractStatus[]; serviceFilters: ServiceLine[]; onToast: (m: string) => void }) {
   const [rows, setRows] = useState<ObligationDto[]>([])
-  const reload = async () => { try { setRows(await api.obligations()) } catch (e) { onToast(e instanceof ApiError ? e.message : 'Failed') } }
-  useEffect(() => { reload() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [])
+  const reload = async () => {
+    try {
+      setRows(await api.obligations({
+        contractStatus: statusFilters.length ? statusFilters : undefined,
+        contractService: serviceFilters.length ? serviceFilters : undefined,
+      }))
+    } catch (e) { onToast(e instanceof ApiError ? e.message : 'Failed') }
+  }
+  useEffect(() => { reload() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [statusFilters, serviceFilters])
   const { hasPermission } = useAuth()
 
   return (
@@ -504,6 +719,7 @@ function NewFromTemplateModal({ onClose, onCreated }: { onClose: () => void; onC
   const [value, setValue] = useState<number>(0)
   const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10))
   const [endDate, setEndDate] = useState(() => { const d = new Date(); d.setFullYear(d.getFullYear() + 1); return d.toISOString().slice(0, 10) })
+  const [serviceLines, setServiceLines] = useState<ServiceLine[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -524,6 +740,7 @@ function NewFromTemplateModal({ onClose, onCreated }: { onClose: () => void; onC
         value: value || undefined,
         startDate: new Date(startDate).toISOString(),
         endDate: new Date(endDate).toISOString(),
+        serviceLines: serviceLines.length ? serviceLines : undefined,
       })
       onCreated(created.id)
     } catch (e) {
@@ -566,6 +783,10 @@ function NewFromTemplateModal({ onClose, onCreated }: { onClose: () => void; onC
               <div style={fieldLabel}>End date</div>
               <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} required style={inp} />
             </label>
+            <div style={{ gridColumn: 'span 2' }}>
+              <div style={fieldLabel}>Services (a contract may cover more than one)</div>
+              <ServiceLineChips selected={serviceLines} onChange={setServiceLines} />
+            </div>
             {template && template.variables.length > 0 && (
               <div style={{ gridColumn: 'span 2', background: '#F4F1FD', borderRadius: 8, padding: '10px 12px', fontSize: 12, color: '#4A3AB8' }}>
                 <b>Template variables auto-filled:</b> {template.variables.join(', ')}

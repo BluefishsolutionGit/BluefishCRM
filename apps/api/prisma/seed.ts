@@ -454,15 +454,15 @@ Penalties apply per Section 5 for missed SLAs. Governing law: Thailand.`,
   }
 
   // 11. Seed contracts for the demo customers (mirror the prototype's list)
-  const contractsSeed: Array<{ no: string; code: string; type: string; value: number; start: string; end: string; status: string; ownerKey: 'NP' | 'KS' | 'PW' | 'ST'; risk: string; step?: number; autoRenew?: boolean }> = [
-    { no: 'CT-2025-0231', code: 'C-1024', type: 'Master Service Agreement', value: 8500000, start: '2025-02-01', end: '2028-01-31', status: 'Active', ownerKey: 'NP', risk: 'Low' },
-    { no: 'CT-2026-0087', code: 'C-1031', type: 'Maintenance & Support', value: 1200000, start: '2025-08-01', end: '2026-07-31', status: 'Expiring', ownerKey: 'KS', risk: 'Med' },
-    { no: 'CT-2026-0102', code: 'C-1007', type: 'SaaS Subscription', value: 2400000, start: '2026-07-15', end: '2028-07-14', status: 'Pending Approval', ownerKey: 'ST', risk: 'Low', step: 3 },
-    { no: 'CT-2025-0198', code: 'C-1042', type: 'Software License', value: 3200000, start: '2025-09-01', end: '2026-08-31', status: 'Expiring', ownerKey: 'NP', risk: 'Med' },
-    { no: 'CT-2026-0075', code: 'C-1055', type: 'Service Level Agreement', value: 950000, start: '2026-06-01', end: '2027-05-31', status: 'Signed', ownerKey: 'PW', risk: 'Low' },
-    { no: 'CT-2026-0060', code: 'C-1060', type: 'Non-Disclosure Agreement', value: 0, start: '2026-01-10', end: '2029-01-09', status: 'Active', ownerKey: 'KS', risk: 'Low' },
-    { no: 'CT-2024-0301', code: 'C-1012', type: 'Maintenance & Support', value: 1800000, start: '2024-03-01', end: '2026-02-28', status: 'Expired', ownerKey: 'ST', risk: 'High' },
-    { no: 'CT-2026-0131', code: 'C-1007', type: 'Master Service Agreement', value: 4100000, start: '2026-07-01', end: '2029-06-30', status: 'Draft', ownerKey: 'ST', risk: 'Med' },
+  const contractsSeed: Array<{ no: string; code: string; type: string; value: number; start: string; end: string; status: string; ownerKey: 'NP' | 'KS' | 'PW' | 'ST'; risk: string; step?: number; autoRenew?: boolean; serviceLines: string[] }> = [
+    { no: 'CT-2025-0231', code: 'C-1024', type: 'Master Service Agreement', value: 8500000, start: '2025-02-01', end: '2028-01-31', status: 'Active', ownerKey: 'NP', risk: 'Low', serviceLines: ['3D', '3S', 'AI&RPA'] },
+    { no: 'CT-2026-0087', code: 'C-1031', type: 'Maintenance & Support', value: 1200000, start: '2025-08-01', end: '2026-07-31', status: 'Expiring', ownerKey: 'KS', risk: 'Med', serviceLines: ['Box'] },
+    { no: 'CT-2026-0102', code: 'C-1007', type: 'SaaS Subscription', value: 2400000, start: '2026-07-15', end: '2028-07-14', status: 'Pending Approval', ownerKey: 'ST', risk: 'Low', step: 3, serviceLines: ['3S'] },
+    { no: 'CT-2025-0198', code: 'C-1042', type: 'Software License', value: 3200000, start: '2025-09-01', end: '2026-08-31', status: 'Expiring', ownerKey: 'NP', risk: 'Med', serviceLines: ['3D'] },
+    { no: 'CT-2026-0075', code: 'C-1055', type: 'Service Level Agreement', value: 950000, start: '2026-06-01', end: '2027-05-31', status: 'Signed', ownerKey: 'PW', risk: 'Low', serviceLines: ['AI&RPA'] },
+    { no: 'CT-2026-0060', code: 'C-1060', type: 'Non-Disclosure Agreement', value: 0, start: '2026-01-10', end: '2029-01-09', status: 'Active', ownerKey: 'KS', risk: 'Low', serviceLines: [] },
+    { no: 'CT-2024-0301', code: 'C-1012', type: 'Maintenance & Support', value: 1800000, start: '2024-03-01', end: '2026-02-28', status: 'Expired', ownerKey: 'ST', risk: 'High', serviceLines: ['Box', '3S'] },
+    { no: 'CT-2026-0131', code: 'C-1007', type: 'Master Service Agreement', value: 4100000, start: '2026-07-01', end: '2029-06-30', status: 'Draft', ownerKey: 'ST', risk: 'Med', serviceLines: ['3D', '3S'] },
   ]
   const templateByType: Record<string, string> = {
     'Master Service Agreement': 'MSA-STD',
@@ -480,7 +480,7 @@ Penalties apply per Section 5 for missed SLAs. Governing law: Thailand.`,
     const contract = await prisma.contract.create({
       data: {
         no: c.no, customerId: customer.id, ownerId: owners[c.ownerKey],
-        type: c.type, status: c.status,
+        type: c.type, serviceLines: c.serviceLines, status: c.status,
         approvalStep: c.step ?? 0,
         startDate: new Date(c.start), endDate: new Date(c.end),
         value: c.value, risk: c.risk,

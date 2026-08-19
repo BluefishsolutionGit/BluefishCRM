@@ -1,13 +1,28 @@
 import { Injectable } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
+import { SERVICE_LINES } from '@bluefish/shared'
 import type { ContractDashboardDto, ContractStatus, ObligationDto, ObligationKind } from '@bluefish/shared'
+
+const csvList = (v: string | string[] | undefined): string[] => {
+  if (v === undefined) return []
+  const arr = Array.isArray(v) ? v : v.split(',')
+  return arr.map((s) => s.trim()).filter(Boolean)
+}
 
 @Injectable()
 export class ContractsDashboardService {
   constructor(private prisma: PrismaService) {}
 
-  async summary(): Promise<ContractDashboardDto> {
-    const all = await this.prisma.contract.findMany()
+  async summary(filter: { status?: string | string[]; service?: string | string[] } = {}): Promise<ContractDashboardDto> {
+    const statuses = csvList(filter.status)
+    const services = csvList(filter.service).filter((s) => (SERVICE_LINES as readonly string[]).includes(s))
+    const contractWhere: Record<string, unknown> = {}
+    if (statuses.length === 1) contractWhere.status = statuses[0]
+    else if (statuses.length > 1) contractWhere.status = { in: statuses }
+    if (services.length === 1) contractWhere.serviceLines = { has: services[0] }
+    else if (services.length > 1) contractWhere.serviceLines = { hasSome: services }
+
+    const all = await this.prisma.contract.findMany({ where: contractWhere })
     const totalCount = all.length
     const totalValue = all.reduce((a, c) => a + c.value, 0)
     const activeCount = all.filter((c) => c.status === 'Active' || c.status === 'Signed').length
@@ -29,7 +44,10 @@ export class ContractsDashboardService {
 
     // Average approval days (time from create → last approval)
     const approved = await this.prisma.contract.findMany({
-      where: { status: { in: ['Approved', 'Signed', 'Active', 'Expiring', 'Expired', 'Renewed'] } },
+      where: {
+        ...contractWhere,
+        status: { in: ['Approved', 'Signed', 'Active', 'Expiring', 'Expired', 'Renewed'] },
+      },
       include: { approvals: true },
     })
     let totalDays = 0
@@ -44,7 +62,10 @@ export class ContractsDashboardService {
     const avgApprovalDays = approvedCount > 0 ? Math.round(totalDays / approvedCount) : 0
 
     const upcoming = await this.prisma.obligation.findMany({
-      where: { status: { in: ['pending', 'overdue'] } },
+      where: {
+        status: { in: ['pending', 'overdue'] },
+        ...(Object.keys(contractWhere).length ? { contract: contractWhere } : {}),
+      },
       include: { contract: { select: { no: true } } },
       orderBy: { dueDate: 'asc' },
       take: 10,

@@ -1,20 +1,36 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
 import { AuditService } from '../audit/audit.service'
+import { SERVICE_LINES } from '@bluefish/shared'
 import type { CreateObligationDto, ObligationDto, ObligationKind } from '@bluefish/shared'
 import type { AuditRequestContext } from '../common/request-context'
 
 const KINDS: ObligationKind[] = ['Payment', 'Delivery', 'SLA', 'Renewal', 'Warranty', 'Insurance', 'KPI']
 
+const csvList = (v: string | string[] | undefined): string[] => {
+  if (v === undefined) return []
+  const arr = Array.isArray(v) ? v : v.split(',')
+  return arr.map((s) => s.trim()).filter(Boolean)
+}
+
 @Injectable()
 export class ObligationsService {
   constructor(private prisma: PrismaService, private audit: AuditService) {}
 
-  async list(filter: { contractId?: string; from?: Date; to?: Date; status?: string } = {}): Promise<ObligationDto[]> {
+  async list(filter: { contractId?: string; from?: Date; to?: Date; status?: string; contractStatus?: string | string[]; contractService?: string | string[] } = {}): Promise<ObligationDto[]> {
+    const contractWhere: Record<string, unknown> = {}
+    const cs = csvList(filter.contractStatus)
+    if (cs.length === 1) contractWhere.status = cs[0]
+    else if (cs.length > 1) contractWhere.status = { in: cs }
+    const svc = csvList(filter.contractService).filter((s) => (SERVICE_LINES as readonly string[]).includes(s))
+    if (svc.length === 1) contractWhere.serviceLines = { has: svc[0] }
+    else if (svc.length > 1) contractWhere.serviceLines = { hasSome: svc }
+
     const rows = await this.prisma.obligation.findMany({
       where: {
         contractId: filter.contractId, status: filter.status,
         dueDate: filter.from || filter.to ? { gte: filter.from, lte: filter.to } : undefined,
+        ...(Object.keys(contractWhere).length ? { contract: contractWhere } : {}),
       },
       include: { contract: { select: { no: true } } },
       orderBy: { dueDate: 'asc' },

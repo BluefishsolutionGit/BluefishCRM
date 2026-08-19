@@ -635,6 +635,7 @@ export interface ContractDto {
   ownerId: string
   ownerName: string
   type: string
+  serviceLines: ServiceLine[]
   status: ContractStatus
   approvalStep: number
   value: number
@@ -665,6 +666,7 @@ export interface CreateContractFromTemplateDto {
   endDate?: string
   variables?: Record<string, string>
   autoRenew?: boolean
+  serviceLines?: ServiceLine[]
 }
 
 export interface CreateContractDto {
@@ -677,6 +679,7 @@ export interface CreateContractDto {
   startDate?: string
   endDate?: string
   autoRenew?: boolean
+  serviceLines?: ServiceLine[]
 }
 
 export interface UpdateContractDto {
@@ -688,6 +691,7 @@ export interface UpdateContractDto {
   autoRenew?: boolean
   title?: string
   body?: string
+  serviceLines?: ServiceLine[]
 }
 
 export interface CreateObligationDto {
