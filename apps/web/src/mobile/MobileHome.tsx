@@ -6,6 +6,7 @@ import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/ToastContext'
 import { enqueue as enqueueDraft } from '../lib/offlineQueue'
 import { LogActivitySheet } from './MobileDetails'
+import QrScannerSheet from './QrScannerSheet'
 
 const fmt = (n: number) => n >= 1_000_000 ? '฿' + (n / 1e6).toFixed(1) + 'M' : '฿' + Math.round(n / 1e3) + 'K'
 
@@ -14,7 +15,8 @@ export default function MobileHome() {
   const [today, setToday] = useState<ActivityDto[]>([])
   const [busy, setBusy] = useState<'gps' | 'voice' | 'card' | null>(null)
   const [lastCheckin, setLastCheckin] = useState<string | null>(null)
-  const [logOpen, setLogOpen] = useState(false)
+  const [logOpen, setLogOpen] = useState<false | { description?: string }>(false)
+  const [qrOpen, setQrOpen] = useState(false)
   const { user } = useAuth()
   const toast = useToast()
   const navigate = useNavigate()
@@ -54,35 +56,44 @@ export default function MobileHome() {
   }
 
   const voiceNote = async () => {
-    if (!('mediaDevices' in navigator) || !navigator.mediaDevices?.getUserMedia) { toast('Voice not available'); return }
+    // Web Speech API — Chrome/Android + Safari 15+ (webkit prefix).
+    const Rec = (window as unknown as { SpeechRecognition?: typeof SpeechRecognition; webkitSpeechRecognition?: typeof SpeechRecognition }).SpeechRecognition
+              ?? (window as unknown as { webkitSpeechRecognition?: typeof SpeechRecognition }).webkitSpeechRecognition
+    if (!Rec) { toast('Voice-to-text not supported on this browser'); return }
     setBusy('voice')
+    let transcript = ''
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const rec = new MediaRecorder(stream)
-      const chunks: Blob[] = []
-      rec.ondataavailable = (e) => chunks.push(e.data)
-      rec.onstop = async () => {
-        stream.getTracks().forEach((t) => t.stop())
-        const blob = new Blob(chunks, { type: 'audio/webm' })
-        const file = new File([blob], `voice-${Date.now()}.webm`, { type: 'audio/webm' })
-        try {
-          await api.uploadDocument(file, { category: 'other', name: `Voice note ${new Date().toLocaleString('en-GB')}` })
-          toast('Voice note uploaded')
-        } catch (e) {
-          toast(e instanceof ApiError ? e.message : 'Upload failed')
+      const rec: SpeechRecognition = new Rec()
+      rec.lang = 'th-TH'                 // Bluefish is TH-first; browser falls back if unsupported
+      rec.continuous = true
+      rec.interimResults = false
+      rec.onresult = (e) => {
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          if (e.results[i].isFinal) transcript += (transcript ? ' ' : '') + e.results[i][0].transcript
         }
       }
+      rec.onend = () => {
+        setBusy(null)
+        if (transcript.trim()) setLogOpen({ description: transcript.trim() })
+        else toast('No speech captured')
+      }
+      rec.onerror = (e: SpeechRecognitionErrorEvent) => {
+        setBusy(null)
+        toast(e.error === 'not-allowed' ? 'Microphone permission denied' : `Voice: ${e.error}`)
+      }
       rec.start()
-      // Record for 5 seconds
-      setTimeout(() => rec.stop(), 5000)
-      toast('Recording 5s…')
+      // Stop after 12 s so we don't hold the mic forever
+      setTimeout(() => { try { rec.stop() } catch { /* already ended */ } }, 12_000)
+      toast('Listening… speak your note')
     } catch (e) {
-      toast(e instanceof Error ? e.message : 'Voice recording failed')
-    } finally { setBusy(null) }
+      setBusy(null)
+      toast(e instanceof Error ? e.message : 'Voice failed')
+    }
   }
 
   const scanCard = async () => {
-    // Trigger a file input with capture=environment — on iOS/Android this opens the camera
+    // Camera-first capture. On iOS/Android this opens the rear camera; on
+    // desktop it falls back to the file picker.
     const input = document.createElement('input')
     input.type = 'file'
     input.accept = 'image/*'
@@ -92,13 +103,46 @@ export default function MobileHome() {
       if (!file) return
       setBusy('card')
       try {
-        await api.uploadDocument(file, { category: 'other', name: `Business card ${new Date().toLocaleString('en-GB')}` })
-        toast('Card uploaded — OCR queued')
+        const doc = await api.uploadDocument(file, {
+          category: 'certificate',
+          name: `Business card · ${new Date().toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}`,
+          description: 'Captured from mobile camera — OCR queued',
+        })
+        toast('Card uploaded — opening OCR result…')
+        navigate(`/m/documents/${doc.id}`)
       } catch (e) {
         toast(e instanceof ApiError ? e.message : 'Upload failed')
       } finally { setBusy(null) }
     }
     input.click()
+  }
+
+  const handleQrResult = async (value: string, _fmt: string) => {
+    setQrOpen(false)
+    // Best-effort routing: if the scanned value looks like a URL that points
+    // into the app itself, follow it. Otherwise offer to search customers /
+    // contracts / quotes by number.
+    const trimmed = value.trim()
+    if (/^https?:\/\//i.test(trimmed)) {
+      try {
+        const u = new URL(trimmed)
+        if (u.origin === window.location.origin) {
+          navigate(u.pathname + u.search + u.hash)
+          return
+        }
+      } catch { /* noop */ }
+      window.open(trimmed, '_blank', 'noopener')
+      toast(`Opened ${new URL(trimmed).host}`)
+      return
+    }
+    if (/^CT-\d{4}-\d+/i.test(trimmed) || /^QT-\d{4}-\d+/i.test(trimmed)) {
+      toast(`Search ${trimmed}`)
+      // Fire the global search feature via URL to reuse existing UI.
+      navigate(trimmed.startsWith('CT') ? '/m/contracts' : '/m/quotations')
+      return
+    }
+    // Fallback — pre-fill a Log activity with the scanned value
+    setLogOpen({ description: `Scanned: ${trimmed}` })
   }
 
   return (
@@ -123,16 +167,23 @@ export default function MobileHome() {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
         <ActionTile busy={busy === 'card'} icon="📷" label="Scan card" onClick={scanCard} />
+        <ActionTile icon="⬜" label="Scan QR" onClick={() => setQrOpen(true)} />
         <ActionTile busy={busy === 'gps'} icon="📍" label="Check-in" onClick={gpsCheckin} />
         <ActionTile busy={busy === 'voice'} icon="🎙" label="Voice" onClick={voiceNote} />
-        <ActionTile icon="+" label="Activity" onClick={() => setLogOpen(true)} />
+        <ActionTile icon="+" label="Activity" onClick={() => setLogOpen({})} />
         <ActionTile icon="💬" label="Inbox" onClick={() => navigate('/m/inbox')} />
         <ActionTile icon="📁" label="Docs" onClick={() => navigate('/m/documents')} />
         <ActionTile icon="📄" label="Quotes" onClick={() => navigate('/m/quotations')} />
-        <ActionTile icon="📑" label="Contracts" onClick={() => navigate('/m/contracts')} />
       </div>
 
-      {logOpen && <LogActivitySheet onClose={() => setLogOpen(false)} onSaved={() => setLogOpen(false)} />}
+      {logOpen && (
+        <LogActivitySheet
+          defaultDescription={logOpen.description}
+          onClose={() => setLogOpen(false)}
+          onSaved={() => setLogOpen(false)}
+        />
+      )}
+      {qrOpen && <QrScannerSheet onResult={handleQrResult} onClose={() => setQrOpen(false)} />}
 
       {lastCheckin && (
         <div style={{ background: '#E5F8ED', border: '1px solid #B5E4CB', color: '#0E6E4E', borderRadius: 11, padding: '8px 12px', fontSize: 12 }}>

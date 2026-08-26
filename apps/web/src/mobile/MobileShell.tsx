@@ -2,6 +2,7 @@ import { useEffect, useState, type CSSProperties } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { count as countDrafts, drainAll, subscribe as subscribeQueue } from '../lib/offlineQueue'
+import PwaInstallPrompt from './PwaInstallPrompt'
 
 const TABS = [
   { path: '/m', label: 'Home', d: 'M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z' },
@@ -80,6 +81,8 @@ export default function MobileShell() {
           </div>
         )}
       </div>
+
+      <PwaInstallPrompt />
 
       <div style={{ flex: 1, overflow: 'auto' }}>
         <Outlet />

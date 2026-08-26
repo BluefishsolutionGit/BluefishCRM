@@ -475,8 +475,8 @@ export function MobileTaskDetail() {
 // ═══════════════════════════════════════════════════════════════════════
 // Log Activity sheet — reused across screens
 // ═══════════════════════════════════════════════════════════════════════
-export function LogActivitySheet({ defaultCustomerId, defaultOpportunityId, defaultTitle, onClose, onSaved }: {
-  defaultCustomerId?: string; defaultOpportunityId?: string; defaultTitle?: string
+export function LogActivitySheet({ defaultCustomerId, defaultOpportunityId, defaultTitle, defaultDescription, onClose, onSaved }: {
+  defaultCustomerId?: string; defaultOpportunityId?: string; defaultTitle?: string; defaultDescription?: string
   onClose: () => void; onSaved: () => void
 }) {
   const { user } = useAuth()
@@ -484,7 +484,7 @@ export function LogActivitySheet({ defaultCustomerId, defaultOpportunityId, defa
   const [type, setType] = useState<ActivityType>('call')
   const [title, setTitle] = useState(defaultTitle ? `Follow up · ${defaultTitle}` : '')
   const [when, setWhen] = useState(() => new Date().toISOString().slice(0, 16))
-  const [description, setDescription] = useState('')
+  const [description, setDescription] = useState(defaultDescription ?? '')
   const [saving, setSaving] = useState(false)
 
   const save = async (e: FormEvent) => {

@@ -11,6 +11,7 @@ import type { ContractDto, ContractStatus } from '@bluefish/shared'
 import { api, ApiError } from '../lib/api'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/ToastContext'
+import SignaturePad from './SignaturePad'
 
 const STATUS_STYLE: Record<ContractStatus, { bg: string; fg: string }> = {
   Draft: { bg: '#F2F3F9', fg: '#5C5C74' },
@@ -137,6 +138,7 @@ export function MobileContractDetail() {
   const navigate = useNavigate()
   const [c, setC] = useState<ContractDto | null>(null)
   const [busy, setBusy] = useState(false)
+  const [signOpen, setSignOpen] = useState(false)
   const toast = useToast()
   const { hasPermission } = useAuth()
   const canWrite = hasPermission('contract:write')
@@ -163,7 +165,37 @@ export function MobileContractDetail() {
   )
 
   const submit = async () => { if (busy) return; setBusy(true); try { const u = await api.submitContract(c.id); setC(u); toast('Submitted for approval') } catch (e) { toast(e instanceof ApiError ? e.message : 'Failed') } finally { setBusy(false) } }
-  const approve = async () => { if (busy) return; setBusy(true); try { const u = await api.approveContract(c.id); setC(u); toast('Approved') } catch (e) { toast(e instanceof ApiError ? e.message : 'Failed') } finally { setBusy(false) } }
+  const approve = async () => {
+    if (busy) return
+    // For the "Sign" step, capture a signature and attach it before calling
+    // approveContract — server just marks the step done, the signature is
+    // stored as an attached Document on the contract.
+    if (currentApproval?.stepName === 'Sign') { setSignOpen(true); return }
+    await doApprove()
+  }
+
+  const doApprove = async () => {
+    if (!c || busy) return
+    setBusy(true)
+    try { const u = await api.approveContract(c.id); setC(u); toast('Approved') }
+    catch (e) { toast(e instanceof ApiError ? e.message : 'Failed') }
+    finally { setBusy(false) }
+  }
+
+  const onSigned = async (file: File) => {
+    if (!c) return
+    setSignOpen(false); setBusy(true)
+    try {
+      await api.uploadDocument(file, {
+        contractId: c.id, category: 'certificate',
+        name: `Signature · ${currentApproval?.stepName ?? 'Sign'} · ${new Date().toLocaleString('en-GB', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })}`,
+        description: 'Captured on mobile',
+      })
+      const u = await api.approveContract(c.id, 'Signed on mobile')
+      setC(u); toast('Signed & approved')
+    } catch (e) { toast(e instanceof ApiError ? e.message : 'Failed') }
+    finally { setBusy(false) }
+  }
   const reject = async () => {
     const comment = window.prompt('Reason for rejection?')
     if (!comment) return
@@ -274,6 +306,14 @@ export function MobileContractDetail() {
             </div>
           ))}
         </div>
+      )}
+
+      {signOpen && (
+        <SignaturePad
+          title={`Sign to approve · ${currentApproval?.stepName ?? 'Sign'}`}
+          onClose={() => setSignOpen(false)}
+          onSigned={(file) => { void onSigned(file) }}
+        />
       )}
     </div>
   )
