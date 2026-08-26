@@ -24,6 +24,7 @@ import MobileLeads from './mobile/MobileLeads'
 import MobileOpportunities from './mobile/MobileOpportunities'
 import MobileTasks from './mobile/MobileTasks'
 import { MobileCustomerDetail, MobileLeadDetail, MobileOpportunityDetail, MobileTaskDetail } from './mobile/MobileDetails'
+import MobileContracts, { MobileContractDetail } from './mobile/MobileContracts'
 import Settings from './pages/Settings'
 import Products from './pages/Products'
 import Documents from './pages/Documents'
@@ -97,6 +98,8 @@ createRoot(document.getElementById('root')!).render(
             <Route path="opportunities/:id" element={<MobileOpportunityDetail />} />
             <Route path="tasks" element={<MobileTasks />} />
             <Route path="tasks/:id" element={<MobileTaskDetail />} />
+            <Route path="contracts" element={<MobileContracts />} />
+            <Route path="contracts/:id" element={<MobileContractDetail />} />
           </Route>
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>

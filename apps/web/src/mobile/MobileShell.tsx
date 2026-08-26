@@ -5,9 +5,10 @@ import { count as countDrafts, drainAll, subscribe as subscribeQueue } from '../
 
 const TABS = [
   { path: '/m', label: 'Home', d: 'M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z' },
-  { path: '/m/customers', label: 'Customers', d: 'M8.5 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z M2.5 20c0-3.3 2.7-6 6-6s6 2.7 6 6' },
   { path: '/m/leads', label: 'Leads', d: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z M12 16.5a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9z' },
-  { path: '/m/opportunities', label: 'Deals', d: 'M4 4h4.5v16H4z M9.75 4h4.5v11h-4.5z M15.5 4H20v8h-4.5z' },
+  { path: '/m/opportunities', label: 'Pipeline', d: 'M4 4h4.5v16H4z M9.75 4h4.5v11h-4.5z M15.5 4H20v8h-4.5z' },
+  { path: '/m/contracts', label: 'Contracts', d: 'M6.5 3h8l4 4v14h-12z M14 3v5h4.5' },
+  { path: '/m/customers', label: 'Customers', d: 'M8.5 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z M2.5 20c0-3.3 2.7-6 6-6s6 2.7 6 6' },
   { path: '/m/tasks', label: 'Tasks', d: 'M4 6.5h16V20H4z M4 11h16 M8.5 3.5v5 M15.5 3.5v5' },
 ]
 
@@ -90,7 +91,7 @@ export default function MobileShell() {
             {({ isActive }) => (
               <>
                 <svg viewBox="0 0 24 24" width="20" height="20"><path d={t.d} fill="none" stroke={isActive ? '#2A6FDB' : '#8888A0'} strokeWidth={1.9} strokeLinejoin="round" strokeLinecap="round" /></svg>
-                <div style={{ fontSize: 10, fontWeight: isActive ? 700 : 600, color: isActive ? '#2A6FDB' : '#8888A0' }}>{t.label}</div>
+                <div style={{ fontSize: 9.5, fontWeight: isActive ? 700 : 600, color: isActive ? '#2A6FDB' : '#8888A0' }}>{t.label}</div>
               </>
             )}
           </NavLink>
