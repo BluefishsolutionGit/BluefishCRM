@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { ActivityDto, CreateActivityDto } from '@bluefish/shared'
 import { api, ApiError } from '../lib/api'
@@ -6,9 +6,10 @@ import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/ToastContext'
 import { enqueue as enqueueDraft, list as listDrafts, remove as removeDraft, subscribe as subscribeQueue, type OfflineDraft } from '../lib/offlineQueue'
 
-type Tab = 'today' | 'week' | 'overdue' | 'drafts'
+type Tab = 'today' | 'week' | 'cal' | 'overdue' | 'drafts'
 
 const TYPE_COLOR: Record<string, string> = { meeting: '#2A6FDB', call: '#1F5AC2', visit: '#B4650A', demo: '#6C55E0', task: '#0E9C7E', follow_up: '#7C3AED', email: '#8888A0' }
+const TYPE_BG: Record<string, string> = { meeting: '#E4EDFC', call: '#E7EDF9', visit: '#FEF3E2', demo: '#EAE7F7', task: '#E5F8ED', follow_up: '#F4F1FD', email: '#F2F3F9' }
 
 export default function MobileTasks() {
   const [tab, setTab] = useState<Tab>('today')
@@ -44,7 +45,11 @@ export default function MobileTasks() {
     }).catch(() => {})
   }
 
-  useEffect(() => { if (tab !== 'drafts') load(); else refreshDrafts() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [tab, user])
+  useEffect(() => {
+    if (tab === 'drafts') refreshDrafts()
+    else if (tab !== 'cal') load()
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [tab, user])
 
   useEffect(() => {
     const h = () => refreshDrafts()
@@ -69,19 +74,21 @@ export default function MobileTasks() {
         <button onClick={() => setShowNew(true)} style={{ background: '#2E1A6B', color: '#fff', border: 'none', borderRadius: 999, padding: '8px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>+ New</button>
       </div>
 
-      <div style={{ display: 'flex', gap: 6, background: '#F1F1F5', padding: 4, borderRadius: 999 }}>
-        {(['today', 'week', 'overdue', 'drafts'] as Tab[]).map((t) => (
+      <div style={{ display: 'flex', gap: 4, background: '#F1F1F5', padding: 4, borderRadius: 999 }}>
+        {(['today', 'week', 'cal', 'overdue', 'drafts'] as Tab[]).map((t) => (
           <div
             key={t}
             onClick={() => setTab(t)}
-            style={{ flex: 1, textAlign: 'center', fontSize: 11, fontWeight: 700, padding: '7px 4px', borderRadius: 999, cursor: 'pointer', background: tab === t ? '#fff' : 'transparent', color: tab === t ? '#1E1E30' : '#5C5C74', boxShadow: tab === t ? '0 1px 2px rgba(0,0,0,.06)' : 'none' }}
+            style={{ flex: 1, textAlign: 'center', fontSize: 10.5, fontWeight: 700, padding: '7px 2px', borderRadius: 999, cursor: 'pointer', background: tab === t ? '#fff' : 'transparent', color: tab === t ? '#1E1E30' : '#5C5C74', boxShadow: tab === t ? '0 1px 2px rgba(0,0,0,.06)' : 'none' }}
           >
-            {t === 'drafts' ? `Drafts${drafts.length ? ` (${drafts.length})` : ''}` : t.toUpperCase()}
+            {t === 'drafts' ? `Drafts${drafts.length ? ` (${drafts.length})` : ''}` : t === 'cal' ? 'CAL' : t.toUpperCase()}
           </div>
         ))}
       </div>
 
-      {tab === 'drafts' ? (
+      {tab === 'cal' ? (
+        <CalendarView ownerId={user?.id} onOpen={(id) => navigate(`/m/tasks/${id}`)} />
+      ) : tab === 'drafts' ? (
         drafts.length === 0 ? (
           <div style={{ padding: 20, textAlign: 'center', color: '#8888A0', fontSize: 13 }}>No offline drafts.</div>
         ) : (
@@ -129,6 +136,186 @@ export default function MobileTasks() {
     </div>
   )
 }
+
+// ─────────────────────────────────────────────────────────────
+// Calendar view — colorful month grid, weekend tinting, dots per activity
+// ─────────────────────────────────────────────────────────────
+const DOW_TONE: Record<number, { bg: string; head: string; num: string }> = {
+  0: { bg: '#FFF5F5', head: '#FDECEA', num: '#C0392B' }, // Sunday
+  1: { bg: '#fff',    head: '#F7F8FC', num: '#3B3B52' },
+  2: { bg: '#fff',    head: '#F7F8FC', num: '#3B3B52' },
+  3: { bg: '#fff',    head: '#F7F8FC', num: '#3B3B52' },
+  4: { bg: '#fff',    head: '#F7F8FC', num: '#3B3B52' },
+  5: { bg: '#fff',    head: '#F7F8FC', num: '#3B3B52' },
+  6: { bg: '#F1F5FE', head: '#E4EDFC', num: '#2A6FDB' }, // Saturday
+}
+const DAY_NAMES = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
+
+function CalendarView({ ownerId, onOpen }: { ownerId?: string; onOpen: (id: string) => void }) {
+  const [monthStart, setMonthStart] = useState(() => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d })
+  const [rows, setRows] = useState<ActivityDto[]>([])
+  const [loading, setLoading] = useState(false)
+  const [pickedDay, setPickedDay] = useState<number | null>(null)
+  const toast = useToast()
+
+  const monthEnd = useMemo(() => { const d = new Date(monthStart); d.setMonth(d.getMonth() + 1); return d }, [monthStart])
+
+  useEffect(() => {
+    if (!ownerId) return
+    setLoading(true)
+    api.activities({ from: monthStart, to: monthEnd, ownerId })
+      .then(setRows)
+      .catch((e) => toast(e instanceof ApiError ? e.message : 'Failed'))
+      .finally(() => setLoading(false))
+  }, [ownerId, monthStart, monthEnd, toast])
+
+  const today = new Date()
+  const isThisMonth = today.getFullYear() === monthStart.getFullYear() && today.getMonth() === monthStart.getMonth()
+  const todayNum = today.getDate()
+  const dayCount = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate()
+  const leadEmpty = monthStart.getDay()
+
+  // Pre-group activities by day-of-month
+  const byDay = useMemo(() => {
+    const map = new Map<number, ActivityDto[]>()
+    for (const a of rows) {
+      const d = new Date(a.scheduledAt)
+      if (d.getFullYear() !== monthStart.getFullYear() || d.getMonth() !== monthStart.getMonth()) continue
+      const day = d.getDate()
+      const list = map.get(day) ?? []; list.push(a); map.set(day, list)
+    }
+    return map
+  }, [rows, monthStart])
+
+  const cells: Array<null | { d: number; items: ActivityDto[] }> = []
+  for (let i = 0; i < leadEmpty; i++) cells.push(null)
+  for (let d = 1; d <= dayCount; d++) cells.push({ d, items: byDay.get(d) ?? [] })
+  while (cells.length % 7 !== 0) cells.push(null)
+
+  const shift = (dir: number) => { const d = new Date(monthStart); d.setMonth(d.getMonth() + dir); setMonthStart(d); setPickedDay(null) }
+  const jumpToday = () => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); setMonthStart(d); setPickedDay(today.getDate()) }
+  const pickedList = pickedDay != null ? (byDay.get(pickedDay) ?? []) : (isThisMonth ? (byDay.get(todayNum) ?? []) : [])
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* Legend */}
+      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+        {Object.entries(TYPE_COLOR).map(([k, c]) => (
+          <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: c + '18', color: c, borderRadius: 999, padding: '3px 8px', fontSize: 10, fontWeight: 700 }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: c }} />{k}
+          </span>
+        ))}
+      </div>
+
+      {/* Month header + prev/next */}
+      <div style={{ display: 'flex', alignItems: 'center' }}>
+        <div style={{ fontFamily: "'Space Grotesk'", fontSize: 17, fontWeight: 700, flex: 1, background: 'linear-gradient(90deg,#2E6BE6,#7C3AED)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+          {monthStart.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}
+        </div>
+        <div style={{ display: 'flex', gap: 5 }}>
+          <div onClick={() => shift(-1)} style={navBtn}>‹</div>
+          <div onClick={jumpToday} style={{ ...navBtn, width: 'auto', padding: '0 10px', fontSize: 11, color: '#2A6FDB', fontWeight: 700 }}>Today</div>
+          <div onClick={() => shift(1)} style={navBtn}>›</div>
+        </div>
+      </div>
+
+      {/* Weekday header */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', border: '1px solid #E5E7F0', borderBottom: 'none', borderTopLeftRadius: 10, borderTopRightRadius: 10, overflow: 'hidden' }}>
+        {DAY_NAMES.map((d, i) => (
+          <div key={d} style={{ textAlign: 'center', fontSize: 10, fontWeight: 800, letterSpacing: '.08em', padding: '7px 0', background: DOW_TONE[i].head, color: DOW_TONE[i].num, borderRight: i < 6 ? '1px solid #E5E7F0' : 'none' }}>{d}</div>
+        ))}
+      </div>
+
+      {/* Grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', border: '1px solid #E5E7F0', borderTop: 'none', borderBottomLeftRadius: 10, borderBottomRightRadius: 10, overflow: 'hidden', marginTop: -12 }}>
+        {cells.map((cell, i) => {
+          const dow = i % 7
+          const tone = DOW_TONE[dow]
+          const isToday = cell && isThisMonth && cell.d === todayNum
+          const isPicked = cell && pickedDay === cell.d
+          const rightBorder = dow < 6 ? '1px solid #E5E7F0' : 'none'
+          const bottomBorder = i < cells.length - 7 ? '1px solid #E5E7F0' : 'none'
+          return (
+            <div
+              key={i}
+              onClick={() => cell && setPickedDay(cell.d)}
+              style={{
+                minHeight: 62, padding: '4px 4px 3px',
+                background: cell ? (isPicked ? '#EEF0FA' : isToday ? '#FFF8E1' : tone.bg) : '#FAFAFC',
+                borderRight: rightBorder, borderBottom: bottomBorder,
+                boxShadow: isPicked ? 'inset 0 0 0 2px #2A6FDB' : isToday ? 'inset 0 0 0 2px #F5A623' : undefined,
+                cursor: cell ? 'pointer' : 'default',
+              }}
+            >
+              {cell && (
+                <>
+                  <div style={{
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    minWidth: 18, height: 18, padding: '0 4px', borderRadius: 999,
+                    fontFamily: "'Space Grotesk'", fontSize: 11, fontWeight: 700,
+                    background: isToday ? '#F5A623' : 'transparent',
+                    color: isToday ? '#fff' : tone.num,
+                  }}>{cell.d}</div>
+                  <div style={{ display: 'flex', gap: 2, marginTop: 3, flexWrap: 'wrap' }}>
+                    {cell.items.slice(0, 4).map((a) => (
+                      <div key={a.id} title={`${a.type} · ${a.title}`} style={{ width: 6, height: 6, borderRadius: 3, background: TYPE_COLOR[a.type] ?? '#8888A0' }} />
+                    ))}
+                    {cell.items.length > 4 && (
+                      <div style={{ fontSize: 8, fontWeight: 800, color: '#5C5C74' }}>+{cell.items.length - 4}</div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Picked-day list */}
+      <div style={{ background: '#fff', border: '1px solid #E5E7F0', borderRadius: 13, padding: '12px 14px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: '#5C5C74', letterSpacing: '.06em', textTransform: 'uppercase' }}>
+            {pickedDay != null
+              ? new Date(monthStart.getFullYear(), monthStart.getMonth(), pickedDay).toLocaleDateString('en-GB', { weekday: 'long', day: '2-digit', month: 'short' })
+              : isThisMonth ? 'Today' : `${monthStart.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}`}
+          </div>
+          <div style={{ flex: 1 }} />
+          <div style={{ fontSize: 11, color: '#8888A0' }}>{pickedList.length} activit{pickedList.length === 1 ? 'y' : 'ies'}</div>
+        </div>
+        {loading && <div style={{ padding: 12, textAlign: 'center', color: '#8888A0', fontSize: 12 }}>Loading…</div>}
+        {!loading && pickedList.length === 0 && (
+          <div style={{ padding: 12, textAlign: 'center', color: '#BBBBCB', fontSize: 12 }}>
+            {pickedDay != null ? 'Nothing scheduled.' : 'Pick a day to see its activities.'}
+          </div>
+        )}
+        {pickedList.map((a) => (
+          <div
+            key={a.id}
+            onClick={() => onOpen(a.id)}
+            style={{
+              padding: '9px 10px', margin: '6px 0', borderRadius: 10, cursor: 'pointer',
+              background: TYPE_BG[a.type] ?? '#F7F8FC',
+              borderLeft: `3px solid ${TYPE_COLOR[a.type] ?? '#8888A0'}`,
+              display: 'flex', alignItems: 'center', gap: 8,
+            }}
+          >
+            <div style={{ minWidth: 40, fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: TYPE_COLOR[a.type] ?? '#5C5C74', fontWeight: 700 }}>
+              {new Date(a.scheduledAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.title}</div>
+              <div style={{ fontSize: 10.5, color: '#5C5C74', marginTop: 2 }}>
+                {a.type}{a.customerName ? ` · ${a.customerName}` : ''} · <b style={{ color: a.status === 'completed' ? '#0E6E4E' : a.status === 'cancelled' ? '#8888A0' : '#3B3B52' }}>{a.status}</b>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+const navBtn: CSSProperties = { width: 26, height: 26, border: '1px solid #E5E7F0', background: '#fff', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8888A0', fontSize: 13, cursor: 'pointer', fontWeight: 700 }
 
 function NewTaskSheet({ onClose }: { onClose: () => void }) {
   const [type, setType] = useState<'task' | 'call' | 'meeting' | 'visit' | 'follow_up'>('task')
