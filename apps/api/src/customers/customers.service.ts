@@ -1,16 +1,29 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
 import { AuditService } from '../audit/audit.service'
-import type { CreateCustomerDto, CustomerDto, CustomerStatus, TagDto, TagKind, UpdateCustomerDto } from '@bluefish/shared'
+import { SERVICE_LINES } from '@bluefish/shared'
+import type { CreateCustomerDto, CustomerDto, CustomerStatus, ServiceLine, TagDto, TagKind, UpdateCustomerDto } from '@bluefish/shared'
 import type { AuditRequestContext } from '../common/request-context'
+import { loadServiceScope, scopeArrayField } from '../common/service-scope'
+import type { Request } from 'express'
 
 type TagRow = { id: string; name: string; color: string; kind: string; description: string | null }
 type CustomerRow = {
   id: string; code: string; name: string; nameTh: string | null; industry: string; status: string
   ownerId: string; city: string; address: string; taxId: string; phone: string; terms: string
   openValue: number; wonValue: number; lastActivity: string
+  primaryServiceLines: string[]
   owner: { name: string }
   tags: TagRow[]
+}
+
+const sanitizeServiceLines = (values: readonly string[] | undefined | null): ServiceLine[] => {
+  if (!values) return []
+  const set = new Set<ServiceLine>()
+  for (const v of values) {
+    if ((SERVICE_LINES as readonly string[]).includes(v)) set.add(v as ServiceLine)
+  }
+  return [...set]
 }
 
 const CUSTOMER_INCLUDE = { owner: true, tags: true } as const
@@ -19,7 +32,9 @@ const CUSTOMER_INCLUDE = { owner: true, tags: true } as const
 export class CustomersService {
   constructor(private prisma: PrismaService, private audit: AuditService) {}
 
-  async list(query?: string, tagId?: string): Promise<CustomerDto[]> {
+  async list(req: Request, query?: string, tagId?: string): Promise<CustomerDto[]> {
+    const scope = await loadServiceScope(this.prisma, req)
+    const scopeFilter = scopeArrayField(scope, 'primaryServiceLines')
     const rows = await this.prisma.customer.findMany({
       where: {
         deletedAt: null,
@@ -33,6 +48,7 @@ export class CustomersService {
             }
           : {}),
         ...(tagId ? { tags: { some: { id: tagId } } } : {}),
+        ...(scopeFilter ?? {}),
       },
       include: CUSTOMER_INCLUDE,
       orderBy: { code: 'asc' },
@@ -40,8 +56,13 @@ export class CustomersService {
     return rows.map((c) => this.toDto(c))
   }
 
-  async findOne(id: string): Promise<CustomerDto> {
-    const c = await this.prisma.customer.findFirst({ where: { id, deletedAt: null }, include: CUSTOMER_INCLUDE })
+  async findOne(id: string, req: Request): Promise<CustomerDto> {
+    const scope = await loadServiceScope(this.prisma, req)
+    const scopeFilter = scopeArrayField(scope, 'primaryServiceLines')
+    const c = await this.prisma.customer.findFirst({
+      where: { id, deletedAt: null, ...(scopeFilter ?? {}) },
+      include: CUSTOMER_INCLUDE,
+    })
     if (!c) throw new NotFoundException(`Customer ${id} not found`)
     return this.toDto(c)
   }
@@ -50,7 +71,7 @@ export class CustomersService {
     const existing = await this.prisma.customer.findUnique({ where: { code: input.code } })
     if (existing) throw new ConflictException(`Customer code ${input.code} already exists`)
 
-    const { tagIds, ...rest } = input
+    const { tagIds, primaryServiceLines, ...rest } = input
     const created = await this.prisma.customer.create({
       data: {
         code: rest.code, name: rest.name, nameTh: rest.nameTh ?? null,
@@ -59,6 +80,7 @@ export class CustomersService {
         phone: rest.phone, terms: rest.terms,
         openValue: rest.openValue ?? 0, wonValue: rest.wonValue ?? 0,
         lastActivity: rest.lastActivity ?? '—',
+        primaryServiceLines: sanitizeServiceLines(primaryServiceLines),
         ...(tagIds?.length ? { tags: { connect: tagIds.map((id) => ({ id })) } } : {}),
       },
       include: CUSTOMER_INCLUDE,
@@ -79,11 +101,12 @@ export class CustomersService {
       if (clash) throw new ConflictException(`Customer code ${input.code} already exists`)
     }
 
-    const { tagIds, ...rest } = input
+    const { tagIds, primaryServiceLines, ...rest } = input
     const updated = await this.prisma.customer.update({
       where: { id },
       data: {
         ...rest,
+        ...(primaryServiceLines !== undefined ? { primaryServiceLines: { set: sanitizeServiceLines(primaryServiceLines) } } : {}),
         ...(tagIds !== undefined ? { tags: { set: tagIds.map((id) => ({ id })) } } : {}),
       },
       include: CUSTOMER_INCLUDE,
@@ -113,6 +136,7 @@ export class CustomersService {
       ownerId: row.ownerId, ownerName: row.owner.name,
       city: row.city, address: row.address, taxId: row.taxId, phone: row.phone, terms: row.terms,
       openValue: row.openValue, wonValue: row.wonValue, lastActivity: row.lastActivity,
+      primaryServiceLines: sanitizeServiceLines(row.primaryServiceLines),
       tags,
     }
   }

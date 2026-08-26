@@ -7,6 +7,8 @@ import { PERMISSIONS } from '../auth/permissions'
 import { LeadsService } from './leads.service'
 import { auditContext } from '../common/request-context'
 import type { Request } from 'express'
+
+interface JwtRequest extends Request { user?: { sub: string; email: string; role: string } }
 import type { LeadDto, ConvertLeadDto, DuplicateCheckResult } from '@bluefish/shared'
 
 class CreateLeadBody {
@@ -60,14 +62,14 @@ export class LeadsController {
 
   @Get()
   @RequirePermissions(PERMISSIONS.LEAD_READ)
-  list(@Query('q') q?: string, @Query('status') status?: string): Promise<LeadDto[]> {
-    return this.leads.list({ q, status })
+  list(@Req() req: JwtRequest, @Query('q') q?: string, @Query('status') status?: string): Promise<LeadDto[]> {
+    return this.leads.list(req, { q, status })
   }
 
   @Get(':id')
   @RequirePermissions(PERMISSIONS.LEAD_READ)
-  findOne(@Param('id') id: string): Promise<LeadDto> {
-    return this.leads.findOne(id)
+  findOne(@Param('id') id: string, @Req() req: JwtRequest): Promise<LeadDto> {
+    return this.leads.findOne(id, req)
   }
 
   @Post('duplicate-check')

@@ -12,22 +12,23 @@ interface NavDef {
   icon: string
   badge?: number
 }
+type NavEntry = NavDef | { divider: true } | { spacer: true }
 
-const NAV: NavDef[] = [
+const NAV: NavEntry[] = [
   { path: '/dashboard', label: 'Home', icon: icons.home },
   { path: '/inbox', label: 'Inbox', icon: icons.inbox, badge: 3 },
-  { path: '/customers', label: 'Customers', icon: icons.users },
   { path: '/leads', label: 'Leads', icon: icons.target },
   { path: '/pipeline', label: 'Pipeline', icon: icons.kanban },
   { path: '/activities', label: 'Activities', icon: icons.cal },
   { path: '/quotations', label: 'Quotations', icon: icons.doc },
+  { divider: true },
   { path: '/contracts', label: 'Contracts', icon: icons.contract },
-  { path: '/products', label: 'Products', icon: icons.doc },
+  { path: '/customers', label: 'Customers', icon: icons.users },
   { path: '/documents', label: 'Documents', icon: icons.doc },
   { path: '/reports', label: 'Reports', icon: icons.kanban },
-  { path: '/ai', label: 'AI', icon: icons.spark },
   { path: '/mobile', label: 'Mobile', icon: icons.phone },
-  { path: '/audit', label: 'Audit', icon: icons.check },
+  { spacer: true },
+  { path: '/ai', label: 'AI', icon: icons.spark },
 ]
 
 const ROLE_LABELS: Record<string, string> = {
@@ -71,7 +72,8 @@ export default function AppLayout() {
   }, [])
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const userMenuRef = useRef<HTMLDivElement | null>(null)
-  const { user, logout } = useAuth()
+  const { user, logout, hasPermission } = useAuth()
+  const canViewAudit = hasPermission('audit:read')
   const topSeg = location.pathname.split('/')[1] || 'dashboard'
   const crumb = CRUMB_MAP[topSeg] || ''
   const displayName = user?.name || 'Nattaya P.'
@@ -152,6 +154,25 @@ export default function AppLayout() {
               {notifOpen && <NotifPanel onClose={() => setNotifOpen(false)} onChange={refreshUnreadCount} />}
             </div>
 
+            {canViewAudit && (
+              <NavLink
+                to="/audit"
+                title="Audit trail"
+                style={({ isActive }) => ({
+                  width: 36, height: 36, borderRadius: 9,
+                  border: '1px solid #4A3AB8',
+                  background: isActive ? '#EAE7F7' : '#3A2A7A',
+                  color: isActive ? '#2E1A6B' : '#EAE7F7',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  textDecoration: 'none', flex: 'none',
+                })}
+              >
+                <svg viewBox="0 0 24 24" width="17" height="17">
+                  <path d="M12 3l8 3v6c0 4.5-3.4 8.4-8 9-4.6-.6-8-4.5-8-9V6l8-3z M9 12l2 2 4-4" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </NavLink>
+            )}
+
             <div ref={userMenuRef} style={{ position: 'relative' }}>
               <div
                 onClick={() => setUserMenuOpen((v) => !v)}
@@ -201,17 +222,21 @@ export default function AppLayout() {
               zIndex: 5,
             }}
           >
-            {NAV.map((n) => (
-              <NavLink key={n.path} to={n.path} style={({ isActive }) => topNavItem(isActive)}>
-                <svg viewBox="0 0 24 24" width="15" height="15" style={{ flex: 'none' }}>
-                  <path d={n.icon} fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-                <span style={{ fontSize: 13 }}>{n.label}</span>
-                {n.badge != null && (
-                  <span style={{ background: '#C0392B', color: '#fff', fontSize: 10, fontWeight: 700, borderRadius: 8, padding: '1px 6px', marginLeft: 2 }}>{n.badge}</span>
-                )}
-              </NavLink>
-            ))}
+            {NAV.map((n, i) => {
+              if ('divider' in n) return <div key={`div-${i}`} style={{ width: 1, height: 22, background: '#E5E7F0', margin: '0 6px', flex: 'none' }} />
+              if ('spacer' in n) return <div key={`sp-${i}`} style={{ flex: 1, minWidth: 12 }} />
+              return (
+                <NavLink key={n.path} to={n.path} style={({ isActive }) => topNavItem(isActive)}>
+                  <svg viewBox="0 0 24 24" width="15" height="15" style={{ flex: 'none' }}>
+                    <path d={n.icon} fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  <span style={{ fontSize: 13 }}>{n.label}</span>
+                  {n.badge != null && (
+                    <span style={{ background: '#C0392B', color: '#fff', fontSize: 10, fontWeight: 700, borderRadius: 8, padding: '1px 6px', marginLeft: 2 }}>{n.badge}</span>
+                  )}
+                </NavLink>
+              )
+            })}
           </div>
 
           {/* CONTENT */}

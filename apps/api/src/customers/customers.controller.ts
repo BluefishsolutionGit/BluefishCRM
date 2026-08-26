@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common'
-import { IsInt, IsOptional, IsString, MinLength } from 'class-validator'
+import { ArrayUnique, IsArray, IsIn, IsInt, IsOptional, IsString, MinLength } from 'class-validator'
 import { JwtAuthGuard } from '../auth/jwt.guard'
 import { PermissionsGuard } from '../auth/permissions.guard'
 import { RequirePermissions } from '../auth/permissions.decorator'
@@ -7,7 +7,7 @@ import { PERMISSIONS } from '../auth/permissions'
 import { CustomersService } from './customers.service'
 import { auditContext } from '../common/request-context'
 import type { Request } from 'express'
-import type { CustomerDto } from '@bluefish/shared'
+import { SERVICE_LINES, type CustomerDto, type ServiceLine } from '@bluefish/shared'
 
 interface JwtRequest extends Request { user?: { sub: string; email: string; role: string } }
 
@@ -26,6 +26,7 @@ class CreateCustomerBody {
   @IsOptional() @IsInt() openValue?: number
   @IsOptional() @IsInt() wonValue?: number
   @IsOptional() @IsString() lastActivity?: string
+  @IsOptional() @IsArray() @ArrayUnique() @IsIn(SERVICE_LINES as readonly string[], { each: true }) primaryServiceLines?: ServiceLine[]
 }
 class UpdateCustomerBody {
   @IsOptional() @IsString() code?: string
@@ -42,6 +43,7 @@ class UpdateCustomerBody {
   @IsOptional() @IsInt() openValue?: number
   @IsOptional() @IsInt() wonValue?: number
   @IsOptional() @IsString() lastActivity?: string
+  @IsOptional() @IsArray() @ArrayUnique() @IsIn(SERVICE_LINES as readonly string[], { each: true }) primaryServiceLines?: ServiceLine[]
 }
 
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -51,14 +53,14 @@ export class CustomersController {
 
   @Get()
   @RequirePermissions(PERMISSIONS.CUSTOMER_READ)
-  list(@Query('q') q?: string, @Query('tagId') tagId?: string): Promise<CustomerDto[]> {
-    return this.customers.list(q, tagId)
+  list(@Req() req: JwtRequest, @Query('q') q?: string, @Query('tagId') tagId?: string): Promise<CustomerDto[]> {
+    return this.customers.list(req, q, tagId)
   }
 
   @Get(':id')
   @RequirePermissions(PERMISSIONS.CUSTOMER_READ)
-  findOne(@Param('id') id: string): Promise<CustomerDto> {
-    return this.customers.findOne(id)
+  findOne(@Param('id') id: string, @Req() req: JwtRequest): Promise<CustomerDto> {
+    return this.customers.findOne(id, req)
   }
 
   @Post()

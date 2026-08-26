@@ -6,14 +6,18 @@ import { ContractTemplatesService } from './templates.service'
 import { analyzeContractText, overallRisk } from './risk-detection'
 import { nextContractNo } from './contract-numbers'
 import { SERVICE_LINES } from '@bluefish/shared'
+import { loadServiceScope, scopeArrayField } from '../common/service-scope'
+import type { Request } from 'express'
 import type {
   ContractApprovalDto,
+  ContractAttachmentDto,
   ContractDto,
   ContractRiskFindingDto,
   ContractStatus,
   ContractVersionDto,
   CreateContractDto,
   CreateContractFromTemplateDto,
+  DocumentCategory,
   ObligationDto,
   ObligationKind,
   RiskLevel,
@@ -59,7 +63,7 @@ export class ContractsService {
     private templates: ContractTemplatesService,
   ) {}
 
-  async list(filter: { status?: string | string[]; customerId?: string; service?: string | string[] } = {}): Promise<ContractDto[]> {
+  async list(req: Request, filter: { status?: string | string[]; customerId?: string; service?: string | string[]; q?: string } = {}): Promise<ContractDto[]> {
     const where: Record<string, unknown> = {}
     if (filter.customerId) where.customerId = filter.customerId
     const statuses = toList(filter.status)
@@ -68,6 +72,20 @@ export class ContractsService {
     const services = toList(filter.service).filter((s) => (SERVICE_LINES as readonly string[]).includes(s))
     if (services.length === 1) where.serviceLines = { has: services[0] }
     else if (services.length > 1) where.serviceLines = { hasSome: services }
+    const q = filter.q?.trim()
+    if (q) {
+      where.OR = [
+        { no:       { contains: q, mode: 'insensitive' } },
+        { type:     { contains: q, mode: 'insensitive' } },
+        { customer: { name: { contains: q, mode: 'insensitive' } } },
+        { customer: { code: { contains: q, mode: 'insensitive' } } },
+        { currentVersion: { title: { contains: q, mode: 'insensitive' } } },
+        { currentVersion: { body:  { contains: q, mode: 'insensitive' } } },
+      ]
+    }
+    const scope = await loadServiceScope(this.prisma, req)
+    const scopeFilter = scopeArrayField(scope, 'serviceLines')
+    if (scopeFilter) Object.assign(where, scopeFilter)
     const rows = await this.prisma.contract.findMany({
       where,
       include: this.includeAll(),
@@ -76,7 +94,19 @@ export class ContractsService {
     return rows.map((r) => this.toDto(r))
   }
 
-  async findOne(id: string): Promise<ContractDto> {
+  async findOne(id: string, req: Request): Promise<ContractDto> {
+    const scope = await loadServiceScope(this.prisma, req)
+    const scopeFilter = scopeArrayField(scope, 'serviceLines')
+    const row = await this.prisma.contract.findFirst({
+      where: { id, ...(scopeFilter ?? {}) },
+      include: this.includeAll(),
+    })
+    if (!row) throw new NotFoundException('Contract not found')
+    return this.toDto(row)
+  }
+
+  /** Skips service scoping — used for internal reload after a mutation. */
+  private async findOneUnchecked(id: string): Promise<ContractDto> {
     const row = await this.prisma.contract.findUnique({ where: { id }, include: this.includeAll() })
     if (!row) throw new NotFoundException('Contract not found')
     return this.toDto(row)
@@ -99,10 +129,20 @@ export class ContractsService {
 
     return this.createInternal({
       customerId: input.customerId, opportunityId: input.opportunityId,
-      type: template.type, title: `${template.type} — ${customer.name}`, body,
+      type: input.type ?? template.type,
+      title: input.name ?? `${input.type ?? template.type} — ${customer.name}`, body,
       value: input.value, startDate: input.startDate, endDate: input.endDate,
       templateId: template.id, autoRenew: input.autoRenew,
       serviceLines: sanitizeServiceLines(input.serviceLines),
+      name: input.name,
+      serviceDescription: input.serviceDescription,
+      businessUnit: input.businessUnit,
+      contactPerson: input.contactPerson,
+      contactEmail: input.contactEmail,
+      contactTel: input.contactTel,
+      contactFax: input.contactFax,
+      contractTerm: input.contractTerm,
+      renewNoticeDays: input.renewNoticeDays,
     }, userId, ctx)
   }
 
@@ -111,11 +151,20 @@ export class ContractsService {
     if (!customer) throw new NotFoundException('Customer not found')
     return this.createInternal({
       customerId: input.customerId, opportunityId: input.opportunityId, type: input.type,
-      title: input.title ?? `${input.type} — ${customer.name}`,
+      title: input.title ?? input.name ?? `${input.type} — ${customer.name}`,
       body: input.body ?? `${input.type} for ${customer.name}. Standard terms apply.`,
       value: input.value, startDate: input.startDate, endDate: input.endDate,
       autoRenew: input.autoRenew,
       serviceLines: sanitizeServiceLines(input.serviceLines),
+      name: input.name,
+      serviceDescription: input.serviceDescription,
+      businessUnit: input.businessUnit,
+      contactPerson: input.contactPerson,
+      contactEmail: input.contactEmail,
+      contactTel: input.contactTel,
+      contactFax: input.contactFax,
+      contractTerm: input.contractTerm,
+      renewNoticeDays: input.renewNoticeDays,
     }, userId, ctx)
   }
 
@@ -123,6 +172,9 @@ export class ContractsService {
     customerId: string; opportunityId?: string; type: string; title: string; body: string
     value?: number; startDate?: string; endDate?: string; templateId?: string; autoRenew?: boolean
     serviceLines?: ServiceLine[]
+    name?: string; serviceDescription?: string; businessUnit?: string
+    contactPerson?: string; contactEmail?: string; contactTel?: string; contactFax?: string
+    contractTerm?: string; renewNoticeDays?: number
   }, userId: string, ctx: AuditRequestContext): Promise<ContractDto> {
     const no = await nextContractNo(this.prisma)
     const contract = await this.prisma.contract.create({
@@ -133,6 +185,15 @@ export class ContractsService {
         value: data.value ?? 0,
         startDate: data.startDate ? new Date(data.startDate) : null,
         endDate: data.endDate ? new Date(data.endDate) : null,
+        name: data.name?.trim() || null,
+        serviceDescription: data.serviceDescription?.trim() || null,
+        businessUnit: data.businessUnit?.trim() || null,
+        contactPerson: data.contactPerson?.trim() || null,
+        contactEmail: data.contactEmail?.trim() || null,
+        contactTel: data.contactTel?.trim() || null,
+        contactFax: data.contactFax?.trim() || null,
+        contractTerm: data.contractTerm?.trim() || null,
+        renewNoticeDays: data.renewNoticeDays ?? null,
       },
     })
     const version = await this.prisma.contractVersion.create({
@@ -146,7 +207,7 @@ export class ContractsService {
     await this.prisma.contract.update({ where: { id: contract.id }, data: { currentVersionId: version.id } })
     await this.runRiskAnalysis(contract.id, data.body)
     await this.audit.log({ ...ctx, action: 'contract.create', entity: 'contract', entityId: contract.id, metadata: { no, templateId: data.templateId } })
-    return this.findOne(contract.id)
+    return this.findOneUnchecked(contract.id)
   }
 
   async update(id: string, input: UpdateContractDto, userId: string, ctx: AuditRequestContext): Promise<ContractDto> {
@@ -165,6 +226,16 @@ export class ContractsService {
     if (input.startDate !== undefined) scalarUpdate.startDate = input.startDate ? new Date(input.startDate) : null
     if (input.endDate !== undefined) scalarUpdate.endDate = input.endDate ? new Date(input.endDate) : null
     if (input.serviceLines !== undefined) scalarUpdate.serviceLines = { set: sanitizeServiceLines(input.serviceLines) }
+    const trimOrNull = (v: string | null | undefined) => v === undefined ? undefined : (v === null ? null : (v.trim() || null))
+    if (input.name !== undefined) scalarUpdate.name = trimOrNull(input.name)
+    if (input.serviceDescription !== undefined) scalarUpdate.serviceDescription = trimOrNull(input.serviceDescription)
+    if (input.businessUnit !== undefined) scalarUpdate.businessUnit = trimOrNull(input.businessUnit)
+    if (input.contactPerson !== undefined) scalarUpdate.contactPerson = trimOrNull(input.contactPerson)
+    if (input.contactEmail !== undefined) scalarUpdate.contactEmail = trimOrNull(input.contactEmail)
+    if (input.contactTel !== undefined) scalarUpdate.contactTel = trimOrNull(input.contactTel)
+    if (input.contactFax !== undefined) scalarUpdate.contactFax = trimOrNull(input.contactFax)
+    if (input.contractTerm !== undefined) scalarUpdate.contractTerm = trimOrNull(input.contractTerm)
+    if (input.renewNoticeDays !== undefined) scalarUpdate.renewNoticeDays = input.renewNoticeDays
     if (Object.keys(scalarUpdate).length) {
       await this.prisma.contract.update({ where: { id }, data: scalarUpdate })
     }
@@ -184,7 +255,7 @@ export class ContractsService {
     }
 
     await this.audit.log({ ...ctx, action: 'contract.update', entity: 'contract', entityId: id, before, after: await this.prisma.contract.findUnique({ where: { id } }) })
-    return this.findOne(id)
+    return this.findOneUnchecked(id)
   }
 
   async submit(id: string, userId: string, ctx: AuditRequestContext): Promise<ContractDto> {
@@ -197,7 +268,7 @@ export class ContractsService {
       this.prisma.contract.update({ where: { id }, data: { status: 'Pending Approval', approvalStep: 1 } }),
     ])
     await this.audit.log({ ...ctx, userId, action: 'contract.submit', entity: 'contract', entityId: id })
-    return this.findOne(id)
+    return this.findOneUnchecked(id)
   }
 
   async approve(id: string, userId: string, userRole: string, comment: string | undefined, ctx: AuditRequestContext): Promise<ContractDto> {
@@ -238,7 +309,7 @@ export class ContractsService {
     }
 
     await this.audit.log({ ...ctx, userId, action: 'contract.approve', entity: 'contract', entityId: id, metadata: { step: c.approvalStep, stepName: pending.stepName, isFinal } })
-    return this.findOne(id)
+    return this.findOneUnchecked(id)
   }
 
   async reject(id: string, userId: string, userRole: string, comment: string, ctx: AuditRequestContext): Promise<ContractDto> {
@@ -260,7 +331,7 @@ export class ContractsService {
     })
     await this.prisma.contract.update({ where: { id }, data: { status: 'Under Review', approvalStep: 0 } })
     await this.audit.log({ ...ctx, userId, action: 'contract.reject', entity: 'contract', entityId: id, metadata: { step: c.approvalStep, stepName: pending.stepName, comment } })
-    return this.findOne(id)
+    return this.findOneUnchecked(id)
   }
 
   async terminate(id: string, comment: string, ctx: AuditRequestContext): Promise<ContractDto> {
@@ -268,7 +339,7 @@ export class ContractsService {
     if (!c) throw new NotFoundException()
     await this.prisma.contract.update({ where: { id }, data: { status: 'Terminated', terminatedAt: new Date() } })
     await this.audit.log({ ...ctx, action: 'contract.terminate', entity: 'contract', entityId: id, metadata: { comment } })
-    return this.findOne(id)
+    return this.findOneUnchecked(id)
   }
 
   async renew(id: string, input: { newStart: string; newEnd: string; newValue?: number }, userId: string, ctx: AuditRequestContext): Promise<ContractDto> {
@@ -284,12 +355,21 @@ export class ContractsService {
       templateId: source.currentVersion.templateId ?? undefined,
       autoRenew: source.autoRenew,
       serviceLines: sanitizeServiceLines(source.serviceLines),
+      name: source.name ?? undefined,
+      serviceDescription: source.serviceDescription ?? undefined,
+      businessUnit: source.businessUnit ?? undefined,
+      contactPerson: source.contactPerson ?? undefined,
+      contactEmail: source.contactEmail ?? undefined,
+      contactTel: source.contactTel ?? undefined,
+      contactFax: source.contactFax ?? undefined,
+      contractTerm: source.contractTerm ?? undefined,
+      renewNoticeDays: source.renewNoticeDays ?? undefined,
     }, userId, ctx)
 
     await this.prisma.contract.update({ where: { id: created.id }, data: { parentContractId: source.id } })
     await this.prisma.contract.update({ where: { id: source.id }, data: { status: 'Renewed' } })
     await this.audit.log({ ...ctx, action: 'contract.renew', entity: 'contract', entityId: source.id, metadata: { renewedTo: created.id } })
-    return this.findOne(created.id)
+    return this.findOneUnchecked(created.id)
   }
 
   async recomputeStatuses(): Promise<{ updated: number }> {
@@ -349,12 +429,22 @@ export class ContractsService {
       approvals: { include: { approver: true }, orderBy: { step: 'asc' as const } },
       obligations: { orderBy: { dueDate: 'asc' as const } },
       riskFindings: { orderBy: { severity: 'desc' as const } },
+      documents: {
+        include: {
+          uploadedBy: { select: { name: true } },
+          currentVersion: { select: { id: true, filename: true, mimeType: true, sizeBytes: true } },
+        },
+        orderBy: { createdAt: 'desc' as const },
+      },
     }
   }
 
   private toDto = (row: {
     id: string; no: string; customerId: string; opportunityId: string | null; ownerId: string
     type: string; serviceLines: string[]; status: string; approvalStep: number; value: number; currency: string; risk: string
+    name: string | null; serviceDescription: string | null; businessUnit: string | null
+    contactPerson: string | null; contactEmail: string | null; contactTel: string | null; contactFax: string | null
+    contractTerm: string | null; renewNoticeDays: number | null
     startDate: Date | null; endDate: Date | null; signedAt: Date | null; terminatedAt: Date | null
     autoRenew: boolean; parentContractId: string | null; createdAt: Date; updatedAt: Date
     customer: { name: string }
@@ -365,6 +455,7 @@ export class ContractsService {
     approvals: Array<{ id: string; step: number; stepName: string; decision: string; approverId: string | null; approver: { name: string } | null; decidedAt: Date | null; comment: string | null }>
     obligations: Array<{ id: string; kind: string; title: string; dueDate: Date; amount: number | null; status: string; completedAt: Date | null; notes: string | null }>
     riskFindings: Array<{ id: string; severity: string; category: string; message: string; snippet: string | null }>
+    documents: Array<{ id: string; name: string; kind: string; url: string | null; category: string; createdAt: Date; uploadedBy: { name: string }; currentVersion: { id: string; filename: string; mimeType: string; sizeBytes: number } | null }>
   }): ContractDto => {
     const cv = row.currentVersion
     const currentVersion: ContractVersionDto | null = cv ? {
@@ -383,6 +474,11 @@ export class ContractsService {
       opportunityId: row.opportunityId, opportunityTitle: row.opportunity?.title ?? null,
       ownerId: row.ownerId, ownerName: row.owner.name,
       type: row.type, serviceLines: sanitizeServiceLines(row.serviceLines),
+      name: row.name, serviceDescription: row.serviceDescription,
+      businessUnit: row.businessUnit, contactPerson: row.contactPerson,
+      contactEmail: row.contactEmail, contactTel: row.contactTel, contactFax: row.contactFax,
+      contractTerm: row.contractTerm,
+      renewNoticeDays: row.renewNoticeDays,
       status: row.status as ContractStatus,
       approvalStep: row.approvalStep,
       value: row.value, currency: row.currency, risk: row.risk as RiskLevel,
@@ -409,6 +505,14 @@ export class ContractsService {
       riskFindings: row.riskFindings.map((f): ContractRiskFindingDto => ({
         id: f.id, severity: f.severity as 'low' | 'medium' | 'high',
         category: f.category, message: f.message, snippet: f.snippet,
+      })),
+      attachments: row.documents.map((d): ContractAttachmentDto => ({
+        id: d.id, name: d.name,
+        kind: d.kind === 'link' ? 'link' : 'file',
+        url: d.url, category: d.category as DocumentCategory,
+        currentVersion: d.currentVersion,
+        uploadedByName: d.uploadedBy.name,
+        createdAt: d.createdAt.toISOString(),
       })),
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),

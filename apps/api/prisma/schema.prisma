@@ -71,6 +71,7 @@ model Customer {
   openValue    Int       @default(0)
   wonValue     Int       @default(0)
   lastActivity String
+  primaryServiceLines String[] @default([])
   flowaccountContactCode String?
   deletedAt    DateTime?
   createdAt    DateTime  @default(now())
@@ -354,6 +355,11 @@ model Document {
   quotationId      String?
   contractId       String?
   category         String   @default("other")
+  kind             String   @default("file") // 'file' | 'link'
+  url              String?
+  serviceLines     String[] @default([])
+  isCentral        Boolean  @default(false)
+  description      String?
   currentVersionId String?  @unique
   uploadedById     String
   createdAt        DateTime @default(now())
@@ -372,6 +378,7 @@ model Document {
   @@index([quotationId])
   @@index([contractId])
   @@index([category])
+  @@index([isCentral])
 }
 
 // ─────── Contracts ───────
@@ -384,6 +391,15 @@ model Contract {
   ownerId           String
   type              String
   serviceLines      String[]  @default([])
+  name              String?
+  serviceDescription String?
+  businessUnit      String?
+  contactPerson     String?
+  contactEmail      String?
+  contactTel        String?
+  contactFax        String?
+  contractTerm      String?
+  renewNoticeDays   Int?
   status            String    @default("Draft")
   approvalStep      Int       @default(0)
   currentVersionId  String?   @unique
@@ -434,6 +450,24 @@ model ContractVersion {
   isCurrentOf   Contract?         @relation("ContractCurrentVersion")
 
   @@unique([contractId, versionNo])
+}
+
+model IndustryType {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model ContractType {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 model ContractTemplate {
@@ -511,6 +545,7 @@ model DocumentVersion {
   storageKey    String
   mimeType      String
   sizeBytes     Int
+  notes         String?
   uploadedById  String
   createdAt     DateTime @default(now())
 
@@ -845,13 +880,15 @@ model AuthProvider {
 }
 
 model Competitor {
-  id        String   @id @default(cuid())
-  name      String   @unique
-  logo      String   // short badge string (e.g. "A", "IG")
-  color     String   // hex for charts / badge background
-  notes     String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String   @id @default(cuid())
+  name         String   @unique
+  logo         String   // short badge string (e.g. "A", "IG")
+  color        String   // hex for charts / badge background
+  serviceLines String[] @default([])
+  product      String?
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   contracts CompetitorContract[]
 }

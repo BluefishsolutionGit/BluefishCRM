@@ -122,7 +122,16 @@ export default function Customers() {
                 <div style={{ fontSize: 11, color: '#8888A0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.nameTh}</div>
               </div>
             </div>
-            <div style={{ fontSize: 12.5, color: '#3B3B52' }}>{c.industry}</div>
+            <div style={{ fontSize: 12.5, color: '#3B3B52', minWidth: 0 }}>
+              <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.industry}</div>
+              {c.primaryServiceLines && c.primaryServiceLines.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginTop: 3 }}>
+                  {c.primaryServiceLines.map((s) => (
+                    <span key={s} style={{ background: '#EEF0FA', color: '#2A6FDB', borderRadius: 5, fontSize: 9.5, fontWeight: 700, padding: '1px 5px' }}>{s}</span>
+                  ))}
+                </div>
+              )}
+            </div>
             <TagCell tags={c.tags} onClick={() => navigate(`/customers/${c.id}`)} />
             <div><span style={statusStyle(c.status)}>{c.status}</span></div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>

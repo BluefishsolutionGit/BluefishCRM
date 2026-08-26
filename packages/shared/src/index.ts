@@ -90,6 +90,7 @@ export interface CustomerDto {
   openValue: number
   wonValue: number
   lastActivity: string
+  primaryServiceLines: ServiceLine[]
   tags: TagDto[]
 }
 
@@ -158,6 +159,7 @@ export interface CreateCustomerDto {
   openValue?: number
   wonValue?: number
   lastActivity?: string
+  primaryServiceLines?: ServiceLine[]
   tagIds?: string[]
 }
 
@@ -176,6 +178,7 @@ export interface UpdateCustomerDto {
   openValue?: number
   wonValue?: number
   lastActivity?: string
+  primaryServiceLines?: ServiceLine[]
   tagIds?: string[]
 }
 
@@ -573,6 +576,50 @@ export type ContractStatus =
 export type RiskLevel = 'Low' | 'Med' | 'High'
 export type ObligationKind = 'Payment' | 'Delivery' | 'SLA' | 'Renewal' | 'Warranty' | 'Insurance' | 'KPI'
 
+export interface IndustryTypeDto {
+  id: string
+  name: string
+  description: string | null
+  active: boolean
+  usageCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CreateIndustryTypeDto {
+  name: string
+  description?: string
+  active?: boolean
+}
+
+export interface UpdateIndustryTypeDto {
+  name?: string
+  description?: string | null
+  active?: boolean
+}
+
+export interface ContractTypeDto {
+  id: string
+  name: string
+  description: string | null
+  active: boolean
+  usageCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CreateContractTypeDto {
+  name: string
+  description?: string
+  active?: boolean
+}
+
+export interface UpdateContractTypeDto {
+  name?: string
+  description?: string | null
+  active?: boolean
+}
+
 export interface ContractTemplateDto {
   id: string
   code: string
@@ -636,6 +683,15 @@ export interface ContractDto {
   ownerName: string
   type: string
   serviceLines: ServiceLine[]
+  name: string | null
+  serviceDescription: string | null
+  businessUnit: string | null
+  contactPerson: string | null
+  contactEmail: string | null
+  contactTel: string | null
+  contactFax: string | null
+  contractTerm: string | null
+  renewNoticeDays: number | null
   status: ContractStatus
   approvalStep: number
   value: number
@@ -653,8 +709,20 @@ export interface ContractDto {
   approvals: ContractApprovalDto[]
   obligations: ObligationDto[]
   riskFindings: ContractRiskFindingDto[]
+  attachments: ContractAttachmentDto[]
   createdAt: string
   updatedAt: string
+}
+
+export interface ContractAttachmentDto {
+  id: string
+  name: string
+  kind: 'file' | 'link'
+  url: string | null
+  category: DocumentCategory
+  currentVersion: { id: string; filename: string; mimeType: string; sizeBytes: number } | null
+  uploadedByName: string
+  createdAt: string
 }
 
 export interface CreateContractFromTemplateDto {
@@ -667,6 +735,16 @@ export interface CreateContractFromTemplateDto {
   variables?: Record<string, string>
   autoRenew?: boolean
   serviceLines?: ServiceLine[]
+  type?: string
+  name?: string
+  serviceDescription?: string
+  businessUnit?: string
+  contactPerson?: string
+  contactEmail?: string
+  contactTel?: string
+  contactFax?: string
+  contractTerm?: string
+  renewNoticeDays?: number
 }
 
 export interface CreateContractDto {
@@ -680,6 +758,15 @@ export interface CreateContractDto {
   endDate?: string
   autoRenew?: boolean
   serviceLines?: ServiceLine[]
+  name?: string
+  serviceDescription?: string
+  businessUnit?: string
+  contactPerson?: string
+  contactEmail?: string
+  contactTel?: string
+  contactFax?: string
+  contractTerm?: string
+  renewNoticeDays?: number
 }
 
 export interface UpdateContractDto {
@@ -692,6 +779,15 @@ export interface UpdateContractDto {
   title?: string
   body?: string
   serviceLines?: ServiceLine[]
+  name?: string | null
+  serviceDescription?: string | null
+  businessUnit?: string | null
+  contactPerson?: string | null
+  contactEmail?: string | null
+  contactTel?: string | null
+  contactFax?: string | null
+  contractTerm?: string | null
+  renewNoticeDays?: number | null
 }
 
 export interface CreateObligationDto {
@@ -716,7 +812,40 @@ export interface ContractDashboardDto {
 
 // ─────── Documents ───────
 
-export type DocumentCategory = 'contract' | 'tor' | 'boq' | 'invoice' | 'quotation' | 'brochure' | 'other'
+export type DocumentCategory =
+  | 'contract'
+  | 'amendment'
+  | 'addendum'
+  | 'appendix'
+  | 'sow'
+  | 'nda'
+  | 'po'
+  | 'invoice'
+  | 'receipt'
+  | 'quotation'
+  | 'tor'
+  | 'boq'
+  | 'certificate'
+  | 'brochure'
+  | 'other'
+
+export const DOCUMENT_CATEGORIES: ReadonlyArray<{ id: DocumentCategory; label: string; th: string }> = [
+  { id: 'contract',    label: 'Contract',        th: 'สัญญา' },
+  { id: 'amendment',   label: 'Amendment',       th: 'สัญญาแก้ไข' },
+  { id: 'addendum',    label: 'Addendum',        th: 'บันทึกเพิ่มเติม' },
+  { id: 'appendix',    label: 'Appendix',        th: 'เอกสารแนบ' },
+  { id: 'sow',         label: 'SOW',             th: 'ขอบเขตงาน' },
+  { id: 'nda',         label: 'NDA',             th: 'สัญญาไม่เปิดเผยข้อมูล' },
+  { id: 'po',          label: 'Purchase Order',  th: 'ใบสั่งซื้อ' },
+  { id: 'invoice',     label: 'Invoice',         th: 'ใบแจ้งหนี้' },
+  { id: 'receipt',     label: 'Receipt',         th: 'ใบเสร็จ' },
+  { id: 'quotation',   label: 'Quotation',       th: 'ใบเสนอราคา' },
+  { id: 'tor',         label: 'TOR',             th: 'ข้อกำหนดงาน' },
+  { id: 'boq',         label: 'BOQ',             th: 'รายการวัสดุ' },
+  { id: 'certificate', label: 'Certificate',     th: 'หนังสือรับรอง' },
+  { id: 'brochure',    label: 'Brochure',        th: 'โบรชัวร์' },
+  { id: 'other',       label: 'Other',           th: 'อื่นๆ' },
+]
 
 export interface DocumentVersionDto {
   id: string
@@ -724,6 +853,7 @@ export interface DocumentVersionDto {
   filename: string
   mimeType: string
   sizeBytes: number
+  notes: string | null
   uploadedByName: string
   createdAt: string
   extraction?: DocumentExtractionDto | null
@@ -737,20 +867,41 @@ export interface DocumentExtractionDto {
   processedAt: string | null
 }
 
+export type DocumentKind = 'file' | 'link'
+
 export interface DocumentDto {
   id: string
   name: string
+  description: string | null
   category: DocumentCategory
+  kind: DocumentKind
+  url: string | null
+  serviceLines: ServiceLine[]
+  isCentral: boolean
   customerId: string | null
   customerName: string | null
+  customerCode: string | null
   opportunityId: string | null
   quotationId: string | null
   contractId: string | null
   uploadedByName: string
   currentVersion: DocumentVersionDto | null
-  versions: Array<{ id: string; versionNo: number; createdAt: string }>
+  versions: Array<{ id: string; versionNo: number; notes: string | null; createdAt: string; uploadedByName: string; filename: string; sizeBytes: number }>
   createdAt: string
   updatedAt: string
+}
+
+export interface CreateDocumentLinkDto {
+  name: string
+  url: string
+  category?: DocumentCategory
+  serviceLines?: ServiceLine[]
+  isCentral?: boolean
+  description?: string
+  customerId?: string
+  opportunityId?: string
+  quotationId?: string
+  contractId?: string
 }
 
 // ─────── AI Suite ───────
@@ -1158,6 +1309,8 @@ export interface CompetitorDto {
   name: string
   logo: string
   color: string
+  serviceLines: ServiceLine[]
+  product: string | null
   notes: string | null
   metrics: {
     activeContracts: number
@@ -1197,6 +1350,8 @@ export interface CreateCompetitorDto {
   name: string
   logo?: string
   color?: string
+  serviceLines?: ServiceLine[]
+  product?: string
   notes?: string
 }
 
@@ -1204,6 +1359,8 @@ export interface UpdateCompetitorDto {
   name?: string
   logo?: string
   color?: string
+  serviceLines?: ServiceLine[]
+  product?: string | null
   notes?: string | null
 }
 

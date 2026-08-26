@@ -1,5 +1,6 @@
 import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
-import type { CreateCustomerDto, CustomerDto, CustomerStatus, UserDto } from '@bluefish/shared'
+import { SERVICE_LINES } from '@bluefish/shared'
+import type { CreateCustomerDto, CustomerDto, CustomerStatus, IndustryTypeDto, ServiceLine, UserDto } from '@bluefish/shared'
 import { api, ApiError } from '../lib/api'
 
 interface Props {
@@ -15,15 +16,17 @@ export default function CustomerFormModal({ open, initial, onClose, onSaved }: P
   const [form, setForm] = useState<CreateCustomerDto>({
     code: '', name: '', nameTh: '', industry: '', status: 'Prospect',
     ownerId: '', city: '', address: '', taxId: '', phone: '', terms: 'Net 30',
-    lastActivity: 'New customer',
+    lastActivity: 'New customer', primaryServiceLines: [],
   })
   const [owners, setOwners] = useState<UserDto[]>([])
+  const [industries, setIndustries] = useState<IndustryTypeDto[]>([])
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
     if (!open) return
     api.users().then(setOwners).catch(() => setOwners([]))
+    api.industryTypes().then(setIndustries).catch(() => setIndustries([]))
   }, [open])
 
   useEffect(() => {
@@ -35,9 +38,10 @@ export default function CustomerFormModal({ open, initial, onClose, onSaved }: P
         taxId: initial.taxId, phone: initial.phone, terms: initial.terms,
         openValue: initial.openValue, wonValue: initial.wonValue,
         lastActivity: initial.lastActivity,
+        primaryServiceLines: initial.primaryServiceLines ?? [],
       })
     } else if (open) {
-      setForm((f) => ({ ...f, code: '', name: '', nameTh: '', industry: '', city: '', address: '', taxId: '', phone: '', terms: 'Net 30' }))
+      setForm((f) => ({ ...f, code: '', name: '', nameTh: '', industry: '', city: '', address: '', taxId: '', phone: '', terms: 'Net 30', primaryServiceLines: [] }))
     }
     setError(null)
   }, [initial, open])
@@ -87,7 +91,13 @@ export default function CustomerFormModal({ open, initial, onClose, onSaved }: P
               <input value={form.nameTh ?? ''} onChange={(e) => change('nameTh', e.target.value)} style={inputStyle} />
             </Field>
             <Field label="Industry" required>
-              <input value={form.industry} onChange={(e) => change('industry', e.target.value)} required style={inputStyle} />
+              <select value={form.industry} onChange={(e) => change('industry', e.target.value)} required style={inputStyle}>
+                <option value="">— Select —</option>
+                {industries.map((i) => <option key={i.id} value={i.name}>{i.name}</option>)}
+                {form.industry && !industries.some((i) => i.name === form.industry) && (
+                  <option value={form.industry}>{form.industry} (legacy)</option>
+                )}
+              </select>
             </Field>
             <Field label="Status">
               <select value={form.status ?? 'Prospect'} onChange={(e) => change('status', e.target.value as CustomerStatus)} style={inputStyle}>
@@ -114,6 +124,27 @@ export default function CustomerFormModal({ open, initial, onClose, onSaved }: P
             </Field>
             <Field label="Credit terms">
               <input value={form.terms} onChange={(e) => change('terms', e.target.value)} style={inputStyle} placeholder="Net 30" />
+            </Field>
+            <Field label="Primary service lines" span2>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {SERVICE_LINES.map((s) => {
+                  const on = (form.primaryServiceLines ?? []).includes(s)
+                  return (
+                    <div key={s} onClick={() => {
+                      const cur = form.primaryServiceLines ?? []
+                      change('primaryServiceLines', on ? cur.filter((x) => x !== s) : [...cur, s] as ServiceLine[])
+                    }} style={{
+                      border: `1px solid ${on ? '#2A6FDB' : '#E5E7F0'}`,
+                      background: on ? '#EEF0FA' : '#fff',
+                      color: on ? '#2A6FDB' : '#5C5C74',
+                      borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                    }}>{on && <span style={{ marginRight: 4 }}>✓</span>}{s}</div>
+                  )
+                })}
+              </div>
+              <div style={{ marginTop: 6, fontSize: 11, color: '#8888A0' }}>
+                Sales reps see only customers in the services they own; leave empty to keep the customer scoped only via their opportunities/contracts.
+              </div>
             </Field>
           </div>
 

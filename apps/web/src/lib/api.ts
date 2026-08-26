@@ -4,6 +4,12 @@ import type {
   ContractDashboardDto,
   ContractDto,
   ContractTemplateDto,
+  ContractTypeDto,
+  CreateContractTypeDto,
+  CreateIndustryTypeDto,
+  IndustryTypeDto,
+  UpdateContractTypeDto,
+  UpdateIndustryTypeDto,
   CreateActivityDto,
   CreateContactDto,
   CreateContractDto,
@@ -311,52 +317,97 @@ export const api = {
   quotationPdfUrl: (id: string) => `${API_BASE}/quotations/${id}/pdf`,
 
   // ─────── Documents ───────
-  documents: (filter: { customerId?: string; opportunityId?: string; quotationId?: string; category?: string } = {}) => {
+  documents: (filter: { customerId?: string; opportunityId?: string; quotationId?: string; contractId?: string; category?: string; service?: string; isCentral?: boolean; q?: string } = {}) => {
     const p = new URLSearchParams()
     if (filter.customerId) p.set('customerId', filter.customerId)
     if (filter.opportunityId) p.set('opportunityId', filter.opportunityId)
     if (filter.quotationId) p.set('quotationId', filter.quotationId)
+    if (filter.contractId) p.set('contractId', filter.contractId)
     if (filter.category) p.set('category', filter.category)
+    if (filter.service) p.set('service', filter.service)
+    if (typeof filter.isCentral === 'boolean') p.set('isCentral', String(filter.isCentral))
+    if (filter.q) p.set('q', filter.q)
     const qs = p.toString()
     return request<DocumentDto[]>(`/documents${qs ? `?${qs}` : ''}`)
   },
   document: (id: string) => request<DocumentDto>(`/documents/${id}`),
-  uploadDocument: (file: File, meta: { name?: string; customerId?: string; opportunityId?: string; quotationId?: string; category?: DocumentCategory } = {}) => {
+  uploadDocument: (file: File, meta: {
+    name?: string; description?: string
+    customerId?: string; opportunityId?: string; quotationId?: string; contractId?: string
+    category?: DocumentCategory
+    serviceLines?: string[]; isCentral?: boolean; versionNotes?: string
+  } = {}) => {
     const form = new FormData()
     form.append('file', file)
-    for (const [k, v] of Object.entries(meta)) if (v) form.append(k, v)
+    for (const [k, v] of Object.entries(meta)) {
+      if (v === undefined || v === null) continue
+      if (Array.isArray(v)) form.append(k, v.join(','))
+      else if (typeof v === 'boolean') form.append(k, String(v))
+      else form.append(k, v)
+    }
     return request<DocumentDto>('/documents', { method: 'POST', body: form })
   },
-  uploadDocumentVersion: (id: string, file: File) => {
+  createDocumentLink: (data: {
+    name: string; url: string; description?: string
+    category?: DocumentCategory
+    customerId?: string; opportunityId?: string; quotationId?: string; contractId?: string
+    serviceLines?: string[]; isCentral?: boolean
+  }) => request<DocumentDto>('/documents/link', { method: 'POST', body: JSON.stringify(data) }),
+  uploadDocumentVersion: (id: string, file: File, opts: { notes?: string } = {}) => {
     const form = new FormData()
     form.append('file', file)
+    if (opts.notes) form.append('notes', opts.notes)
     return request<DocumentDto>(`/documents/${id}/versions`, { method: 'POST', body: form })
   },
+  makeDocumentVersionCurrent: (documentId: string, versionId: string) =>
+    request<DocumentDto>(`/documents/${documentId}/versions/${versionId}/make-current`, { method: 'POST' }),
+  deleteDocumentVersion: (documentId: string, versionId: string) =>
+    request<DocumentDto>(`/documents/${documentId}/versions/${versionId}`, { method: 'DELETE' }),
+  updateDocument: (id: string, data: {
+    name?: string; description?: string | null; category?: DocumentCategory
+    serviceLines?: string[]; isCentral?: boolean
+  }) => request<DocumentDto>(`/documents/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteDocument: (id: string) => request<void>(`/documents/${id}`, { method: 'DELETE' }),
   documentDownloadUrl: (versionId: string) => `${API_BASE}/documents/versions/${versionId}/download`,
 
   // ─────── Contracts ───────
-  contracts: (filter: { status?: string | string[]; customerId?: string; service?: string | string[] } = {}) => {
+  contracts: (filter: { status?: string | string[]; customerId?: string; service?: string | string[]; q?: string } = {}) => {
     const p = new URLSearchParams()
     const statusCsv = Array.isArray(filter.status) ? filter.status.join(',') : filter.status
     const serviceCsv = Array.isArray(filter.service) ? filter.service.join(',') : filter.service
     if (statusCsv) p.set('status', statusCsv)
     if (filter.customerId) p.set('customerId', filter.customerId)
     if (serviceCsv) p.set('service', serviceCsv)
+    if (filter.q) p.set('q', filter.q)
     const qs = p.toString()
     return request<ContractDto[]>(`/contracts${qs ? `?${qs}` : ''}`)
   },
   contract: (id: string) => request<ContractDto>(`/contracts/${id}`),
-  contractDashboard: (filter: { status?: string | string[]; service?: string | string[] } = {}) => {
+  contractDashboard: (filter: { status?: string | string[]; service?: string | string[]; q?: string } = {}) => {
     const p = new URLSearchParams()
     const statusCsv = Array.isArray(filter.status) ? filter.status.join(',') : filter.status
     const serviceCsv = Array.isArray(filter.service) ? filter.service.join(',') : filter.service
     if (statusCsv) p.set('status', statusCsv)
     if (serviceCsv) p.set('service', serviceCsv)
+    if (filter.q) p.set('q', filter.q)
     const qs = p.toString()
     return request<ContractDashboardDto>(`/contracts/dashboard${qs ? `?${qs}` : ''}`)
   },
   contractTemplates: () => request<ContractTemplateDto[]>('/contract-templates'),
+  contractTypes: (includeInactive = false) =>
+    request<ContractTypeDto[]>(`/contract-types${includeInactive ? '?includeInactive=1' : ''}`),
+  createContractType: (data: CreateContractTypeDto) =>
+    request<ContractTypeDto>('/contract-types', { method: 'POST', body: JSON.stringify(data) }),
+  updateContractType: (id: string, data: UpdateContractTypeDto) =>
+    request<ContractTypeDto>(`/contract-types/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteContractType: (id: string) => request<void>(`/contract-types/${id}`, { method: 'DELETE' }),
+  industryTypes: (includeInactive = false) =>
+    request<IndustryTypeDto[]>(`/industry-types${includeInactive ? '?includeInactive=1' : ''}`),
+  createIndustryType: (data: CreateIndustryTypeDto) =>
+    request<IndustryTypeDto>('/industry-types', { method: 'POST', body: JSON.stringify(data) }),
+  updateIndustryType: (id: string, data: UpdateIndustryTypeDto) =>
+    request<IndustryTypeDto>(`/industry-types/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteIndustryType: (id: string) => request<void>(`/industry-types/${id}`, { method: 'DELETE' }),
   createContract: (data: CreateContractDto) => request<ContractDto>('/contracts', { method: 'POST', body: JSON.stringify(data) }),
   createContractFromTemplate: (data: CreateContractFromTemplateDto) =>
     request<ContractDto>('/contracts/from-template', { method: 'POST', body: JSON.stringify(data) }),
@@ -372,7 +423,7 @@ export const api = {
   renewContract: (id: string, data: { newStart: string; newEnd: string; newValue?: number }) =>
     request<ContractDto>(`/contracts/${id}/renew`, { method: 'POST', body: JSON.stringify(data) }),
 
-  obligations: (filter: { from?: Date; to?: Date; status?: string; contractId?: string; contractStatus?: string | string[]; contractService?: string | string[] } = {}) => {
+  obligations: (filter: { from?: Date; to?: Date; status?: string; contractId?: string; contractStatus?: string | string[]; contractService?: string | string[]; q?: string } = {}) => {
     const p = new URLSearchParams()
     if (filter.from) p.set('from', filter.from.toISOString())
     if (filter.to) p.set('to', filter.to.toISOString())
@@ -382,6 +433,7 @@ export const api = {
     const svCsv = Array.isArray(filter.contractService) ? filter.contractService.join(',') : filter.contractService
     if (csCsv) p.set('contractStatus', csCsv)
     if (svCsv) p.set('contractService', svCsv)
+    if (filter.q) p.set('q', filter.q)
     const qs = p.toString()
     return request<ObligationDto[]>(`/obligations${qs ? `?${qs}` : ''}`)
   },
@@ -415,7 +467,12 @@ export const api = {
     request<import('@bluefish/shared').FlowaccountSyncResultDto>(`/integrations/flowaccount/quotations/${quotationId}/sync`, { method: 'POST' }),
 
   // ─────── Competitor Tracker ───────
-  competitors: () => request<import('@bluefish/shared').CompetitorDto[]>('/competitors'),
+  competitors: (filter: { service?: string } = {}) => {
+    const p = new URLSearchParams()
+    if (filter.service) p.set('service', filter.service)
+    const qs = p.toString()
+    return request<import('@bluefish/shared').CompetitorDto[]>(`/competitors${qs ? `?${qs}` : ''}`)
+  },
   createCompetitor: (data: import('@bluefish/shared').CreateCompetitorDto) =>
     request<import('@bluefish/shared').CompetitorDto>('/competitors', { method: 'POST', body: JSON.stringify(data) }),
   updateCompetitor: (id: string, data: import('@bluefish/shared').UpdateCompetitorDto) =>

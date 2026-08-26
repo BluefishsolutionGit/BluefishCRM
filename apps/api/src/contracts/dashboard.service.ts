@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
 import { SERVICE_LINES } from '@bluefish/shared'
 import type { ContractDashboardDto, ContractStatus, ObligationDto, ObligationKind } from '@bluefish/shared'
+import { loadServiceScope, scopeArrayField } from '../common/service-scope'
+import type { Request } from 'express'
 
 const csvList = (v: string | string[] | undefined): string[] => {
   if (v === undefined) return []
@@ -13,7 +15,7 @@ const csvList = (v: string | string[] | undefined): string[] => {
 export class ContractsDashboardService {
   constructor(private prisma: PrismaService) {}
 
-  async summary(filter: { status?: string | string[]; service?: string | string[] } = {}): Promise<ContractDashboardDto> {
+  async summary(req: Request, filter: { status?: string | string[]; service?: string | string[]; q?: string } = {}): Promise<ContractDashboardDto> {
     const statuses = csvList(filter.status)
     const services = csvList(filter.service).filter((s) => (SERVICE_LINES as readonly string[]).includes(s))
     const contractWhere: Record<string, unknown> = {}
@@ -21,6 +23,20 @@ export class ContractsDashboardService {
     else if (statuses.length > 1) contractWhere.status = { in: statuses }
     if (services.length === 1) contractWhere.serviceLines = { has: services[0] }
     else if (services.length > 1) contractWhere.serviceLines = { hasSome: services }
+    const scope = await loadServiceScope(this.prisma, req)
+    const scopeFilter = scopeArrayField(scope, 'serviceLines')
+    if (scopeFilter) Object.assign(contractWhere, scopeFilter)
+    const q = filter.q?.trim()
+    if (q) {
+      contractWhere.OR = [
+        { no:       { contains: q, mode: 'insensitive' } },
+        { type:     { contains: q, mode: 'insensitive' } },
+        { customer: { name: { contains: q, mode: 'insensitive' } } },
+        { customer: { code: { contains: q, mode: 'insensitive' } } },
+        { currentVersion: { title: { contains: q, mode: 'insensitive' } } },
+        { currentVersion: { body:  { contains: q, mode: 'insensitive' } } },
+      ]
+    }
 
     const all = await this.prisma.contract.findMany({ where: contractWhere })
     const totalCount = all.length

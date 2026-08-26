@@ -13,6 +13,8 @@ import type {
   UpdateLeadDto,
 } from '@bluefish/shared'
 import type { AuditRequestContext } from '../common/request-context'
+import { loadServiceScope, scopeScalarField } from '../common/service-scope'
+import type { Request } from 'express'
 
 @Injectable()
 export class LeadsService {
@@ -22,11 +24,14 @@ export class LeadsService {
     private assignment: AssignmentService,
   ) {}
 
-  async list(filter: { q?: string; status?: string } = {}): Promise<LeadDto[]> {
+  async list(req: Request, filter: { q?: string; status?: string } = {}): Promise<LeadDto[]> {
     const insensitive = filter.q ? { contains: filter.q, mode: 'insensitive' as const } : undefined
+    const scope = await loadServiceScope(this.prisma, req)
+    const scopeFilter = scopeScalarField(scope, 'serviceOrProduct')
     const rows = await this.prisma.lead.findMany({
       where: {
         status: filter.status,
+        ...(scopeFilter ?? {}),
         ...(insensitive
           ? { OR: [{ name: insensitive }, { companyName: insensitive }, { email: insensitive }] }
           : {}),
@@ -37,8 +42,13 @@ export class LeadsService {
     return rows.map(this.toDto)
   }
 
-  async findOne(id: string): Promise<LeadDto> {
-    const row = await this.prisma.lead.findUnique({ where: { id }, include: { owner: true } })
+  async findOne(id: string, req: Request): Promise<LeadDto> {
+    const scope = await loadServiceScope(this.prisma, req)
+    const scopeFilter = scopeScalarField(scope, 'serviceOrProduct')
+    const row = await this.prisma.lead.findFirst({
+      where: { id, ...(scopeFilter ?? {}) },
+      include: { owner: true },
+    })
     if (!row) throw new NotFoundException(`Lead ${id} not found`)
     return this.toDto(row)
   }

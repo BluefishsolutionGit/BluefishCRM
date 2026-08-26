@@ -1,5 +1,5 @@
 import { BadRequestException, Body, Controller, Delete, Get, HttpCode, NotFoundException, Param, Patch, Post, Req, UnauthorizedException, UseGuards } from '@nestjs/common'
-import { IsArray, IsBoolean, IsEmail, IsOptional, IsString, MinLength } from 'class-validator'
+import { ArrayUnique, IsArray, IsBoolean, IsEmail, IsIn, IsOptional, IsString, MinLength } from 'class-validator'
 import * as bcrypt from 'bcryptjs'
 import { JwtAuthGuard } from '../auth/jwt.guard'
 import { UsersService } from './users.service'
@@ -12,6 +12,7 @@ import { PrismaService } from '../prisma/prisma.service'
 import { AuditService } from '../audit/audit.service'
 import { auditContext } from '../common/request-context'
 import type { Request } from 'express'
+import { SERVICE_LINES } from '@bluefish/shared'
 import type { RoleDto, UserDto } from '@bluefish/shared'
 
 interface JwtRequest extends Request { user?: { sub: string; email: string; role: string } }
@@ -32,14 +33,14 @@ class CreateUserApiDto {
   @IsString() @MinLength(1) role!: string
   @IsString() @MinLength(8) password!: string
   @IsOptional() @IsString() department?: string
-  @IsOptional() @IsArray() services?: string[]
+  @IsOptional() @IsArray() @ArrayUnique() @IsIn(SERVICE_LINES as readonly string[], { each: true }) services?: string[]
 }
 
 class UpdateUserApiDto {
   @IsOptional() @IsString() name?: string
   @IsOptional() @IsString() role?: string
   @IsOptional() @IsString() department?: string | null
-  @IsOptional() @IsArray() services?: string[]
+  @IsOptional() @IsArray() @ArrayUnique() @IsIn(SERVICE_LINES as readonly string[], { each: true }) services?: string[]
   @IsOptional() @IsBoolean() isActive?: boolean
 }
 

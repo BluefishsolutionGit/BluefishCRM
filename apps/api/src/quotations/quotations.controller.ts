@@ -56,14 +56,14 @@ export class QuotationsController {
 
   @Get()
   @RequirePermissions(PERMISSIONS.QUOTATION_READ)
-  list(): Promise<QuotationDto[]> {
-    return this.quotations.list()
+  list(@Req() req: JwtRequest): Promise<QuotationDto[]> {
+    return this.quotations.list(req)
   }
 
   @Get(':id')
   @RequirePermissions(PERMISSIONS.QUOTATION_READ)
-  findOne(@Param('id') id: string): Promise<QuotationDto> {
-    return this.quotations.findOne(id)
+  findOne(@Param('id') id: string, @Req() req: JwtRequest): Promise<QuotationDto> {
+    return this.quotations.findOne(id, req)
   }
 
   @Post()
@@ -103,9 +103,9 @@ export class QuotationsController {
 
   @Get(':id/pdf')
   @RequirePermissions(PERMISSIONS.QUOTATION_READ)
-  async downloadPdf(@Param('id') id: string, @Res() res: Response): Promise<void> {
+  async downloadPdf(@Param('id') id: string, @Req() req: JwtRequest, @Res() res: Response): Promise<void> {
     const buf = await this.pdf.renderQuotation(id)
-    const q = await this.quotations.findOne(id)
+    const q = await this.quotations.findOne(id, req)
     res.setHeader('Content-Type', 'application/pdf')
     res.setHeader('Content-Disposition', `attachment; filename="${q.no}.pdf"`)
     res.end(buf)
@@ -118,6 +118,6 @@ export class QuotationsController {
     if (!req.user) throw new UnauthorizedException()
     await this.mailer.sendQuotation(id, { toEmail: body.toEmail, ccEmails: body.ccEmails })
     await this.quotations.markSent(id, auditContext(req))
-    return this.quotations.findOne(id)
+    return this.quotations.findOne(id, req)
   }
 }

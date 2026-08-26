@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common'
+import { SERVICE_LINES } from '@bluefish/shared'
 import type {
   CompetitorContractDto,
   CompetitorContractStatus,
@@ -6,6 +7,7 @@ import type {
   CompetitorDto,
   CreateCompetitorContractDto,
   CreateCompetitorDto,
+  ServiceLine,
   UpdateCompetitorContractDto,
   UpdateCompetitorDto,
 } from '@bluefish/shared'
@@ -13,8 +15,19 @@ import { PrismaService } from '../prisma/prisma.service'
 import { AuditService } from '../audit/audit.service'
 import type { AuditRequestContext } from '../common/request-context'
 
+const sanitizeServiceLines = (values: readonly string[] | undefined | null): ServiceLine[] => {
+  if (!values) return []
+  const set = new Set<ServiceLine>()
+  for (const v of values) {
+    if ((SERVICE_LINES as readonly string[]).includes(v)) set.add(v as ServiceLine)
+  }
+  return [...set]
+}
+
 type CompetitorRow = {
-  id: string; name: string; logo: string; color: string; notes: string | null
+  id: string; name: string; logo: string; color: string
+  serviceLines: string[]; product: string | null
+  notes: string | null
   createdAt: Date; updatedAt: Date
 }
 
@@ -44,9 +57,12 @@ export class CompetitorsService {
   constructor(private prisma: PrismaService, private audit: AuditService) {}
 
   // ─── Competitors ────────────────────────────────────────────────
-  async listCompetitors(): Promise<CompetitorDto[]> {
+  async listCompetitors(filter: { service?: string } = {}): Promise<CompetitorDto[]> {
+    const where: Record<string, unknown> = {}
+    const svc = filter.service && (SERVICE_LINES as readonly string[]).includes(filter.service) ? filter.service : undefined
+    if (svc) where.serviceLines = { has: svc }
     const [competitors, contracts] = await Promise.all([
-      this.prisma.competitor.findMany({ orderBy: { name: 'asc' } }),
+      this.prisma.competitor.findMany({ where, orderBy: { name: 'asc' } }),
       this.prisma.competitorContract.findMany(),
     ])
     const now = new Date()
@@ -63,6 +79,8 @@ export class CompetitorsService {
         name: c.name,
         logo: c.logo,
         color: c.color,
+        serviceLines: sanitizeServiceLines(c.serviceLines),
+        product: c.product,
         notes: c.notes,
         metrics: { activeContracts, expiringIn90Days, renewedByThem, inNegotiationVsUs, totalDealValue },
         createdAt: c.createdAt.toISOString(),
@@ -79,6 +97,8 @@ export class CompetitorsService {
         name: input.name,
         logo: input.logo ?? input.name.slice(0, 2).toUpperCase(),
         color: input.color ?? '#5C5C74',
+        serviceLines: sanitizeServiceLines(input.serviceLines),
+        product: input.product?.trim() || null,
         notes: input.notes ?? null,
       },
     })
@@ -89,7 +109,14 @@ export class CompetitorsService {
   async updateCompetitor(id: string, input: UpdateCompetitorDto, ctx: AuditRequestContext): Promise<CompetitorDto> {
     const before = await this.prisma.competitor.findUnique({ where: { id } })
     if (!before) throw new NotFoundException(`Competitor ${id} not found`)
-    const row = await this.prisma.competitor.update({ where: { id }, data: input })
+    const data: Record<string, unknown> = {}
+    if (input.name !== undefined) data.name = input.name
+    if (input.logo !== undefined) data.logo = input.logo
+    if (input.color !== undefined) data.color = input.color
+    if (input.notes !== undefined) data.notes = input.notes
+    if (input.serviceLines !== undefined) data.serviceLines = { set: sanitizeServiceLines(input.serviceLines) }
+    if (input.product !== undefined) data.product = input.product?.trim() || null
+    const row = await this.prisma.competitor.update({ where: { id }, data })
     await this.audit.log({ ...ctx, action: 'competitor.update', entity: 'competitor', entityId: id, before, after: row })
     return this.toCompetitorDtoBasic(row)
   }
@@ -184,6 +211,8 @@ export class CompetitorsService {
       name: row.name,
       logo: row.logo,
       color: row.color,
+      serviceLines: sanitizeServiceLines(row.serviceLines),
+      product: row.product,
       notes: row.notes,
       metrics: { activeContracts: 0, expiringIn90Days: 0, renewedByThem: 0, inNegotiationVsUs: 0, totalDealValue: 0 },
       createdAt: row.createdAt.toISOString(),

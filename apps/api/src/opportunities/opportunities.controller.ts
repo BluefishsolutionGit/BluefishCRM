@@ -9,6 +9,8 @@ import { auditContext } from '../common/request-context'
 import type { Request } from 'express'
 import type { ForecastDto, OpportunityDto, OpportunityStage } from '@bluefish/shared'
 
+interface JwtRequest extends Request { user?: { sub: string; email: string; role: string } }
+
 class CreateBody {
   @IsString() @MinLength(1) title!: string
   @IsString() customerId!: string
@@ -51,23 +53,24 @@ export class OpportunitiesController {
   @Get()
   @RequirePermissions(PERMISSIONS.OPPORTUNITY_READ)
   list(
+    @Req() req: JwtRequest,
     @Query('ownerId') ownerId?: string,
     @Query('stage') stage?: OpportunityStage,
     @Query('serviceOrProduct') serviceOrProduct?: string,
   ): Promise<OpportunityDto[]> {
-    return this.opps.list({ ownerId, stage, serviceOrProduct })
+    return this.opps.list(req, { ownerId, stage, serviceOrProduct })
   }
 
   @Get('forecast')
   @RequirePermissions(PERMISSIONS.OPPORTUNITY_READ)
-  forecast(): Promise<ForecastDto> {
-    return this.opps.forecast()
+  forecast(@Req() req: JwtRequest): Promise<ForecastDto> {
+    return this.opps.forecast(req)
   }
 
   @Get(':id')
   @RequirePermissions(PERMISSIONS.OPPORTUNITY_READ)
-  findOne(@Param('id') id: string): Promise<OpportunityDto> {
-    return this.opps.findOne(id)
+  findOne(@Param('id') id: string, @Req() req: JwtRequest): Promise<OpportunityDto> {
+    return this.opps.findOne(id, req)
   }
 
   @Post()

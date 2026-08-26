@@ -3,10 +3,12 @@ import { useAuth } from '../lib/AuthContext'
 import { api, ApiError } from '../lib/api'
 import { useToast } from '../lib/ToastContext'
 import type { CalendarAccountDto, CreateUserDto, RoleDto, UpdateUserDto, UserDto } from '@bluefish/shared'
+import { SERVICE_LINES } from '@bluefish/shared'
+import MasterData from './MasterData'
 
-const SERVICE_LINES = ['Box', '3S', '3D', 'AI&RPA'] as const
+const ROLES_WITH_VIEW_ALL = new Set(['admin', 'sales_manager', 'auditor'])
 
-type Tab = 'profile' | 'security' | 'integrations' | 'users' | 'matrix'
+type Tab = 'profile' | 'security' | 'integrations' | 'users' | 'matrix' | 'master-data'
 
 export default function Settings() {
   const { user, hasPermission } = useAuth()
@@ -19,6 +21,7 @@ export default function Settings() {
     { id: 'security',     label: 'Security',        visible: true },
     { id: 'integrations', label: 'Integrations',    visible: true },
     { id: 'users',        label: 'User Management', visible: canManageUsers },
+    { id: 'master-data',  label: 'Master Data',     visible: canManageUsers },
     { id: 'matrix',       label: 'Role Matrix',     visible: true },
   ]
 
@@ -101,6 +104,8 @@ export default function Settings() {
       {tab === 'users' && canManageUsers && (
         <UserManagementSection onToast={toast} />
       )}
+
+      {tab === 'master-data' && canManageUsers && <MasterData onToast={toast} />}
 
       {tab === 'matrix' && <RoleMatrixSection />}
     </div>
@@ -422,9 +427,17 @@ function UserManagementSection({ onToast }: { onToast: (msg: string) => void }) 
                       <td style={tdStyle}><RoleBadge role={u.role} /></td>
                       <td style={tdStyle}>{u.department ?? '—'}</td>
                       <td style={tdStyle}>
-                        {u.services && u.services.length > 0
-                          ? u.services.map((s) => <ServiceChip key={s} name={s} />)
-                          : <span style={{ color: '#B8BACD' }}>—</span>}
+                        {ROLES_WITH_VIEW_ALL.has(u.role) ? (
+                          <span title="Role has service:view_all — sees all services regardless of picker" style={{ background: '#E5F9F1', color: '#0E9C7E', fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 999 }}>
+                            sees all
+                          </span>
+                        ) : u.services && u.services.length > 0 ? (
+                          u.services.map((s) => <ServiceChip key={s} name={s} />)
+                        ) : (
+                          <span title="No services assigned — this rep will see nothing" style={{ background: '#FDECEA', color: '#C0392B', fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 999 }}>
+                            none
+                          </span>
+                        )}
                       </td>
                       <td style={tdStyle}>
                         <span style={{
@@ -479,6 +492,18 @@ function RoleBadge({ role }: { role: string }) {
     <span style={{ background: bg, color: fg, fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 8 }}>
       {role}
     </span>
+  )
+}
+
+function ServiceScopeHint({ role }: { role?: string }) {
+  if (!role) return null
+  const seeAll = ROLES_WITH_VIEW_ALL.has(role)
+  return (
+    <div style={{ marginTop: 6, fontSize: 11, color: seeAll ? '#0E9C7E' : '#8888A0', lineHeight: 1.35 }}>
+      {seeAll
+        ? `Role "${role}" already has service:view_all — the picker is informational only; this user sees every service.`
+        : 'Sales rep will only see customers, opportunities, leads, quotations and contracts that fall inside these services. Leave empty and they see nothing.'}
+    </div>
   )
 }
 
@@ -556,6 +581,7 @@ function InviteUserModal({ roles, onClose, onCreated }: { roles: RoleDto[]; onCl
         </Field>
         <Field label="Services / Products">
           <ServiceCheckboxes selected={form.services ?? []} onChange={(next) => setForm({ ...form, services: next })} />
+          <ServiceScopeHint role={form.role} />
         </Field>
         <Field label="Initial password (≥ 8 chars, upper/lower/digit)">
           <input required type="text" style={inputStyle} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
@@ -633,6 +659,7 @@ function EditUserModal({ user, roles, onClose, onSaved }: { user: UserDto; roles
         </Field>
         <Field label="Services / Products">
           <ServiceCheckboxes selected={form.services ?? []} onChange={(next) => setForm({ ...form, services: next })} />
+          <ServiceScopeHint role={form.role} />
         </Field>
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#3B3B52' }}>
           <input type="checkbox" checked={form.isActive ?? true} onChange={(e) => setForm({ ...form, isActive: e.target.checked })} disabled={isSelf} />

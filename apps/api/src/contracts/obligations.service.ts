@@ -4,6 +4,8 @@ import { AuditService } from '../audit/audit.service'
 import { SERVICE_LINES } from '@bluefish/shared'
 import type { CreateObligationDto, ObligationDto, ObligationKind } from '@bluefish/shared'
 import type { AuditRequestContext } from '../common/request-context'
+import { loadServiceScope, scopeArrayField } from '../common/service-scope'
+import type { Request } from 'express'
 
 const KINDS: ObligationKind[] = ['Payment', 'Delivery', 'SLA', 'Renewal', 'Warranty', 'Insurance', 'KPI']
 
@@ -17,7 +19,7 @@ const csvList = (v: string | string[] | undefined): string[] => {
 export class ObligationsService {
   constructor(private prisma: PrismaService, private audit: AuditService) {}
 
-  async list(filter: { contractId?: string; from?: Date; to?: Date; status?: string; contractStatus?: string | string[]; contractService?: string | string[] } = {}): Promise<ObligationDto[]> {
+  async list(req: Request, filter: { contractId?: string; from?: Date; to?: Date; status?: string; contractStatus?: string | string[]; contractService?: string | string[]; q?: string } = {}): Promise<ObligationDto[]> {
     const contractWhere: Record<string, unknown> = {}
     const cs = csvList(filter.contractStatus)
     if (cs.length === 1) contractWhere.status = cs[0]
@@ -25,13 +27,37 @@ export class ObligationsService {
     const svc = csvList(filter.contractService).filter((s) => (SERVICE_LINES as readonly string[]).includes(s))
     if (svc.length === 1) contractWhere.serviceLines = { has: svc[0] }
     else if (svc.length > 1) contractWhere.serviceLines = { hasSome: svc }
+    const scope = await loadServiceScope(this.prisma, req)
+    const scopeFilter = scopeArrayField(scope, 'serviceLines')
+    if (scopeFilter) Object.assign(contractWhere, scopeFilter)
+
+    const q = filter.q?.trim()
+    const where: Record<string, unknown> = {
+      contractId: filter.contractId, status: filter.status,
+      dueDate: filter.from || filter.to ? { gte: filter.from, lte: filter.to } : undefined,
+      ...(Object.keys(contractWhere).length ? { contract: contractWhere } : {}),
+    }
+    if (q) {
+      const contractMatch: Record<string, unknown> = {
+        ...contractWhere,
+        OR: [
+          { no:       { contains: q, mode: 'insensitive' } },
+          { type:     { contains: q, mode: 'insensitive' } },
+          { customer: { name: { contains: q, mode: 'insensitive' } } },
+          { customer: { code: { contains: q, mode: 'insensitive' } } },
+          { currentVersion: { title: { contains: q, mode: 'insensitive' } } },
+        ],
+      }
+      where.OR = [
+        { title: { contains: q, mode: 'insensitive' } },
+        { notes: { contains: q, mode: 'insensitive' } },
+        { contract: contractMatch },
+      ]
+      delete where.contract
+    }
 
     const rows = await this.prisma.obligation.findMany({
-      where: {
-        contractId: filter.contractId, status: filter.status,
-        dueDate: filter.from || filter.to ? { gte: filter.from, lte: filter.to } : undefined,
-        ...(Object.keys(contractWhere).length ? { contract: contractWhere } : {}),
-      },
+      where,
       include: { contract: { select: { no: true } } },
       orderBy: { dueDate: 'asc' },
     })

@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common'
-import { IsIn, IsInt, IsISO8601, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator'
+import { ArrayUnique, IsArray, IsIn, IsInt, IsISO8601, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator'
 import { JwtAuthGuard } from '../auth/jwt.guard'
 import { PermissionsGuard } from '../auth/permissions.guard'
 import { RequirePermissions } from '../auth/permissions.decorator'
@@ -7,6 +7,7 @@ import { PERMISSIONS } from '../auth/permissions'
 import { CompetitorsService } from './competitors.service'
 import { auditContext } from '../common/request-context'
 import type { Request } from 'express'
+import { SERVICE_LINES, type ServiceLine } from '@bluefish/shared'
 import type { CompetitorContractDto, CompetitorDto } from '@bluefish/shared'
 
 const STATUSES = ['Prospect', 'Contract Identified', 'Monitoring', 'Renewal Window', 'Proposal Submitted', 'Negotiation', 'Auto Renewed', 'Won', 'Lost'] as const
@@ -16,12 +17,16 @@ class CreateCompetitorBody {
   @IsString() @MinLength(2) @MaxLength(80) name!: string
   @IsOptional() @IsString() @MaxLength(3) logo?: string
   @IsOptional() @IsString() @MaxLength(9) color?: string
+  @IsOptional() @IsArray() @ArrayUnique() @IsIn(SERVICE_LINES as readonly string[], { each: true }) serviceLines?: ServiceLine[]
+  @IsOptional() @IsString() @MaxLength(120) product?: string
   @IsOptional() @IsString() @MaxLength(500) notes?: string
 }
 class UpdateCompetitorBody {
   @IsOptional() @IsString() @MinLength(2) @MaxLength(80) name?: string
   @IsOptional() @IsString() @MaxLength(3) logo?: string
   @IsOptional() @IsString() @MaxLength(9) color?: string
+  @IsOptional() @IsArray() @ArrayUnique() @IsIn(SERVICE_LINES as readonly string[], { each: true }) serviceLines?: ServiceLine[]
+  @IsOptional() @IsString() @MaxLength(120) product?: string | null
   @IsOptional() @IsString() @MaxLength(500) notes?: string
 }
 class CreateContractBody {
@@ -58,8 +63,8 @@ export class CompetitorsController {
 
   @Get('competitors')
   @RequirePermissions(PERMISSIONS.COMPETITOR_READ)
-  listCompetitors(): Promise<CompetitorDto[]> {
-    return this.svc.listCompetitors()
+  listCompetitors(@Query('service') service?: string): Promise<CompetitorDto[]> {
+    return this.svc.listCompetitors({ service })
   }
 
   @Post('competitors')

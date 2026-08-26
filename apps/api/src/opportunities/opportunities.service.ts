@@ -10,17 +10,21 @@ import type {
   UpdateOpportunityDto,
 } from '@bluefish/shared'
 import type { AuditRequestContext } from '../common/request-context'
+import { loadServiceScope, scopeScalarField } from '../common/service-scope'
+import type { Request } from 'express'
 
 @Injectable()
 export class OpportunitiesService {
   constructor(private prisma: PrismaService, private audit: AuditService) {}
 
-  async list(filter: { ownerId?: string; stage?: OpportunityStage; serviceOrProduct?: string } = {}): Promise<OpportunityDto[]> {
+  async list(req: Request | null, filter: { ownerId?: string; stage?: OpportunityStage; serviceOrProduct?: string } = {}): Promise<OpportunityDto[]> {
+    const scopeFilter = req ? scopeScalarField(await loadServiceScope(this.prisma, req), 'serviceOrProduct') : null
     const rows = await this.prisma.opportunity.findMany({
       where: {
         ownerId: filter.ownerId,
         stage: filter.stage,
         serviceOrProduct: filter.serviceOrProduct,
+        ...(scopeFilter ?? {}),
       },
       include: {
         customer: true,
@@ -32,7 +36,19 @@ export class OpportunitiesService {
     return rows.map(this.toDto)
   }
 
-  async findOne(id: string): Promise<OpportunityDto> {
+  async findOne(id: string, req: Request): Promise<OpportunityDto> {
+    const scope = await loadServiceScope(this.prisma, req)
+    const scopeFilter = scopeScalarField(scope, 'serviceOrProduct')
+    const row = await this.prisma.opportunity.findFirst({
+      where: { id, ...(scopeFilter ?? {}) },
+      include: { customer: true, owner: true, lines: { include: { product: true } } },
+    })
+    if (!row) throw new NotFoundException(`Opportunity ${id} not found`)
+    return this.toDto(row)
+  }
+
+  /** Skips service scoping — used for internal reload after a mutation. */
+  private async findOneUnchecked(id: string): Promise<OpportunityDto> {
     const row = await this.prisma.opportunity.findUnique({
       where: { id },
       include: { customer: true, owner: true, lines: { include: { product: true } } },
@@ -95,9 +111,14 @@ export class OpportunitiesService {
     return this.update(id, { stage }, ctx)
   }
 
-  async forecast(): Promise<ForecastDto> {
+  async forecast(req: Request): Promise<ForecastDto> {
+    const scope = await loadServiceScope(this.prisma, req)
+    const scopeFilter = scopeScalarField(scope, 'serviceOrProduct')
     const [opps, users] = await Promise.all([
-      this.prisma.opportunity.findMany({ include: { owner: true } }),
+      this.prisma.opportunity.findMany({
+        where: scopeFilter ?? undefined,
+        include: { owner: true },
+      }),
       this.prisma.user.findMany({ where: { role: { name: { in: ['sales_manager', 'sales_rep'] } } }, include: { role: true } }),
     ])
     const quota = 40_000_000

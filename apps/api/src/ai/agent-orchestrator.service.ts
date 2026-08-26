@@ -130,7 +130,7 @@ export class AgentOrchestrator {
         return { text: text.slice(0, 4000) }
       }
       case 'forecast_assistant': {
-        const opps = await this.opportunities.list()
+        const opps = await this.opportunities.list(null)
         return {
           pipeline: JSON.stringify(opps.slice(0, 30).map((o) => ({
             title: o.title, customer: o.customerName, stage: o.stage,

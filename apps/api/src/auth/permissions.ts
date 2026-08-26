@@ -27,6 +27,7 @@ export const PERMISSIONS = {
 
   AUDIT_READ: 'audit:read',
   USER_MANAGE: 'user:manage',
+  SERVICE_VIEW_ALL: 'service:view_all',
 } as const
 
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS]
@@ -45,6 +46,7 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     PERMISSIONS.CONTRACT_READ, PERMISSIONS.CONTRACT_WRITE,
     PERMISSIONS.COMPETITOR_READ, PERMISSIONS.COMPETITOR_WRITE,
     PERMISSIONS.AUDIT_READ,
+    PERMISSIONS.SERVICE_VIEW_ALL,
   ],
 
   sales_rep: [
@@ -77,6 +79,7 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     PERMISSIONS.CONTRACT_READ,
     PERMISSIONS.COMPETITOR_READ,
     PERMISSIONS.AUDIT_READ,
+    PERMISSIONS.SERVICE_VIEW_ALL,
   ],
 
   viewer: [

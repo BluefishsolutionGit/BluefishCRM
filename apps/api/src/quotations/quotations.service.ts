@@ -13,6 +13,8 @@ import type {
   QuotationVersionDto,
 } from '@bluefish/shared'
 import type { AuditRequestContext } from '../common/request-context'
+import { loadServiceScope, scopeScalarField } from '../common/service-scope'
+import type { Request } from 'express'
 
 const APPROVAL_STEPS = [
   { step: 1, name: 'Sales Manager' },
@@ -45,15 +47,39 @@ export class QuotationsService {
     }
   }
 
-  async list(): Promise<QuotationDto[]> {
+  async list(req: Request): Promise<QuotationDto[]> {
+    const scope = await loadServiceScope(this.prisma, req)
+    const scopeFilter = scope.viewAll ? null : {
+      OR: [
+        { opportunityId: null },
+        { opportunity: scopeScalarField(scope, 'serviceOrProduct') ?? undefined },
+      ],
+    } as Record<string, unknown>
     const rows = await this.prisma.quotation.findMany({
+      where: scopeFilter ?? undefined,
       include: this.includeAll(),
       orderBy: { createdAt: 'desc' },
     })
     return rows.map((r) => this.toDto(r))
   }
 
-  async findOne(id: string): Promise<QuotationDto> {
+  async findOne(id: string, req: Request): Promise<QuotationDto> {
+    const scope = await loadServiceScope(this.prisma, req)
+    const scopeFilter = scope.viewAll ? null : {
+      OR: [
+        { opportunityId: null },
+        { opportunity: scopeScalarField(scope, 'serviceOrProduct') ?? undefined },
+      ],
+    } as Record<string, unknown>
+    const row = await this.prisma.quotation.findFirst({
+      where: { id, ...(scopeFilter ?? {}) }, include: this.includeAll(),
+    })
+    if (!row) throw new NotFoundException(`Quotation ${id} not found`)
+    return this.toDto(row)
+  }
+
+  /** Skips service scoping — used for internal reload after a mutation. */
+  private async findOneUnchecked(id: string): Promise<QuotationDto> {
     const row = await this.prisma.quotation.findUnique({
       where: { id }, include: this.includeAll(),
     })
@@ -77,7 +103,7 @@ export class QuotationsService {
     await this.createVersion(q.id, { lines: [], discountPct: 0, vatPct: 7 }, userId, ctx, { silent: true })
 
     await this.audit.log({ ...ctx, action: 'quotation.create', entity: 'quotation', entityId: q.id, after: q })
-    return this.findOne(q.id)
+    return this.findOneUnchecked(q.id)
   }
 
   async createVersion(quotationId: string, input: CreateVersionDto, userId: string, ctx: AuditRequestContext, opts: { silent?: boolean } = {}): Promise<QuotationDto> {
@@ -129,7 +155,7 @@ export class QuotationsService {
       await this.audit.log({ ...ctx, action: 'quotation.version.create', entity: 'quotation', entityId: quotationId, after: created, metadata: { versionNo: nextNo } })
     }
 
-    return this.findOne(quotationId)
+    return this.findOneUnchecked(quotationId)
   }
 
   async submit(id: string, userId: string, ctx: AuditRequestContext): Promise<QuotationDto> {
@@ -147,7 +173,7 @@ export class QuotationsService {
       this.prisma.quotation.update({ where: { id }, data: { status: 'Pending Approval', approvalStep: 1 } }),
     ])
     await this.audit.log({ ...ctx, userId, action: 'quotation.submit', entity: 'quotation', entityId: id })
-    return this.findOne(id)
+    return this.findOneUnchecked(id)
   }
 
   async approve(id: string, userId: string, comment: string | undefined, ctx: AuditRequestContext): Promise<QuotationDto> {
@@ -176,7 +202,7 @@ export class QuotationsService {
     if (isFinal) {
       await this.safeFlowaccountPush(id, ctx, 'final-approve')
     }
-    return this.findOne(id)
+    return this.findOneUnchecked(id)
   }
 
   async reject(id: string, userId: string, comment: string, ctx: AuditRequestContext): Promise<QuotationDto> {
@@ -193,7 +219,7 @@ export class QuotationsService {
     })
     await this.prisma.quotation.update({ where: { id }, data: { status: 'Rejected', approvalStep: 0 } })
     await this.audit.log({ ...ctx, userId, action: 'quotation.reject', entity: 'quotation', entityId: id, metadata: { step: q.approvalStep, comment } })
-    return this.findOne(id)
+    return this.findOneUnchecked(id)
   }
 
   async markSent(id: string, ctx: AuditRequestContext): Promise<void> {
