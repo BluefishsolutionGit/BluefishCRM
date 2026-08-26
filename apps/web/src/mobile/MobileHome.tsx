@@ -121,11 +121,12 @@ export default function MobileHome() {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6 }}>
         <ActionTile busy={busy === 'card'} icon="📷" label="Scan card" onClick={scanCard} />
         <ActionTile busy={busy === 'gps'} icon="📍" label="Check-in" onClick={gpsCheckin} />
         <ActionTile busy={busy === 'voice'} icon="🎙" label="Voice" onClick={voiceNote} />
-        <ActionTile icon="+" label="Log activity" onClick={() => setLogOpen(true)} />
+        <ActionTile icon="+" label="Activity" onClick={() => setLogOpen(true)} />
+        <ActionTile icon="📁" label="Docs" onClick={() => navigate('/m/documents')} />
       </div>
 
       {logOpen && <LogActivitySheet onClose={() => setLogOpen(false)} onSaved={() => setLogOpen(false)} />}
@@ -168,7 +169,7 @@ function MiniCard({ label, value, dark }: { label: string; value: string; dark?:
   )
 }
 
-function ActionTile({ icon, label, onClick, busy }: { icon: string; label: string; onClick: () => void; busy: boolean }) {
+function ActionTile({ icon, label, onClick, busy = false }: { icon: string; label: string; onClick: () => void; busy?: boolean }) {
   return (
     <div onClick={busy ? undefined : onClick} style={{ background: '#fff', border: '1.5px dashed #D0D0DF', borderRadius: 13, padding: '14px 8px', textAlign: 'center', cursor: 'pointer', opacity: busy ? 0.5 : 1 }}>
       <div style={{ fontSize: 22 }}>{icon}</div>
