@@ -174,6 +174,9 @@ export default function MobileHome() {
         <ActionTile icon="💬" label="Inbox" onClick={() => navigate('/m/inbox')} />
         <ActionTile icon="📁" label="Docs" onClick={() => navigate('/m/documents')} />
         <ActionTile icon="📄" label="Quotes" onClick={() => navigate('/m/quotations')} />
+        <ActionTile icon="📊" label="Reports" onClick={() => navigate('/m/reports')} />
+        <ActionTile icon="🗺" label="Nearby" onClick={() => navigate('/m/nearby')} />
+        <ActionTile icon="✨" label="AI" onClick={() => navigate('/m/ai')} />
       </div>
 
       {logOpen && (

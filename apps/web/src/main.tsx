@@ -28,6 +28,9 @@ import MobileContracts, { MobileContractDetail } from './mobile/MobileContracts'
 import MobileDocuments, { MobileDocumentDetail } from './mobile/MobileDocuments'
 import MobileQuotations, { MobileQuotationDetail } from './mobile/MobileQuotations'
 import MobileInbox, { MobileInboxThread } from './mobile/MobileInbox'
+import MobileReports from './mobile/MobileReports'
+import MobileNearby from './mobile/MobileNearby'
+import MobileAi from './mobile/MobileAi'
 import Settings from './pages/Settings'
 import Products from './pages/Products'
 import Documents from './pages/Documents'
@@ -109,6 +112,9 @@ createRoot(document.getElementById('root')!).render(
             <Route path="quotations/:id" element={<MobileQuotationDetail />} />
             <Route path="inbox" element={<MobileInbox />} />
             <Route path="inbox/:id" element={<MobileInboxThread />} />
+            <Route path="reports" element={<MobileReports />} />
+            <Route path="nearby" element={<MobileNearby />} />
+            <Route path="ai" element={<MobileAi />} />
           </Route>
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
