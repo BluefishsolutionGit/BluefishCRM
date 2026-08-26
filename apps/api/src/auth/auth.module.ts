@@ -12,6 +12,8 @@ import { PasswordResetController } from './password-reset.controller'
 import { SsoController } from './sso.controller'
 import { SsoService } from './sso.service'
 import { MfaService } from './mfa.service'
+import { WebAuthnService } from './webauthn.service'
+import { WebAuthnController } from './webauthn.controller'
 import { UsersModule } from '../users/users.module'
 
 @Module({
@@ -27,8 +29,8 @@ import { UsersModule } from '../users/users.module'
       }),
     }),
   ],
-  providers: [AuthService, JwtStrategy, PermissionsGuard, TokensService, PasswordResetService, MfaService, SsoService],
-  controllers: [AuthController, PasswordResetController, SsoController],
+  providers: [AuthService, JwtStrategy, PermissionsGuard, TokensService, PasswordResetService, MfaService, SsoService, WebAuthnService],
+  controllers: [AuthController, PasswordResetController, SsoController, WebAuthnController],
   exports: [PermissionsGuard, TokensService, MfaService],
 })
 export class AuthModule {}

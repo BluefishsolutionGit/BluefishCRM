@@ -7,6 +7,7 @@ import { useToast } from '../lib/ToastContext'
 import { enqueue as enqueueDraft } from '../lib/offlineQueue'
 import { LogActivitySheet } from './MobileDetails'
 import QrScannerSheet from './QrScannerSheet'
+import { isPlatformAuthenticatorAvailable, isWebAuthnSupported, registerBiometric } from '../lib/webauthnClient'
 
 const fmt = (n: number) => n >= 1_000_000 ? '฿' + (n / 1e6).toFixed(1) + 'M' : '฿' + Math.round(n / 1e3) + 'K'
 
@@ -17,6 +18,9 @@ export default function MobileHome() {
   const [lastCheckin, setLastCheckin] = useState<string | null>(null)
   const [logOpen, setLogOpen] = useState<false | { description?: string }>(false)
   const [qrOpen, setQrOpen] = useState(false)
+  const [bioAvailable, setBioAvailable] = useState(false)
+  const [bioBusy, setBioBusy] = useState(false)
+  const [bioDismissed, setBioDismissed] = useState(() => localStorage.getItem('bluefish.bioDismissedAt') !== null)
   const { user } = useAuth()
   const toast = useToast()
   const navigate = useNavigate()
@@ -26,7 +30,25 @@ export default function MobileHome() {
     const end = new Date(start); end.setDate(end.getDate() + 1)
     api.execDashboard().then(setExec).catch(() => {})
     if (user) api.activities({ from: start, to: end, ownerId: user.id }).then(setToday).catch(() => {})
+    // Only offer biometric registration when the device actually has a platform
+    // authenticator (Face ID / Touch ID / Windows Hello) — external keys are
+    // less useful on mobile.
+    if (isWebAuthnSupported()) {
+      void isPlatformAuthenticatorAvailable().then(setBioAvailable)
+    }
   }, [user])
+
+  const enableBiometric = async () => {
+    if (bioBusy) return
+    setBioBusy(true)
+    const res = await registerBiometric(`${navigator.userAgent.split(') ')[0].split(' (').pop() ?? 'this device'}`)
+    setBioBusy(false)
+    if (res.ok) { toast('Biometric enabled — sign in with Face/Touch next time'); setBioDismissed(true); localStorage.setItem('bluefish.bioDismissedAt', String(Date.now())) }
+    else toast(res.reason)
+  }
+  const dismissBio = () => {
+    setBioDismissed(true); localStorage.setItem('bluefish.bioDismissedAt', String(Date.now()))
+  }
 
   const gpsCheckin = async () => {
     if (!('geolocation' in navigator)) { toast('GPS not available'); return }
@@ -162,6 +184,21 @@ export default function MobileHome() {
           <MiniCard label="Pipeline" value={fmt(exec.openPipeline)} dark />
           <MiniCard label="MTD" value={fmt(exec.revenueMTD)} />
           <MiniCard label="Tasks" value={String(today.length)} />
+        </div>
+      )}
+
+      {bioAvailable && !bioDismissed && (
+        <div style={{
+          background: '#F4F1FD', border: '1px solid #EAE7F7', borderRadius: 12,
+          padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10,
+        }}>
+          <div style={{ fontSize: 22 }}>🔐</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 800, color: '#2E1A6B' }}>Sign in faster with Face / Touch ID</div>
+            <div style={{ fontSize: 11, color: '#5B3FC4', marginTop: 2 }}>Enable biometric login on this device.</div>
+          </div>
+          <div onClick={enableBiometric} style={{ background: '#4A3AB8', color: '#fff', fontSize: 11.5, fontWeight: 800, padding: '6px 12px', borderRadius: 999, cursor: 'pointer', opacity: bioBusy ? 0.6 : 1 }}>{bioBusy ? '…' : 'Enable'}</div>
+          <div onClick={dismissBio} style={{ color: '#8888A0', fontSize: 14, padding: '2px 4px', cursor: 'pointer' }}>✕</div>
         </div>
       )}
 

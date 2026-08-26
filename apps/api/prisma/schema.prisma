@@ -47,6 +47,7 @@ model User {
   aiRuns              AiRun[]
   inboxThreads        InboxThread[]
   pushSubscriptions   PushSubscription[]
+  webauthnCredentials WebAuthnCredential[]
   calendarAccounts    CalendarSyncAccount[]
   auditLogs           AuditLog[]
   refreshTokens       RefreshToken[]
@@ -713,15 +714,17 @@ model WebhookSubscription {
 }
 
 model PushSubscription {
-  id           String    @id @default(cuid())
-  userId       String
-  endpoint     String    @unique
-  p256dh       String
-  auth         String
-  userAgent    String?
-  createdAt    DateTime  @default(now())
+  id            String    @id @default(cuid())
+  userId        String
+  endpoint      String    @unique
+  p256dh        String
+  auth          String
+  userAgent     String?
+  lastSuccessAt DateTime?
+  lastErrorAt   DateTime?
+  createdAt     DateTime  @default(now())
 
-  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
@@ -816,6 +819,39 @@ model NotificationRead {
 
   @@id([userId, key])
   @@index([userId])
+}
+
+/// A registered WebAuthn credential (Face ID, Touch ID, Windows Hello, security
+/// key…). One user can register from multiple devices — each row is one device.
+model WebAuthnCredential {
+  id             String   @id @default(cuid())
+  userId         String
+  credentialId   String   @unique
+  publicKey      Bytes
+  counter        BigInt   @default(0)
+  transports     String[] @default([])
+  deviceLabel    String?
+  createdAt      DateTime @default(now())
+  lastUsedAt     DateTime?
+
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// Ephemeral WebAuthn challenge for register / authenticate — expires quickly.
+/// Kept in the DB (not in-memory) so multi-instance API servers all see the
+/// same challenge without extra infra.
+model WebAuthnChallenge {
+  id        String   @id @default(cuid())
+  userId    String?          // null for username-less flows we don't use yet
+  purpose   String           // 'register' | 'authenticate'
+  challenge String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model AuditLog {

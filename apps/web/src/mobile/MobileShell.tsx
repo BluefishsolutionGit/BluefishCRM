@@ -3,6 +3,8 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { count as countDrafts, drainAll, subscribe as subscribeQueue } from '../lib/offlineQueue'
 import PwaInstallPrompt from './PwaInstallPrompt'
+import PushPromptBanner from './PushPromptBanner'
+import { ToastProvider } from '../lib/ToastContext'
 
 const TABS = [
   { path: '/m', label: 'Home', d: 'M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z' },
@@ -43,6 +45,7 @@ export default function MobileShell() {
   }
 
   return (
+    <ToastProvider>
     <div style={{ maxWidth: 480, margin: '0 auto', minHeight: '100vh', display: 'flex', flexDirection: 'column', background: '#F4F6F1', paddingBottom: 68, boxShadow: '0 0 40px rgba(30,26,48,.06)' }}>
       <div style={{ padding: '16px 18px 12px', background: '#fff', borderBottom: '1px solid #E5E7F0' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -83,6 +86,7 @@ export default function MobileShell() {
       </div>
 
       <PwaInstallPrompt />
+      <PushPromptBanner />
 
       <div style={{ flex: 1, overflow: 'auto' }}>
         <Outlet />
@@ -101,6 +105,7 @@ export default function MobileShell() {
         ))}
       </div>
     </div>
+    </ToastProvider>
   )
 }
 

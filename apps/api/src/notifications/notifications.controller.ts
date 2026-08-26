@@ -1,15 +1,60 @@
-import { Controller, Get, HttpCode, Param, Post, Req, UnauthorizedException, UseGuards } from '@nestjs/common'
+import { Body, Controller, Delete, Get, HttpCode, Param, Post, Req, UnauthorizedException, UseGuards } from '@nestjs/common'
+import { IsOptional, IsString, MinLength } from 'class-validator'
 import type { Request } from 'express'
 import type { NotificationDto } from '@bluefish/shared'
 import { JwtAuthGuard } from '../auth/jwt.guard'
 import { PrismaService } from '../prisma/prisma.service'
+import { PushService } from './push.service'
 
 interface JwtRequest extends Request { user?: { sub: string; email: string; role: string } }
+
+class SubscribeBody {
+  @IsString() @MinLength(10) endpoint!: string
+  @IsString() @MinLength(4)  p256dh!: string
+  @IsString() @MinLength(4)  auth!: string
+  @IsOptional() @IsString() userAgent?: string
+}
 
 @UseGuards(JwtAuthGuard)
 @Controller('notifications')
 export class NotificationsController {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private push: PushService) {}
+
+  // ─── Push subscription endpoints ─────────────────────────────────
+  @Get('vapid-public-key')
+  vapidKey(): { publicKey: string | null } {
+    return { publicKey: this.push.getPublicKey() }
+  }
+
+  @Post('subscribe')
+  @HttpCode(204)
+  async subscribe(@Body() body: SubscribeBody, @Req() req: JwtRequest): Promise<void> {
+    if (!req.user) throw new UnauthorizedException()
+    await this.prisma.pushSubscription.upsert({
+      where: { endpoint: body.endpoint },
+      update: { userId: req.user.sub, p256dh: body.p256dh, auth: body.auth, userAgent: body.userAgent ?? null, lastErrorAt: null },
+      create: { userId: req.user.sub, endpoint: body.endpoint, p256dh: body.p256dh, auth: body.auth, userAgent: body.userAgent ?? null },
+    })
+  }
+
+  @Delete('subscribe')
+  @HttpCode(204)
+  async unsubscribe(@Body() body: { endpoint: string }, @Req() req: JwtRequest): Promise<void> {
+    if (!req.user) throw new UnauthorizedException()
+    await this.prisma.pushSubscription.deleteMany({ where: { endpoint: body.endpoint, userId: req.user.sub } })
+  }
+
+  @Post('subscribe/test')
+  @HttpCode(200)
+  async sendTest(@Req() req: JwtRequest): Promise<{ ok: number; gone: number; failed: number }> {
+    if (!req.user) throw new UnauthorizedException()
+    return this.push.sendToUser(req.user.sub, {
+      title: 'Bluefish CRM',
+      body: 'Push notifications are live 🎉',
+      url: '/m',
+      tag: 'test',
+    })
+  }
 
   /**
    * Build a notification feed for the current user from:

@@ -2,6 +2,7 @@ import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { API_BASE, ApiError } from '../lib/api'
+import { getBiometricHint, loginWithBiometric, isWebAuthnSupported, clearBiometricHint } from '../lib/webauthnClient'
 import './Login.css'
 
 const RING1_ANGLES = [0, 26, 52, 77, 103, 129, 154, 180, 206, 231, 257, 283, 309, 334]
@@ -29,7 +30,28 @@ export default function Login() {
   const [ssoConfigured, setSsoConfigured] = useState<boolean>(false)
   const navigate = useNavigate()
   const [params] = useSearchParams()
-  const { login, handleSsoOutcome } = useAuth()
+  const { login, handleSsoOutcome, refreshUser } = useAuth()
+  const [bioHint, setBioHint] = useState<string | null>(() => (isWebAuthnSupported() ? getBiometricHint() : null))
+  const [bioBusy, setBioBusy] = useState(false)
+
+  const signInWithBiometric = async () => {
+    if (bioBusy) return
+    const target = (email && email.length > 3) ? email : bioHint
+    if (!target) { setError('Enter your email first — biometric needs an account to unlock.'); return }
+    setBioBusy(true); setError(null)
+    const res = await loginWithBiometric(target)
+    setBioBusy(false)
+    if (res.ok) {
+      // Refresh auth context so ProtectedRoute lets us in
+      await refreshUser().catch(() => {})
+      const goto = params.get('next') || '/dashboard'
+      navigate(goto)
+    } else {
+      // If the hint is stale (credential removed on server), forget it
+      if (/Unknown credential|No biometric|expired/i.test(res.reason)) { clearBiometricHint(); setBioHint(null) }
+      setError(res.reason)
+    }
+  }
 
   useEffect(() => {
     if (params.get('reset') === '1') setFlash('Password updated — please sign in with your new password.')
@@ -608,6 +630,21 @@ export default function Login() {
               Sign in with Microsoft{ssoConfigured ? '' : ' (not configured)'}
             </button>
           </div>
+
+          {isWebAuthnSupported() && bioHint && (
+            <div style={{ marginTop: 10 }}>
+              <button
+                type="button"
+                className="social-btn"
+                onClick={signInWithBiometric}
+                disabled={bioBusy}
+                style={{ width: '100%', opacity: bioBusy ? 0.6 : 1, cursor: bioBusy ? 'not-allowed' : 'pointer' }}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 3c4 0 7 2 8 5M4 8c1-3 4-5 8-5m-8 5v5c0 5 3 8 8 8s8-3 8-8V8m-4 3v3a4 4 0 0 1-4 4 4 4 0 0 1-4-4v-3m4-1v4" fill="none" stroke="#4A3AB8" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" /></svg>
+                {bioBusy ? 'Verifying…' : `Sign in with biometric${bioHint ? ` · ${bioHint}` : ''}`}
+              </button>
+            </div>
+          )}
 
           <div
             style={{

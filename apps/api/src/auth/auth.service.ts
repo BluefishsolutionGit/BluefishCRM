@@ -114,6 +114,14 @@ export class AuthService {
     }
   }
 
+  /** Complete a login for a user we've already authenticated by another
+   *  factor (e.g. WebAuthn). Bypasses MFA — WebAuthn is itself an MFA. */
+  async loginByUserId(userId: string, ctx: LoginContext = {}) {
+    const u = await this.users.findById(userId)
+    if (!u || !u.isActive) throw new UnauthorizedException('User not available')
+    return this.completeLogin(u, ctx)
+  }
+
   // Helper for typed narrowing in controllers
   static isChallenge(result: LoginResult): result is { requiresMfa: true; mfaToken: string } {
     return 'requiresMfa' in result
