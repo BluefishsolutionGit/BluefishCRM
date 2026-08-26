@@ -121,13 +121,15 @@ export default function MobileHome() {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
         <ActionTile busy={busy === 'card'} icon="📷" label="Scan card" onClick={scanCard} />
         <ActionTile busy={busy === 'gps'} icon="📍" label="Check-in" onClick={gpsCheckin} />
-        <ActionTile busy={busy === 'voice'} icon="🎙" label="Voice note" onClick={voiceNote} />
-        <ActionTile icon="+" label="Log activity" onClick={() => setLogOpen(true)} />
-        <ActionTile icon="📁" label="Documents" onClick={() => navigate('/m/documents')} />
-        <ActionTile icon="📄" label="Quotations" onClick={() => navigate('/m/quotations')} />
+        <ActionTile busy={busy === 'voice'} icon="🎙" label="Voice" onClick={voiceNote} />
+        <ActionTile icon="+" label="Activity" onClick={() => setLogOpen(true)} />
+        <ActionTile icon="💬" label="Inbox" onClick={() => navigate('/m/inbox')} />
+        <ActionTile icon="📁" label="Docs" onClick={() => navigate('/m/documents')} />
+        <ActionTile icon="📄" label="Quotes" onClick={() => navigate('/m/quotations')} />
+        <ActionTile icon="📑" label="Contracts" onClick={() => navigate('/m/contracts')} />
       </div>
 
       {logOpen && <LogActivitySheet onClose={() => setLogOpen(false)} onSaved={() => setLogOpen(false)} />}

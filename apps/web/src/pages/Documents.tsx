@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type FormEvent } from 'react'
 import type { CustomerDto, DocumentCategory, DocumentDto, ServiceLine } from '@bluefish/shared'
 import { DOCUMENT_CATEGORIES, SERVICE_LINES } from '@bluefish/shared'
+import DocumentViewer, { type ViewableVersion } from '../components/DocumentViewer'
 import { api, ApiError } from '../lib/api'
 import { useToast } from '../lib/ToastContext'
 import { useAuth } from '../lib/AuthContext'
@@ -41,6 +42,7 @@ export default function Documents() {
   const [loading, setLoading] = useState(true)
   const [uploadOpen, setUploadOpen] = useState<false | 'default' | 'central'>(false)
   const [selected, setSelected] = useState<DocumentDto | null>(null)
+  const [viewing, setViewing] = useState<ViewableVersion | null>(null)
   const [view, setView] = useState<ViewMode>('category')
   const [pick, setPick] = useState<SelectionKey>({ view: 'category', value: 'all' })
   const [q, setQ] = useState('')
@@ -257,7 +259,7 @@ export default function Documents() {
         {/* Content */}
         <div style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: selected ? '1fr 380px' : '1fr' }}>
           <div style={{ overflow: 'auto', padding: '14px 24px 22px' }}>
-            <DocGrid rows={visible} loading={loading} selected={selected} setSelected={setSelected} canWrite={canWrite} del={del} />
+            <DocGrid rows={visible} loading={loading} selected={selected} setSelected={setSelected} canWrite={canWrite} del={del} onView={setViewing} />
           </div>
           {selected && (
             <div style={{ borderLeft: '1px solid #E5E7F0', background: '#fff', overflow: 'auto' }}>
@@ -268,11 +270,14 @@ export default function Documents() {
                 canWrite={canWrite}
                 availableServices={availableServices}
                 onReload={reload}
+                onView={setViewing}
               />
             </div>
           )}
         </div>
       </div>
+
+      {viewing && <DocumentViewer version={viewing} onClose={() => setViewing(null)} />}
 
       {uploadOpen && (
         <UploadModal
@@ -366,10 +371,11 @@ function initials(s: string): string {
   return (parts.map((p) => p[0] ?? '').join('') || '·').slice(0, 3).toUpperCase()
 }
 
-function DocGrid({ rows, loading, selected, setSelected, canWrite, del }: {
+function DocGrid({ rows, loading, selected, setSelected, canWrite, del, onView }: {
   rows: DocumentDto[]; loading: boolean; selected: DocumentDto | null
   setSelected: (d: DocumentDto | null) => void
   canWrite: boolean; del: (d: DocumentDto) => void
+  onView: (v: ViewableVersion) => void
 }) {
   return (
     <div style={{ background: '#fff', border: '1px solid #E5E7F0', borderRadius: 14, overflow: 'hidden' }}>
@@ -408,7 +414,10 @@ function DocGrid({ rows, loading, selected, setSelected, canWrite, del }: {
             <div style={{ fontSize: 12, color: '#5C5C74' }}>{cv ? Math.max(1, Math.round(cv.sizeBytes / 1024)) + ' KB' : '—'}</div>
             <div style={{ fontSize: 12, color: '#5C5C74' }}>{cv ? new Date(cv.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '—'}</div>
             <div style={{ display: 'flex', gap: 5, justifyContent: 'flex-end' }}>
-              {cv && <a href={api.documentDownloadUrl(cv.id)} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} style={miniBtn}>↓</a>}
+              {cv && d.kind === 'file' && (
+                <div onClick={(e) => { e.stopPropagation(); onView({ id: cv.id, filename: cv.filename, mimeType: cv.mimeType, sizeBytes: cv.sizeBytes, createdAt: cv.createdAt, uploadedByName: cv.uploadedByName, notes: cv.notes }) }} title="Preview" style={miniBtn}>👁</div>
+              )}
+              {cv && <a href={api.documentDownloadUrl(cv.id)} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} style={miniBtn} title="Download">↓</a>}
               {canWrite && <div onClick={(e) => { e.stopPropagation(); del(d) }} style={{ ...miniBtn, color: '#C0392B' }}>×</div>}
             </div>
           </div>
@@ -418,9 +427,10 @@ function DocGrid({ rows, loading, selected, setSelected, canWrite, del }: {
   )
 }
 
-function DocumentDetailPanel({ document, onClose, canWrite, availableServices, onReload }: {
+function DocumentDetailPanel({ document, onClose, canWrite, availableServices, onReload, onView }: {
   document: DocumentDto; onClose: () => void; canWrite: boolean
   availableServices: ServiceLine[]; onReload: () => void
+  onView: (v: ViewableVersion) => void
 }) {
   const toast = useToast()
   const cv = document.currentVersion
@@ -478,10 +488,13 @@ function DocumentDetailPanel({ document, onClose, canWrite, availableServices, o
         {cv && (
           <div style={{ marginTop: 4, borderTop: '1px solid #F2F3F9', paddingTop: 12 }}>
             <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', color: '#8888A0', textTransform: 'uppercase', marginBottom: 6 }}>Current version</div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
               <span style={{ background: '#EEF0FA', color: '#2A6FDB', fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 6 }}>v{cv.versionNo}</span>
               <div style={{ flex: 1, minWidth: 0, fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{cv.filename} · {Math.max(1, Math.round(cv.sizeBytes / 1024))} KB</div>
-              <a href={api.documentDownloadUrl(cv.id)} target="_blank" rel="noopener noreferrer" style={{ ...primaryBtn, fontSize: 11, padding: '5px 12px', textDecoration: 'none', display: 'inline-block' }}>Download</a>
+              {document.kind === 'file' && (
+                <div onClick={() => onView({ id: cv.id, filename: cv.filename, mimeType: cv.mimeType, sizeBytes: cv.sizeBytes, createdAt: cv.createdAt, uploadedByName: cv.uploadedByName, notes: cv.notes })} style={{ ...primaryBtn, fontSize: 11, padding: '5px 12px', display: 'inline-block', cursor: 'pointer' }}>View</div>
+              )}
+              <a href={api.documentDownloadUrl(cv.id)} target="_blank" rel="noopener noreferrer" style={{ ...outlineBtn, fontSize: 11, padding: '5px 12px', textDecoration: 'none', display: 'inline-block' }}>↓</a>
             </div>
             {cv.notes && <div style={{ marginTop: 6, fontSize: 11.5, color: '#5C5C74', background: '#F7F8FC', borderRadius: 8, padding: '6px 10px' }}>{cv.notes}</div>}
           </div>
@@ -510,6 +523,9 @@ function DocumentDetailPanel({ document, onClose, canWrite, availableServices, o
                     {v.notes && <div style={{ marginTop: 3, fontSize: 11, color: '#5C5C74' }}>{v.notes}</div>}
                   </div>
                   <div style={{ display: 'flex', gap: 3, flex: 'none' }}>
+                    {document.kind === 'file' && (
+                      <div onClick={() => onView({ id: v.id, filename: v.filename, mimeType: cv?.mimeType ?? 'application/octet-stream', sizeBytes: v.sizeBytes, createdAt: v.createdAt, uploadedByName: v.uploadedByName, notes: v.notes })} title="Preview" style={{ ...miniBtn, fontSize: 10.5, padding: '3px 8px', cursor: 'pointer' }}>👁</div>
+                    )}
                     <a href={api.documentDownloadUrl(v.id)} target="_blank" rel="noopener noreferrer" style={{ ...miniBtn, fontSize: 10.5, padding: '3px 8px' }}>↓</a>
                     {canWrite && !isCurrent && (
                       <>

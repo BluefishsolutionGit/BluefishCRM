@@ -18,6 +18,7 @@ import { api, ApiError } from '../lib/api'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/ToastContext'
 import { Sheet } from './MobileDetails'
+import DocumentViewer, { type ViewableVersion } from '../components/DocumentViewer'
 
 const CAT_STYLE: Record<string, { bg: string; fg: string }> = {
   contract:    { bg: '#E4EDFC', fg: '#2A6FDB' },
@@ -56,6 +57,7 @@ export default function MobileDocuments() {
   const [catFilter, setCatFilter] = useState<DocumentCategory | 'all'>('all')
   const [centralOnly, setCentralOnly] = useState(false)
   const [uploadOpen, setUploadOpen] = useState<false | 'default' | 'central'>(false)
+  const [viewing, setViewing] = useState<ViewableVersion | null>(null)
   const navigate = useNavigate()
   const toast = useToast()
   const { hasPermission } = useAuth()
@@ -136,8 +138,22 @@ export default function MobileDocuments() {
       {!loading && filtered.length === 0 && <div style={{ padding: 30, textAlign: 'center', color: '#8888A0', fontSize: 13 }}>No documents.</div>}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {filtered.map((d) => <DocRow key={d.id} doc={d} onOpen={() => navigate(`/m/documents/${d.id}`)} />)}
+        {filtered.map((d) => (
+          <DocRow
+            key={d.id}
+            doc={d}
+            onOpen={() => navigate(`/m/documents/${d.id}`)}
+            onQuickView={d.currentVersion ? () => setViewing({
+              id: d.currentVersion!.id, filename: d.currentVersion!.filename,
+              mimeType: d.currentVersion!.mimeType, sizeBytes: d.currentVersion!.sizeBytes,
+              createdAt: d.currentVersion!.createdAt, uploadedByName: d.currentVersion!.uploadedByName,
+              notes: d.currentVersion!.notes,
+            }) : undefined}
+          />
+        ))}
       </div>
+
+      {viewing && <DocumentViewer version={viewing} onClose={() => setViewing(null)} />}
 
       {canWrite && (
         <div
@@ -171,7 +187,7 @@ export default function MobileDocuments() {
   )
 }
 
-function DocRow({ doc, onOpen }: { doc: DocumentDto; onOpen: () => void }) {
+function DocRow({ doc, onOpen, onQuickView }: { doc: DocumentDto; onOpen: () => void; onQuickView?: () => void }) {
   const cat = CAT_STYLE[doc.category] ?? CAT_STYLE.other
   const cv = doc.currentVersion
   return (
@@ -182,6 +198,9 @@ function DocRow({ doc, onOpen }: { doc: DocumentDto; onOpen: () => void }) {
         {doc.kind === 'link' && <span style={{ background: '#EEF0FA', color: '#4A3AB8', fontSize: 9.5, fontWeight: 800, padding: '2px 6px', borderRadius: 999, textTransform: 'uppercase' }}>link</span>}
         <div style={{ flex: 1 }} />
         {cv && <div style={{ fontSize: 10.5, color: '#8888A0' }}>v{cv.versionNo} · {formatBytes(cv.sizeBytes)}</div>}
+        {onQuickView && cv && doc.kind === 'file' && (
+          <div onClick={(e) => { e.stopPropagation(); onQuickView() }} title="Quick view" style={{ marginLeft: 4, width: 24, height: 24, borderRadius: 6, border: '1px solid #E5E7F0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: '#2A6FDB' }}>👁</div>
+        )}
       </div>
       <div style={{ fontSize: 13, fontWeight: 700, marginTop: 5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc.name}</div>
       <div style={{ fontSize: 11, color: '#5C5C74', marginTop: 3, display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -208,6 +227,7 @@ export function MobileDocumentDetail() {
   const { hasPermission } = useAuth()
   const canWrite = hasPermission('customer:write')
   const [d, setD] = useState<DocumentDto | null>(null)
+  const [viewing, setViewing] = useState<ViewableVersion | null>(null)
   const fileRef = useRef<HTMLInputElement | null>(null)
 
   const reload = useCallback(async () => {
@@ -278,11 +298,10 @@ export function MobileDocumentDetail() {
             </div>
           </div>
           {cv.notes && <div style={{ marginTop: 8, fontSize: 11.5, color: '#5C5C74', background: '#F7F8FC', borderRadius: 8, padding: '6px 10px' }}>{cv.notes}</div>}
-          <a
-            href={api.documentDownloadUrl(cv.id)}
-            target="_blank" rel="noopener noreferrer"
-            style={{ ...primaryBtn, display: 'block', textAlign: 'center', textDecoration: 'none', marginTop: 10 }}
-          >Download / open</a>
+          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+            <div onClick={() => setViewing({ id: cv.id, filename: cv.filename, mimeType: cv.mimeType, sizeBytes: cv.sizeBytes, createdAt: cv.createdAt, uploadedByName: cv.uploadedByName, notes: cv.notes })} style={{ ...primaryBtn, flex: 1, textAlign: 'center' }}>👁 View</div>
+            <a href={api.documentDownloadUrl(cv.id)} target="_blank" rel="noopener noreferrer" style={{ ...outlineBtn, flex: 1, textAlign: 'center', textDecoration: 'none' }}>↓ Download</a>
+          </div>
         </div>
       )}
 
@@ -306,18 +325,24 @@ export function MobileDocumentDetail() {
         <div style={card}>
           <div style={sectionLabel}>Version history ({d.versions.length})</div>
           {d.versions.map((v) => (
-            <div key={v.id} style={{ padding: '7px 0', borderTop: '1px solid #F1F1F5', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+            <div
+              key={v.id}
+              onClick={() => setViewing({ id: v.id, filename: v.filename, mimeType: cv?.mimeType ?? 'application/octet-stream', sizeBytes: v.sizeBytes, createdAt: v.createdAt, uploadedByName: v.uploadedByName, notes: v.notes })}
+              style={{ padding: '7px 0', borderTop: '1px solid #F1F1F5', display: 'flex', gap: 8, alignItems: 'flex-start', cursor: 'pointer' }}
+            >
               <span style={{ background: v.id === cv?.id ? '#0E9C7E' : '#F2F3F9', color: v.id === cv?.id ? '#fff' : '#5C5C74', fontSize: 10, fontWeight: 800, padding: '2px 7px', borderRadius: 5 }}>v{v.versionNo}</span>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{v.filename}</div>
                 <div style={{ fontSize: 10.5, color: '#8888A0' }}>{new Date(v.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' })} · {v.uploadedByName} · {formatBytes(v.sizeBytes)}</div>
                 {v.notes && <div style={{ marginTop: 3, fontSize: 11, color: '#5C5C74' }}>{v.notes}</div>}
               </div>
-              <a href={api.documentDownloadUrl(v.id)} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: '#2A6FDB', textDecoration: 'none', flex: 'none' }}>↓</a>
+              <a href={api.documentDownloadUrl(v.id)} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} style={{ fontSize: 11, color: '#2A6FDB', textDecoration: 'none', flex: 'none' }}>↓</a>
             </div>
           ))}
         </div>
       )}
+
+      {viewing && <DocumentViewer version={viewing} title={d.name} onClose={() => setViewing(null)} />}
     </div>
   )
 }

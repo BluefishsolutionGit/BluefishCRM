@@ -6,6 +6,7 @@ import type {
   ServiceLine, UpdateCompetitorContractDto,
 } from '@bluefish/shared'
 import { DOCUMENT_CATEGORIES, SERVICE_LINES } from '@bluefish/shared'
+import DocumentViewer, { type ViewableVersion } from '../components/DocumentViewer'
 
 function useVisibleServiceLines(): ServiceLine[] {
   // Keep the `SERVICE_LINES` type but filter based on the current user's scope.
@@ -659,6 +660,7 @@ function ContractAttachments({ contract, onReload, onToast, canWrite }: { contra
   const [uploading, setUploading] = useState(false)
   const [pickerCategory, setPickerCategory] = useState<DocumentCategory>('contract')
   const [categoryFilter, setCategoryFilter] = useState<DocumentCategory | 'all'>('all')
+  const [viewing, setViewing] = useState<ViewableVersion | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const onFilePicked = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -743,7 +745,14 @@ function ContractAttachments({ contract, onReload, onToast, canWrite }: { contra
               <span style={{ background: sourceBadge.bg, color: sourceBadge.fg, borderRadius: 5, fontSize: 9, fontWeight: 700, padding: '1px 5px' }}>{sourceBadge.label}</span>
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <a href={href} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12.5, fontWeight: 600, color: '#2A6FDB', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textDecoration: 'none', display: 'block' }}>{a.name}</a>
+              {a.kind === 'file' && a.currentVersion ? (
+                <div
+                  onClick={() => setViewing({ id: a.currentVersion!.id, filename: a.currentVersion!.filename, mimeType: a.currentVersion!.mimeType, sizeBytes: a.currentVersion!.sizeBytes, createdAt: a.createdAt, uploadedByName: a.uploadedByName })}
+                  style={{ fontSize: 12.5, fontWeight: 600, color: '#2A6FDB', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textDecoration: 'none', display: 'block', cursor: 'pointer' }}
+                >{a.name}</div>
+              ) : (
+                <a href={href} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12.5, fontWeight: 600, color: '#2A6FDB', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textDecoration: 'none', display: 'block' }}>{a.name}</a>
+              )}
               <div style={{ fontSize: 10.5, color: '#8888A0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {a.kind === 'link' ? a.url : a.currentVersion ? `${a.currentVersion.filename} · ${formatBytes(a.currentVersion.sizeBytes)}` : '—'}
                 {' · '}{a.uploadedByName} · {new Date(a.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' })}
@@ -764,6 +773,7 @@ function ContractAttachments({ contract, onReload, onToast, canWrite }: { contra
       {linkOpen && (
         <AttachLinkModal contractId={contract.id} defaultCategory={pickerCategory} onClose={() => setLinkOpen(false)} onCreated={() => { setLinkOpen(false); onToast('Link attached'); onReload() }} onToast={onToast} />
       )}
+      {viewing && <DocumentViewer version={viewing} onClose={() => setViewing(null)} />}
     </div>
   )
 }

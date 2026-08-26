@@ -27,6 +27,7 @@ import { MobileCustomerDetail, MobileLeadDetail, MobileOpportunityDetail, Mobile
 import MobileContracts, { MobileContractDetail } from './mobile/MobileContracts'
 import MobileDocuments, { MobileDocumentDetail } from './mobile/MobileDocuments'
 import MobileQuotations, { MobileQuotationDetail } from './mobile/MobileQuotations'
+import MobileInbox, { MobileInboxThread } from './mobile/MobileInbox'
 import Settings from './pages/Settings'
 import Products from './pages/Products'
 import Documents from './pages/Documents'
@@ -106,6 +107,8 @@ createRoot(document.getElementById('root')!).render(
             <Route path="documents/:id" element={<MobileDocumentDetail />} />
             <Route path="quotations" element={<MobileQuotations />} />
             <Route path="quotations/:id" element={<MobileQuotationDetail />} />
+            <Route path="inbox" element={<MobileInbox />} />
+            <Route path="inbox/:id" element={<MobileInboxThread />} />
           </Route>
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
