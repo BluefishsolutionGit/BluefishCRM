@@ -121,12 +121,13 @@ export default function MobileHome() {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
         <ActionTile busy={busy === 'card'} icon="📷" label="Scan card" onClick={scanCard} />
         <ActionTile busy={busy === 'gps'} icon="📍" label="Check-in" onClick={gpsCheckin} />
-        <ActionTile busy={busy === 'voice'} icon="🎙" label="Voice" onClick={voiceNote} />
-        <ActionTile icon="+" label="Activity" onClick={() => setLogOpen(true)} />
-        <ActionTile icon="📁" label="Docs" onClick={() => navigate('/m/documents')} />
+        <ActionTile busy={busy === 'voice'} icon="🎙" label="Voice note" onClick={voiceNote} />
+        <ActionTile icon="+" label="Log activity" onClick={() => setLogOpen(true)} />
+        <ActionTile icon="📁" label="Documents" onClick={() => navigate('/m/documents')} />
+        <ActionTile icon="📄" label="Quotations" onClick={() => navigate('/m/quotations')} />
       </div>
 
       {logOpen && <LogActivitySheet onClose={() => setLogOpen(false)} onSaved={() => setLogOpen(false)} />}
