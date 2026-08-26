@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import type { ActivityDto, CreateActivityDto } from '@bluefish/shared'
 import { api, ApiError } from '../lib/api'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/ToastContext'
-import { enqueue as enqueueDraft, list as listDrafts, remove as removeDraft } from '../lib/offlineQueue'
+import { enqueue as enqueueDraft, list as listDrafts, remove as removeDraft, subscribe as subscribeQueue, type OfflineDraft } from '../lib/offlineQueue'
 
 type Tab = 'today' | 'week' | 'overdue' | 'drafts'
 
@@ -12,12 +13,17 @@ const TYPE_COLOR: Record<string, string> = { meeting: '#2A6FDB', call: '#1F5AC2'
 export default function MobileTasks() {
   const [tab, setTab] = useState<Tab>('today')
   const [rows, setRows] = useState<ActivityDto[]>([])
-  const [drafts, setDrafts] = useState(listDrafts())
+  const [drafts, setDrafts] = useState<OfflineDraft[]>([])
   const [showNew, setShowNew] = useState(false)
   const { user } = useAuth()
   const toast = useToast()
+  const navigate = useNavigate()
 
-  const refreshDrafts = () => setDrafts(listDrafts())
+  const refreshDrafts = () => { void listDrafts().then(setDrafts) }
+  useEffect(() => {
+    const unsub = subscribeQueue(() => { void listDrafts().then(setDrafts) })
+    return () => { unsub() }
+  }, [])
 
   const load = () => {
     const now = new Date()
@@ -82,10 +88,14 @@ export default function MobileTasks() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {drafts.map((d) => (
               <div key={d.id} style={{ background: '#FFF9E6', border: '1px solid #F4E5A8', borderRadius: 11, padding: '10px 12px' }}>
-                <div style={{ fontSize: 13, fontWeight: 700 }}>{d.payload.title}</div>
-                <div style={{ fontSize: 11, color: '#5C5C74', marginTop: 4 }}>Queued {new Date(d.createdAt).toLocaleString('en-GB')}</div>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>{d.label}</div>
+                <div style={{ fontSize: 11, color: '#5C5C74', marginTop: 4 }}>
+                  {d.kind} · queued {new Date(d.createdAt).toLocaleString('en-GB')}
+                  {d.retries > 0 && ` · retried ${d.retries}×`}
+                </div>
+                {d.lastError && <div style={{ fontSize: 11, color: '#C0392B', marginTop: 3 }}>{d.lastError}</div>}
                 <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                  <button onClick={() => { removeDraft(d.id); refreshDrafts() }} style={{ background: '#fff', border: '1px solid #D0D0DF', borderRadius: 8, padding: '5px 10px', fontSize: 11, cursor: 'pointer' }}>Discard</button>
+                  <button onClick={() => { void removeDraft(d.id).then(refreshDrafts) }} style={{ background: '#fff', border: '1px solid #D0D0DF', borderRadius: 8, padding: '5px 10px', fontSize: 11, cursor: 'pointer' }}>Discard</button>
                 </div>
               </div>
             ))}
@@ -97,12 +107,12 @@ export default function MobileTasks() {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {rows.map((a) => (
-              <div key={a.id} style={{ background: '#fff', border: '1px solid #E5E7F0', borderRadius: 13, padding: '12px 14px' }}>
+              <div key={a.id} onClick={() => navigate(`/m/tasks/${a.id}`)} style={{ background: '#fff', border: '1px solid #E5E7F0', borderRadius: 13, padding: '12px 14px', cursor: 'pointer' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <div style={{ width: 8, height: 8, borderRadius: 3, background: TYPE_COLOR[a.type] ?? '#8888A0' }} />
                   <div style={{ flex: 1, fontSize: 13, fontWeight: 700 }}>{a.title}</div>
                   {a.status !== 'completed' && (
-                    <button onClick={() => complete(a.id)} style={{ background: '#0E9C7E', color: '#fff', border: 'none', borderRadius: 999, padding: '4px 10px', fontSize: 11, cursor: 'pointer' }}>Done</button>
+                    <button onClick={(e) => { e.stopPropagation(); complete(a.id) }} style={{ background: '#0E9C7E', color: '#fff', border: 'none', borderRadius: 999, padding: '4px 10px', fontSize: 11, cursor: 'pointer' }}>Done</button>
                   )}
                 </div>
                 <div style={{ fontSize: 11, color: '#5C5C74', marginTop: 4, paddingLeft: 16 }}>
@@ -134,7 +144,7 @@ function NewTaskSheet({ onClose }: { onClose: () => void }) {
     const payload: CreateActivityDto = { type, title: title.trim(), scheduledAt: new Date(when).toISOString(), ownerId: user.id }
     try {
       if (!navigator.onLine) {
-        enqueueDraft({ kind: 'activity', payload })
+        await enqueueDraft({ kind: 'activity', label: `Task: ${title.trim()}`, payload })
         toast('Offline — queued as draft')
       } else {
         await api.createActivity(payload)

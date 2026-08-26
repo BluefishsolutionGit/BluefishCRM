@@ -5,6 +5,7 @@ import { api, ApiError } from '../lib/api'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/ToastContext'
 import { enqueue as enqueueDraft } from '../lib/offlineQueue'
+import { LogActivitySheet } from './MobileDetails'
 
 const fmt = (n: number) => n >= 1_000_000 ? '฿' + (n / 1e6).toFixed(1) + 'M' : '฿' + Math.round(n / 1e3) + 'K'
 
@@ -13,6 +14,7 @@ export default function MobileHome() {
   const [today, setToday] = useState<ActivityDto[]>([])
   const [busy, setBusy] = useState<'gps' | 'voice' | 'card' | null>(null)
   const [lastCheckin, setLastCheckin] = useState<string | null>(null)
+  const [logOpen, setLogOpen] = useState(false)
   const { user } = useAuth()
   const toast = useToast()
   const navigate = useNavigate()
@@ -39,8 +41,8 @@ export default function MobileHome() {
         description: `Location: ${latitude}, ${longitude}\nAccuracy: ${Math.round(pos.coords.accuracy ?? 0)}m`,
       }
       if (!navigator.onLine) {
-        const draft = enqueueDraft({ kind: 'activity', payload })
-        toast(`Offline — queued check-in (${draft.id})`)
+        const draft = await enqueueDraft({ kind: 'activity', label: `GPS check-in`, payload })
+        toast(`Offline — queued check-in (${draft.id.slice(6, 12)})`)
       } else {
         await api.createActivity(payload)
         toast('GPS check-in logged')
@@ -119,11 +121,14 @@ export default function MobileHome() {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8 }}>
         <ActionTile busy={busy === 'card'} icon="📷" label="Scan card" onClick={scanCard} />
-        <ActionTile busy={busy === 'gps'} icon="📍" label="GPS check-in" onClick={gpsCheckin} />
-        <ActionTile busy={busy === 'voice'} icon="🎙" label="Voice note" onClick={voiceNote} />
+        <ActionTile busy={busy === 'gps'} icon="📍" label="Check-in" onClick={gpsCheckin} />
+        <ActionTile busy={busy === 'voice'} icon="🎙" label="Voice" onClick={voiceNote} />
+        <ActionTile icon="+" label="Log activity" onClick={() => setLogOpen(true)} />
       </div>
+
+      {logOpen && <LogActivitySheet onClose={() => setLogOpen(false)} onSaved={() => setLogOpen(false)} />}
 
       {lastCheckin && (
         <div style={{ background: '#E5F8ED', border: '1px solid #B5E4CB', color: '#0E6E4E', borderRadius: 11, padding: '8px 12px', fontSize: 12 }}>
@@ -135,7 +140,7 @@ export default function MobileHome() {
         <div style={{ fontSize: 11, fontWeight: 700, color: '#8888A0', letterSpacing: '.06em', marginBottom: 8 }}>TODAY</div>
         {today.length === 0 && <div style={{ ...card, padding: 18, textAlign: 'center', color: '#8888A0', fontSize: 13 }}>No activities scheduled.</div>}
         {today.map((a) => (
-          <div key={a.id} onClick={() => navigate('/activities')} style={{ ...card, padding: '12px 14px', marginBottom: 8, cursor: 'pointer' }}>
+          <div key={a.id} onClick={() => navigate(`/m/tasks/${a.id}`)} style={{ ...card, padding: '12px 14px', marginBottom: 8, cursor: 'pointer' }}>
             <div style={{ display: 'flex', gap: 9, alignItems: 'center' }}>
               <div style={{ width: 8, height: 8, borderRadius: 3, background: typeColor(a.type) }} />
               <div style={{ flex: 1, fontSize: 13, fontWeight: 700 }}>{a.title}</div>

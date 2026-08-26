@@ -60,3 +60,15 @@ self.addEventListener('notificationclick', (event) => {
     return clients.openWindow(url)
   }))
 })
+
+// Background Sync — Chrome-only. When the browser reconnects, wake up any open
+// client and tell it to drain its queue. If no client is open, we can't hit
+// IndexedDB from here without duplicating the replay logic, so we just ping.
+self.addEventListener('sync', (event) => {
+  if (event.tag !== 'bluefish-drain') return
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      for (const c of list) c.postMessage({ type: 'bluefish:drain-queue' })
+    }),
+  )
+})

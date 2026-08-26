@@ -295,6 +295,7 @@ export const api = {
     const qs = p.toString()
     return request<ActivityDto[]>(`/activities${qs ? `?${qs}` : ''}`)
   },
+  activity: (id: string) => request<ActivityDto>(`/activities/${id}`),
   createActivity: (data: CreateActivityDto) =>
     request<ActivityDto>('/activities', { method: 'POST', body: JSON.stringify(data) }),
   updateActivity: (id: string, data: UpdateActivityDto) =>

@@ -39,7 +39,7 @@ export default function MobileOpportunities() {
               {grouped[s].map((o) => (
                 <div
                   key={o.id}
-                  onClick={() => navigate('/pipeline')}
+                  onClick={() => navigate(`/m/opportunities/${o.id}`)}
                   style={{ background: '#fff', border: '1px solid #E5E7F0', borderRadius: 11, padding: '10px 12px', cursor: 'pointer' }}
                 >
                   <div style={{ fontSize: 13, fontWeight: 700 }}>{o.title}</div>

@@ -23,6 +23,7 @@ import MobileCustomers from './mobile/MobileCustomers'
 import MobileLeads from './mobile/MobileLeads'
 import MobileOpportunities from './mobile/MobileOpportunities'
 import MobileTasks from './mobile/MobileTasks'
+import { MobileCustomerDetail, MobileLeadDetail, MobileOpportunityDetail, MobileTaskDetail } from './mobile/MobileDetails'
 import Settings from './pages/Settings'
 import Products from './pages/Products'
 import Documents from './pages/Documents'
@@ -32,6 +33,17 @@ import ForgotPassword from './pages/ForgotPassword'
 import ResetPassword from './pages/ResetPassword'
 import MfaChallenge from './pages/MfaChallenge'
 import './index.css'
+import { drainAll } from './lib/offlineQueue'
+
+// Register service worker (offline shell + push + Background Sync)
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => { /* no-op */ })
+  })
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    if (event.data?.type === 'bluefish:drain-queue') void drainAll()
+  })
+}
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -78,9 +90,13 @@ createRoot(document.getElementById('root')!).render(
           >
             <Route index element={<MobileHome />} />
             <Route path="customers" element={<MobileCustomers />} />
+            <Route path="customers/:id" element={<MobileCustomerDetail />} />
             <Route path="leads" element={<MobileLeads />} />
+            <Route path="leads/:id" element={<MobileLeadDetail />} />
             <Route path="opportunities" element={<MobileOpportunities />} />
+            <Route path="opportunities/:id" element={<MobileOpportunityDetail />} />
             <Route path="tasks" element={<MobileTasks />} />
+            <Route path="tasks/:id" element={<MobileTaskDetail />} />
           </Route>
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>

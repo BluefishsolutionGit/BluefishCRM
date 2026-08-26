@@ -32,7 +32,7 @@ export default function MobileCustomers() {
         {filtered.map((c) => (
           <div
             key={c.id}
-            onClick={() => navigate(`/customers/${c.id}`)}
+            onClick={() => navigate(`/m/customers/${c.id}`)}
             style={{ background: '#fff', border: '1px solid #E5E7F0', borderRadius: 13, padding: '12px 14px', cursor: 'pointer' }}
           >
             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
