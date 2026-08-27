@@ -6,14 +6,29 @@ import type {
   RevenueDashboardDto, SalesDashboardDto, SalesRepStatsDto,
 } from '@bluefish/shared'
 import { SERVICE_LINES } from '@bluefish/shared'
+import type { Prisma } from '@prisma/client'
 
 const OPEN_STAGES = ['Qualification', 'Proposal', 'Negotiation']
+
+export interface DashboardFilter {
+  serviceOrProduct?: string
+  ownerId?: string
+}
+
+/** Build a Prisma opportunity where-clause from a filter. Keys with `undefined`
+ *  are dropped so we only inject constraints the caller actually set. */
+function oppWhere(filter?: DashboardFilter): Prisma.OpportunityWhereInput {
+  const where: Prisma.OpportunityWhereInput = {}
+  if (filter?.serviceOrProduct) where.serviceOrProduct = filter.serviceOrProduct
+  if (filter?.ownerId) where.ownerId = filter.ownerId
+  return where
+}
 
 @Injectable()
 export class DashboardsService {
   constructor(private prisma: PrismaService) {}
 
-  async executive(): Promise<ExecutiveDashboardDto> {
+  async executive(filter?: DashboardFilter): Promise<ExecutiveDashboardDto> {
     const now = new Date()
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
     const quarterStart = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1)
@@ -22,12 +37,20 @@ export class DashboardsService {
     const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
 
     const [opps, leads, wonOpps, contracts, aiCost, activities] = await Promise.all([
-      this.prisma.opportunity.findMany({ include: { customer: true } }),
-      this.prisma.lead.findMany({ where: { createdAt: { gte: weekAgo } } }),
-      this.prisma.opportunity.findMany({ where: { stage: 'Won' } }),
+      this.prisma.opportunity.findMany({ where: oppWhere(filter), include: { customer: true } }),
+      // Leads have `ownerId` but no service line. Only owner filter applies; if
+      // a service filter is set we return leads unfiltered rather than pretending
+      // to slice by service.
+      this.prisma.lead.findMany({ where: { createdAt: { gte: weekAgo }, ...(filter?.ownerId ? { ownerId: filter.ownerId } : {}) } }),
+      this.prisma.opportunity.findMany({ where: { ...oppWhere(filter), stage: 'Won' } }),
+      // Contracts don't have owner/service on this table in a normalised way — leave global.
       this.prisma.contract.findMany(),
       this.prisma.aiRun.aggregate({ _sum: { costUsd: true } }),
-      this.prisma.activity.groupBy({ by: ['type'], _count: { id: true } }),
+      this.prisma.activity.groupBy({
+        by: ['type'],
+        where: filter?.ownerId ? { ownerId: filter.ownerId } : undefined,
+        _count: { id: true },
+      }),
     ])
 
     const openOpps = opps.filter((o) => OPEN_STAGES.includes(o.stage))
@@ -45,8 +68,9 @@ export class DashboardsService {
       contracts.filter((c) => c.status === 'Pending Approval').length +
       (await this.prisma.quotation.count({ where: { status: 'Pending Approval' } }))
 
-    const convertedLeads = await this.prisma.lead.count({ where: { status: 'Converted' } })
-    const totalLeads = await this.prisma.lead.count()
+    const leadCountWhere = filter?.ownerId ? { ownerId: filter.ownerId } : {}
+    const convertedLeads = await this.prisma.lead.count({ where: { status: 'Converted', ...leadCountWhere } })
+    const totalLeads = await this.prisma.lead.count({ where: leadCountWhere })
     const leadConversionRate = totalLeads > 0 ? Math.round((convertedLeads / totalLeads) * 100) : 0
     const avgDealSize = wonOpps.length > 0 ? Math.round(wonOpps.reduce((a, o) => a + o.value, 0) / wonOpps.length) : 0
 
@@ -67,9 +91,12 @@ export class DashboardsService {
     }
   }
 
-  async sales(): Promise<SalesDashboardDto> {
+  async sales(filter?: DashboardFilter): Promise<SalesDashboardDto> {
     const reps = await this.prisma.user.findMany({
-      where: { role: { name: { in: ['sales_manager', 'sales_rep'] } } },
+      where: {
+        role: { name: { in: ['sales_manager', 'sales_rep'] } },
+        ...(filter?.ownerId ? { id: filter.ownerId } : {}),
+      },
       include: { role: true },
     })
     const quota = 40_000_000
@@ -77,7 +104,7 @@ export class DashboardsService {
 
     const stats: SalesRepStatsDto[] = await Promise.all(reps.map(async (u) => {
       const [opps, activities, leads] = await Promise.all([
-        this.prisma.opportunity.findMany({ where: { ownerId: u.id } }),
+        this.prisma.opportunity.findMany({ where: { ownerId: u.id, ...(filter?.serviceOrProduct ? { serviceOrProduct: filter.serviceOrProduct } : {}) } }),
         this.prisma.activity.count({ where: { ownerId: u.id, scheduledAt: { gte: weekAgo } } }),
         this.prisma.lead.count({ where: { ownerId: u.id } }),
       ])
@@ -98,8 +125,8 @@ export class DashboardsService {
     return { reps: stats.sort((a, b) => b.wonValue - a.wonValue), quotaAttainment, totalOpen, totalWon }
   }
 
-  async pipeline(): Promise<PipelineDashboardDto> {
-    const opps = await this.prisma.opportunity.findMany({ include: { customer: true } })
+  async pipeline(filter?: DashboardFilter): Promise<PipelineDashboardDto> {
+    const opps = await this.prisma.opportunity.findMany({ where: oppWhere(filter), include: { customer: true } })
     const stageNames = ['Qualification', 'Proposal', 'Negotiation', 'Won', 'Lost']
     const stages = stageNames.map((name) => {
       const list = opps.filter((o) => o.stage === name)
@@ -126,12 +153,15 @@ export class DashboardsService {
     return { stages, weightedTotal: Math.round(weightedTotal), avgCycleDays, idleDeals }
   }
 
-  async revenue(): Promise<RevenueDashboardDto> {
+  async revenue(filter?: DashboardFilter): Promise<RevenueDashboardDto> {
     const now = new Date()
     const yearAgo = new Date(now.getFullYear() - 1, now.getMonth(), 1)
     const [wonOpps, leadsWithOwners] = await Promise.all([
-      this.prisma.opportunity.findMany({ where: { stage: 'Won' }, include: { customer: true } }),
-      this.prisma.lead.findMany({ where: { status: 'Converted' }, select: { source: true } }),
+      this.prisma.opportunity.findMany({ where: { ...oppWhere(filter), stage: 'Won' }, include: { customer: true } }),
+      this.prisma.lead.findMany({
+        where: { status: 'Converted', ...(filter?.ownerId ? { ownerId: filter.ownerId } : {}) },
+        select: { source: true },
+      }),
     ])
     const monthlyMap = new Map<string, number>()
     for (const o of wonOpps) {
@@ -176,15 +206,24 @@ export class DashboardsService {
    * that period. Emits a row per known service line even if won=0 or target=0 so the
    * UI charts always render the full palette; pctOfTarget is 0 when target is unset
    * (avoids showing "Infinity%" attainment).
+   *
+   * When a service filter is set, only that one stat row is returned; monthly still
+   * carries all 12 months but zeroes out the non-selected services so the chart
+   * layout stays consistent.
    */
-  async byService(periodInput?: string): Promise<ByServiceDashboardDto> {
+  async byService(periodInput?: string, filter?: DashboardFilter): Promise<ByServiceDashboardDto> {
     const period = periodInput && /^\d{4}$/.test(periodInput) ? periodInput : String(new Date().getFullYear())
     const yearStart = new Date(Number(period), 0, 1)
     const yearEnd = new Date(Number(period) + 1, 0, 1)
 
     const [wonOpps, targets] = await Promise.all([
       this.prisma.opportunity.findMany({
-        where: { stage: 'Won', updatedAt: { gte: yearStart, lt: yearEnd } },
+        where: {
+          stage: 'Won',
+          updatedAt: { gte: yearStart, lt: yearEnd },
+          ...(filter?.ownerId ? { ownerId: filter.ownerId } : {}),
+          ...(filter?.serviceOrProduct ? { serviceOrProduct: filter.serviceOrProduct } : {}),
+        },
         select: { serviceOrProduct: true, value: true, updatedAt: true },
       }),
       this.prisma.salesTarget.findMany({ where: { period } }),
@@ -198,8 +237,6 @@ export class DashboardsService {
       const cur = wonMap.get(key) ?? { won: 0, count: 0 }
       cur.won += o.value; cur.count++
       wonMap.set(key, cur)
-      // Grouped-monthly aggregate. `_unassigned` events would slot into an "Other"
-      // service on the client; skip them here to avoid a fifth bar in the chart.
       if (!o.serviceOrProduct) continue
       const monthKey = `${period}-${String(o.updatedAt.getMonth() + 1).padStart(2, '0')}`
       const monthEntry = monthlyMap.get(monthKey) ?? new Map<string, number>()
@@ -208,7 +245,9 @@ export class DashboardsService {
     }
     const targetMap = new Map(targets.map((t) => [t.service, t.amount]))
 
-    const stats: ByServiceStatDto[] = SERVICE_LINES.map((service) => {
+    // When a service filter is set, only surface that row; otherwise emit all lines.
+    const services = filter?.serviceOrProduct ? [filter.serviceOrProduct] : SERVICE_LINES
+    const stats: ByServiceStatDto[] = services.map((service) => {
       const w = wonMap.get(service) ?? { won: 0, count: 0 }
       const target = targetMap.get(service) ?? 0
       const pctOfTarget = target > 0 ? Math.round((w.won / target) * 100) : 0

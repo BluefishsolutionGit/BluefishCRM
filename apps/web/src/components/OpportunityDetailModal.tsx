@@ -4,6 +4,7 @@ import { SERVICE_LINES } from '@bluefish/shared'
 import { api, ApiError } from '../lib/api'
 import { useToast } from '../lib/ToastContext'
 import { useAuth } from '../lib/AuthContext'
+import VoiceInputButton from './VoiceInputButton'
 
 interface Props {
   opp: OpportunityDto | null
@@ -166,16 +167,26 @@ export default function OpportunityDetailModal({ opp, onClose, onChanged, onDele
                   <input disabled={!canWrite} type="date" value={form.decisionDate?.slice(0, 10) ?? ''} onChange={(e) => set('decisionDate', e.target.value || undefined)} style={inp} />
                 </Field>
                 <div style={{ gridColumn: '1 / -1' }}>
-                  <Field label="Notes (internal — visible on this deal only)">
-                    <textarea
-                      disabled={!canWrite}
-                      value={form.notes ?? ''}
-                      onChange={(e) => set('notes', e.target.value)}
-                      rows={5}
-                      placeholder="Meeting notes, next steps, decision maker, blockers…"
-                      style={{ ...inp, resize: 'vertical', fontFamily: 'inherit' }}
-                    />
-                  </Field>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#5C5C74' }}>Notes (internal — visible on this deal only)</div>
+                    <div style={{ flex: 1 }} />
+                    {canWrite && (
+                      <VoiceInputButton
+                        value={form.notes ?? ''}
+                        onChange={(next) => set('notes', next)}
+                        size="sm"
+                        label="Dictate deal notes"
+                      />
+                    )}
+                  </div>
+                  <textarea
+                    disabled={!canWrite}
+                    value={form.notes ?? ''}
+                    onChange={(e) => set('notes', e.target.value)}
+                    rows={5}
+                    placeholder="Meeting notes, next steps, decision maker, blockers…"
+                    style={{ ...inp, resize: 'vertical', fontFamily: 'inherit' }}
+                  />
                 </div>
               </div>
               {canEditManagerHint ? (
@@ -300,9 +311,20 @@ function AddActivityForm({ opp, onCancel, onCreated }: { opp: OpportunityDto; on
         <Field label="When">
           <input required type="datetime-local" value={form.scheduledAt.slice(0, 16)} onChange={(e) => set('scheduledAt', e.target.value)} style={inp} />
         </Field>
-        <Field label="Description (optional)">
-          <textarea rows={2} value={form.description ?? ''} onChange={(e) => set('description', e.target.value)} placeholder="Agenda, prep notes…" style={{ ...inp, resize: 'vertical' }} />
-        </Field>
+        <div style={{ fontSize: 11, fontWeight: 700, color: '#5C5C74', display: 'flex', alignItems: 'center', gap: 6 }}>
+          Description
+          <span style={{ fontWeight: 500, color: '#8082A5' }}>(optional)</span>
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+          <textarea rows={2} value={form.description ?? ''} onChange={(e) => set('description', e.target.value)} placeholder="Agenda, prep notes…" style={{ ...inp, resize: 'vertical', flex: 1 }} />
+          <VoiceInputButton
+            value={form.description ?? ''}
+            onChange={(next) => set('description', next)}
+            size="sm"
+            label="Dictate description"
+            style={{ marginTop: 4 }}
+          />
+        </div>
       </div>
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
         <button type="button" onClick={onCancel} style={ghostBtn}>Cancel</button>

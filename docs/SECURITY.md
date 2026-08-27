@@ -27,9 +27,14 @@ Legend: ✅ mitigated · ⚠️ partial / known gap · ❌ not addressed
   compared on every notification (mismatched notifications are logged + dropped).
 - **OAuth state (CSRF):** the state param in the calendar consent flow is an in-memory random token
   keyed to `userId` with a 10-minute TTL — not exposed in the URL beyond the initial redirect.
+- **Inbox channel credentials (LINE / Messenger / Website form key / Email)** — stored in
+  `ChannelIntegration.credentials` as **AES-256-GCM** ciphertext with the layout
+  `base64(iv[12] || tag[16] || ciphertext)`. Key sourced from `INTEGRATION_ENC_KEY` env
+  (base64 32-byte or SHA-256'd string). Missing key in dev falls back to a fixed marker and logs
+  a warning — production deployments MUST set the env var. Helper: `apps/api/src/integrations/crypto.ts`.
 
 **Gap:** at-rest encryption for the DB is the deployment layer's responsibility (LUKS on the VPS or managed disk encryption). Not enforced by application code. Graph refresh tokens should ideally be
-encrypted at rest with a KMS-managed key before go-live.
+encrypted at rest with a KMS-managed key before go-live (Inbox channel secrets are already covered).
 
 ## A03 Injection ✅
 

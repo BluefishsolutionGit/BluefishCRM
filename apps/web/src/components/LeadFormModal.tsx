@@ -2,9 +2,10 @@ import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
 import type { CreateLeadDto, DuplicateCheckResult, LeadDto, LeadStatus, UserDto } from '@bluefish/shared'
 import { SERVICE_LINES } from '@bluefish/shared'
 import { api, ApiError } from '../lib/api'
+import VoiceInputButton from './VoiceInputButton'
 
 interface Props { open: boolean; initial?: LeadDto | null; onClose: () => void; onSaved: (l: LeadDto) => void }
-const SOURCES = ['LINE OA', 'e-GP Tender', 'Facebook Ads', 'Instagram', 'Website', 'Referral']
+const SOURCES = ['LINE OA', 'e-GP Tender', 'Facebook Ads', 'Email', 'Website', 'Referral']
 const STATUSES: LeadStatus[] = ['New', 'Contacted', 'Qualified', 'AI Sourced', 'Converted', 'Lost']
 
 export default function LeadFormModal({ open, initial, onClose, onSaved }: Props) {
@@ -102,9 +103,20 @@ export default function LeadFormModal({ open, initial, onClose, onSaved }: Props
                 {users.filter((u) => u.role === 'sales_rep' || u.role === 'sales_manager').map((u) => <option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
               </select>
             </Field>
-            <Field label="Notes" span2>
-              <textarea rows={2} value={form.notes ?? ''} onChange={(e) => change('notes', e.target.value)} style={{ ...inp, resize: 'vertical' }} />
-            </Field>
+            <div style={{ gridColumn: 'span 2' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                <div style={{ fontSize: 11.5, fontWeight: 700, color: '#5C5C74' }}>Notes / follow-up</div>
+                <div style={{ flex: 1 }} />
+                <VoiceInputButton value={form.notes ?? ''} onChange={(next) => change('notes', next)} size="sm" label="Dictate lead notes" />
+              </div>
+              <textarea
+                rows={3}
+                value={form.notes ?? ''}
+                onChange={(e) => change('notes', e.target.value)}
+                placeholder="Call outcome, next step, decision maker, budget signals…"
+                style={{ ...inp, resize: 'vertical' }}
+              />
+            </div>
           </div>
 
           {dupes.length > 0 && !initial && (

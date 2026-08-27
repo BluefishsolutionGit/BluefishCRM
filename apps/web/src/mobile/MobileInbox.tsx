@@ -1,8 +1,9 @@
 /**
  * Mobile Inbox — omnichannel thread list + chat.
  *
- * Backend already unifies LINE / LINE OA / Messenger / Instagram / WhatsApp /
- * Email into `InboxThreadDto` + `InboxMessageDto`. This screen is a
+ * Backend already unifies LINE / LINE OA / Messenger / WhatsApp / Email /
+ * Website (Bluefish contact form) into `InboxThreadDto` + `InboxMessageDto`.
+ * This screen is a
  * chat-app-shaped mobile view over that: threads on the list page, bubbles on
  * the detail page, quick actions (mark read, assign, link to customer) at the
  * top.
@@ -20,11 +21,11 @@ const CHANNEL_STYLE: Record<InboxChannel, { bg: string; fg: string; short: strin
   LINE:        { bg: '#E5F8ED', fg: '#0E9C7E', short: 'LINE' },
   'LINE OA':   { bg: '#E5F8ED', fg: '#0E6E4E', short: 'OA' },
   Messenger:   { bg: '#E4EDFC', fg: '#2A6FDB', short: 'FB' },
-  Instagram:   { bg: '#FCE9F2', fg: '#D6337A', short: 'IG' },
   WhatsApp:    { bg: '#DCF6DE', fg: '#128C7E', short: 'WA' },
   Email:       { bg: '#F1F1F5', fg: '#5C5C74', short: '✉' },
+  Website:     { bg: '#E4EDFC', fg: '#2A6FDB', short: 'Web' },
 }
-const CHANNELS: InboxChannel[] = ['LINE', 'LINE OA', 'Messenger', 'Instagram', 'WhatsApp', 'Email']
+const CHANNELS: InboxChannel[] = ['LINE', 'LINE OA', 'Messenger', 'WhatsApp', 'Email', 'Website']
 
 const backBtn: CSSProperties = { fontSize: 14, color: '#2A6FDB', cursor: 'pointer' }
 const card: CSSProperties = { background: '#fff', border: '1px solid #E5E7F0', borderRadius: 13, padding: '14px 16px' }

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState, type CSSProperties, type DragEvent, type ReactNode } from 'react'
-import type { ByServiceDashboardDto, ExecutiveDashboardDto, PipelineDashboardDto, RevenueDashboardDto, SalesDashboardDto } from '@bluefish/shared'
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type DragEvent, type ReactNode } from 'react'
+import type { ByServiceDashboardDto, ExecutiveDashboardDto, PipelineDashboardDto, RevenueDashboardDto, SalesDashboardDto, UserDto } from '@bluefish/shared'
 import { SERVICE_LINES } from '@bluefish/shared'
 import { api, ApiError } from '../lib/api'
 import { useToast } from '../lib/ToastContext'
@@ -119,19 +119,30 @@ export default function Dashboard() {
   const [dragId, setDragId] = useState<string | null>(null)
   const [dragOverId, setDragOverId] = useState<string | null>(null)
   const [dragOverColumn, setDragOverColumn] = useState<number | null>(null)
+  const [serviceFilter, setServiceFilter] = useState<string>('all')
+  const [ownerFilter, setOwnerFilter] = useState<string>('all')
+  const [users, setUsers] = useState<UserDto[]>([])
   const toast = useToast()
 
   useEffect(() => { saveLayout(layout) }, [layout])
   useEffect(() => {
+    api.users().then(setUsers).catch(() => setUsers([]))
+  }, [])
+
+  const load = useCallback(() => {
+    const filter = { serviceOrProduct: serviceFilter, ownerId: ownerFilter }
     Promise.all([
-      api.execDashboard(), api.salesDashboard(), api.pipelineDashboard(),
-      api.revenueDashboard(), api.byServiceDashboard(),
+      api.execDashboard(filter), api.salesDashboard(filter), api.pipelineDashboard(filter),
+      api.revenueDashboard(filter), api.byServiceDashboard(undefined, filter),
     ])
       .then(([e, s, p, r, b]) => { setExec(e); setSales(s); setPipeline(p); setRevenue(r); setByService(b) })
       .catch((e) => toast(e instanceof ApiError ? e.message : 'Failed'))
       .finally(() => setLoading(false))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [serviceFilter, ownerFilter, toast])
+
+  useEffect(() => { load() }, [load])
+
+  const filterActive = serviceFilter !== 'all' || ownerFilter !== 'all'
 
   const maxMonthly = useMemo(() => Math.max(1, ...(revenue?.monthly ?? []).map((m) => m.won)), [revenue])
   const maxRep = useMemo(() => Math.max(1, ...(sales?.reps ?? []).map((r) => r.wonValue + r.openValue)), [sales])
@@ -362,8 +373,26 @@ export default function Dashboard() {
     <div style={{ height: '100%', overflow: 'auto', padding: '24px 28px', animation: 'fadeUp .3s ease' }}>
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16, marginBottom: 18 }}>
         <div style={{ flex: 1 }}>
-          <div style={{ fontFamily: "'Space Grotesk'", fontSize: 22, fontWeight: 600, letterSpacing: '-.01em' }}>Executive dashboard</div>
-          <div style={{ fontSize: 13, color: '#5C5C74', marginTop: 3 }}>Live from CRM · {new Date(exec.asOf).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+          <div style={{ fontFamily: "'Space Grotesk'", fontSize: 22, fontWeight: 600, letterSpacing: '-.01em' }}>
+            Executive dashboard
+            {filterActive && (
+              <span style={{ marginLeft: 10, fontSize: 12, background: '#EEF3FC', color: '#2A6FDB', border: '1px solid #B7CFF3', borderRadius: 999, padding: '2px 10px', fontWeight: 700, verticalAlign: 'middle' }}>
+                Filtered
+              </span>
+            )}
+          </div>
+          <div style={{ fontSize: 13, color: '#5C5C74', marginTop: 3 }}>
+            Live from CRM · {new Date(exec.asOf).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+            {filterActive && (
+              <>
+                {' · '}
+                <span style={{ color: '#2A6FDB' }}>
+                  {serviceFilter !== 'all' ? serviceFilter : 'All services'} · {ownerFilter === 'all' ? 'All salespeople' : (users.find((u) => u.id === ownerFilter)?.name ?? '—')}
+                </span>{' '}
+                <button type="button" onClick={() => { setServiceFilter('all'); setOwnerFilter('all') }} style={clearBtn}>Clear</button>
+              </>
+            )}
+          </div>
         </div>
         <button type="button" onClick={() => setEditMode((v) => !v)}
           style={{
@@ -374,6 +403,12 @@ export default function Dashboard() {
           {editMode ? 'Done editing' : '⚙ Edit dashboard'}
         </button>
       </div>
+
+      <FilterRow
+        service={serviceFilter} onService={setServiceFilter}
+        owner={ownerFilter} onOwner={setOwnerFilter}
+        users={users}
+      />
 
       {editMode && (
         <EditPanel
@@ -655,3 +690,74 @@ function KpiCard({ label, value, sub, grad }: { label: string; value: string; su
 
 const card: CSSProperties = { background: '#fff', border: '1px solid #E5E7F0', borderRadius: 14, overflow: 'hidden' }
 const cardTitle: CSSProperties = { padding: '14px 18px', borderBottom: '1px solid #F2F3F9', fontSize: 13, fontWeight: 700 }
+const clearBtn: CSSProperties = { background: 'transparent', border: 'none', color: '#2A6FDB', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', padding: 0, textDecoration: 'underline' }
+
+/** Shared filter bar for the executive dashboard — mirrors the chip + dropdown
+ *  pattern used on the Pipeline page so filters read the same across the app. */
+function FilterRow({
+  service, onService, owner, onOwner, users,
+}: {
+  service: string
+  onService: (v: string) => void
+  owner: string
+  onOwner: (v: string) => void
+  users: UserDto[]
+}) {
+  const chips: Array<{ id: string; label: string; color: string }> = [
+    { id: 'all', label: 'All services', color: '#5C5C74' },
+    ...SERVICE_LINES.map((s) => ({ id: s, label: s, color: SERVICE_COLOR[s] ?? '#5C5C74' })),
+  ]
+  const salesUsers = users.filter((u) => u.role === 'sales_rep' || u.role === 'sales_manager')
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 16 }}>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {chips.map((c) => {
+          const active = service === c.id
+          return (
+            <div
+              key={c.id}
+              onClick={() => onService(c.id)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                background: active ? c.color : hexToRgbaLocal(c.color, 0.09),
+                color: active ? '#fff' : c.color,
+                border: `1px solid ${active ? c.color : hexToRgbaLocal(c.color, 0.35)}`,
+                borderRadius: 999, padding: '5px 12px', fontSize: 12, fontWeight: 700,
+                cursor: 'pointer', transition: 'background 120ms',
+              }}
+            >
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: active ? '#fff' : c.color }} />
+              {c.label}
+            </div>
+          )
+        })}
+      </div>
+      <div style={{ flex: 1 }} />
+      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+        <svg viewBox="0 0 24 24" width="14" height="14" style={{ color: '#8082A5' }}>
+          <path fill="currentColor" d="M12 12a4 4 0 100-8 4 4 0 000 8zm0 2c-4 0-8 2-8 6v1h16v-1c0-4-4-6-8-6z" />
+        </svg>
+        <select
+          value={owner}
+          onChange={(e) => onOwner(e.target.value)}
+          style={{
+            border: '1px solid #E5E7F0', background: '#fff',
+            borderRadius: 999, padding: '5px 12px', fontSize: 12, fontWeight: 600,
+            color: '#3B3B52', cursor: 'pointer', outline: 'none',
+          }}
+        >
+          <option value="all">All salespeople</option>
+          {salesUsers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+        </select>
+      </div>
+    </div>
+  )
+}
+
+/** Local hex→rgba — the Pipeline page has its own, but importing across pages
+ *  couples two big files unnecessarily. */
+function hexToRgbaLocal(hex: string, alpha: number): string {
+  const h = hex.replace('#', '')
+  const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16)
+  return `rgba(${r},${g},${b},${alpha})`
+}

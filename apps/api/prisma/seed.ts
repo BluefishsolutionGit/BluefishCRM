@@ -232,7 +232,7 @@ async function main() {
     { name: 'คุณกิตติศักดิ์ พรหมมา', companyName: 'Udon Agro Industry', source: 'Website', ownerKey: 'KS', status: 'Qualified', estValue: 2400000, email: 'kittisak@udonagro.co.th', serviceOrProduct: 'AI&RPA' },
     { name: 'คุณเมธาวี ลิ้มสกุล', companyName: 'Siam Data Center Co., Ltd.', source: 'Referral', ownerKey: 'ST', status: 'Qualified', estValue: 6000000, email: 'methawee@siamdc.co.th', serviceOrProduct: 'Box' },
     { name: 'คุณประเสริฐ วงศ์สว่าง', companyName: 'Hatyai Municipality (RFP)', source: 'e-GP Tender', ownerKey: null, status: 'AI Sourced', estValue: 3800000, email: 'prasert@hatyai.go.th', serviceOrProduct: '3D' },
-    { name: 'คุณชลธิชา แสงทอง', companyName: 'Rimping Retail Group', source: 'Instagram', ownerKey: 'PW', status: 'New', estValue: 480000 },
+    { name: 'คุณชลธิชา แสงทอง', companyName: 'Rimping Retail Group', source: 'Website', ownerKey: 'PW', status: 'New', estValue: 480000 },
   ]
   const { scoreLead } = await import('../src/leads/lead-scoring')
   for (const l of leadRows) {
@@ -637,6 +637,91 @@ Penalties apply per Section 5 for missed SLAs. Governing law: Thailand.`,
         confidence:   c.confidence,
       },
     })
+  }
+
+  // ────── Demo inbox threads across every channel so the filter chips ──────
+  //        actually show something in the demo. Idempotent by (channel, externalId).
+  const inboxDemo: Array<{
+    channel: 'LINE OA' | 'Messenger' | 'Email' | 'Website'
+    externalId: string; name: string; companyName?: string
+    ownerI?: 'NP' | 'KS' | 'PW' | 'ST'
+    customerCode?: string; tag?: string
+    msgs: Array<{ dir: 'in' | 'out'; text: string; minsAgo: number }>
+  }> = [
+    {
+      channel: 'LINE OA', externalId: 'U-line-1042', name: 'คุณอรทัย บุญมี', companyName: 'Bangna Cold Chain',
+      ownerI: 'NP', customerCode: 'C-1042', tag: 'Hot lead',
+      msgs: [
+        { dir: 'in', text: 'สวัสดีครับ สอบถามระบบ traceability สำหรับคลังเย็นครับ', minsAgo: 180 },
+        { dir: 'out', text: 'สวัสดีค่ะ เรามีโซลูชัน 3S ที่รองรับ cold-chain โดยเฉพาะเลยค่ะ ขอนัดเดโม่ไหมคะ', minsAgo: 175 },
+        { dir: 'in', text: 'สะดวกวันพฤหัส 10:00 ครับ', minsAgo: 90 },
+      ],
+    },
+    {
+      channel: 'Messenger', externalId: 'FB-siamlogistic-8821', name: 'Siam Logistic PCL',
+      ownerI: 'KS', tag: 'Follow-up',
+      msgs: [
+        { dir: 'in', text: 'Hi, we saw the WMS post — can we get a demo?', minsAgo: 1440 },
+        { dir: 'out', text: 'Absolutely — sending over a slot tomorrow.', minsAgo: 1430 },
+      ],
+    },
+    {
+      channel: 'Email', externalId: 'kittisak@udonagro.co.th', name: 'คุณกิตติศักดิ์ พรหมมา', companyName: 'Udon Agro Industry',
+      ownerI: 'PW', tag: 'RFP',
+      msgs: [
+        { dir: 'in', text: 'Subject: Automation quote for Line 4\n\nPlease send a formal quotation for the automation upgrade discussed last week.', minsAgo: 600 },
+      ],
+    },
+    {
+      channel: 'Website', externalId: 'noppadol@nakhonplaza.co.th', name: 'Noppadol S.', companyName: 'Nakhon Grand Plaza',
+      tag: 'New lead',
+      msgs: [
+        { dir: 'in', text: 'Subject: Retail POS integration\n\nHi Bluefish team, we are evaluating vendors for POS + inventory integration across 4 branches. Please contact us.', minsAgo: 45 },
+      ],
+    },
+    {
+      channel: 'Website', externalId: 'ceo@rayonghosp.local', name: 'Rayong Regional Hospital',
+      msgs: [
+        { dir: 'in', text: 'Subject: Bluefish contact form\n\nInterested in the ERP module — please share pricing for a 300-bed hospital.', minsAgo: 15 },
+      ],
+    },
+  ]
+
+  for (const t of inboxDemo) {
+    const customer = t.customerCode ? await prisma.customer.findUnique({ where: { code: t.customerCode } }) : null
+    const ownerId = t.ownerI ? ownerMap[t.ownerI] : null
+    const lastMinsAgo = Math.min(...t.msgs.map((m) => m.minsAgo))
+    const lastMessageAt = new Date(Date.now() - lastMinsAgo * 60_000)
+
+    const thread = await prisma.inboxThread.upsert({
+      where: { channel_externalId: { channel: t.channel, externalId: t.externalId } },
+      update: {
+        name: t.name, companyName: t.companyName ?? null,
+        customerId: customer?.id ?? null, ownerId, tag: t.tag ?? null,
+        lastMessageAt,
+      },
+      create: {
+        channel: t.channel, externalId: t.externalId,
+        name: t.name, companyName: t.companyName ?? null,
+        customerId: customer?.id ?? null, ownerId, tag: t.tag ?? null,
+        unread: t.msgs.filter((m) => m.dir === 'in').length,
+        lastMessageAt,
+      },
+    })
+
+    // Rebuild the message stream so seed reruns don't append duplicates.
+    await prisma.inboxMessage.deleteMany({ where: { threadId: thread.id } })
+    for (const m of t.msgs) {
+      await prisma.inboxMessage.create({
+        data: {
+          threadId: thread.id,
+          direction: m.dir,
+          text: m.text,
+          authorName: m.dir === 'in' ? t.name : 'Bluefish',
+          sentAt: new Date(Date.now() - m.minsAgo * 60_000),
+        },
+      })
+    }
   }
 
   console.log('Seed complete.')

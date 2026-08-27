@@ -46,9 +46,9 @@ const srcMap: Record<string, [string, string]> = {
   'LINE OA': ['#E5F8ED', '#06A94A'],
   'e-GP Tender': ['#F4F1FD', '#4A3AB8'],
   'Facebook Ads': ['#E7F0FE', '#0070DB'],
-  Website: ['#F2F3F9', '#5C5C74'],
+  Website: ['#E4EDFC', '#2A6FDB'],
   Referral: ['#F7EBD9', '#B4650A'],
-  Instagram: ['#FCE9F2', '#D6337A'],
+  Email: ['#F2F3F9', '#5C5C74'],
 }
 export function srcStyle(s: string): CSSProperties {
   const [bg, fg] = srcMap[s] || ['#F2F3F9', '#5C5C74']
@@ -79,7 +79,9 @@ const chColorMap: Record<string, string> = {
   LINE: '#06C755',
   'LINE OA': '#06C755',
   Messenger: '#0084FF',
-  Instagram: '#D6337A',
+  WhatsApp: '#128C7E',
+  Email: '#5C5C74',
+  Website: '#2A6FDB',
 }
 export function chStyle(ch: string): CSSProperties {
   return {

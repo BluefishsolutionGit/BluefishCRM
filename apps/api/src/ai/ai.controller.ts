@@ -1,4 +1,5 @@
-import { BadRequestException, Body, Controller, Get, HttpCode, Param, Post, Query, Req, UnauthorizedException, UseGuards } from '@nestjs/common'
+import { BadRequestException, Body, Controller, Get, HttpCode, Param, Post, Query, Req, UnauthorizedException, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common'
+import { FileInterceptor } from '@nestjs/platform-express'
 import { IsBoolean, IsIn, IsOptional, IsString } from 'class-validator'
 import { JwtAuthGuard } from '../auth/jwt.guard'
 import { PermissionsGuard } from '../auth/permissions.guard'
@@ -7,9 +8,10 @@ import { PERMISSIONS } from '../auth/permissions'
 import { AgentOrchestrator } from './agent-orchestrator.service'
 import { AiRunsService } from './ai-runs.service'
 import { ReviewQueueService } from './review-queue.service'
+import { CardScanService } from './card-scan.service'
 import { auditContext } from '../common/request-context'
 import type { Request } from 'express'
-import type { AiAgentDto, AiAgentKey, AiCostSummaryDto, AiResultDto, AiRunDto } from '@bluefish/shared'
+import type { AiAgentDto, AiAgentKey, AiCostSummaryDto, AiResultDto, AiRunDto, ScanCardResultDto } from '@bluefish/shared'
 
 interface JwtRequest extends Request { user?: { sub: string; email: string; role: string } }
 
@@ -31,6 +33,7 @@ export class AiController {
     private orchestrator: AgentOrchestrator,
     private runs: AiRunsService,
     private queue: ReviewQueueService,
+    private cardScan: CardScanService,
   ) {}
 
   @Get('agents')
@@ -80,5 +83,13 @@ export class AiController {
   @RequirePermissions(PERMISSIONS.AUDIT_READ)
   cost(): Promise<AiCostSummaryDto> {
     return this.runs.costSummary()
+  }
+
+  @Post('scan-card')
+  @RequirePermissions(PERMISSIONS.CUSTOMER_WRITE)
+  @UseInterceptors(FileInterceptor('file'))
+  async scanCard(@UploadedFile() file: Express.Multer.File | undefined): Promise<ScanCardResultDto> {
+    if (!file) throw new BadRequestException('No image uploaded')
+    return this.cardScan.extract(file.buffer, file.mimetype)
   }
 }

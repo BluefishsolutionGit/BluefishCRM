@@ -1,7 +1,7 @@
 import { Body, Controller, ForbiddenException, Headers, HttpCode, Logger, Post, Query, Req } from '@nestjs/common'
-import { ConfigService } from '@nestjs/config'
 import * as crypto from 'crypto'
 import { InboxService } from './inbox.service'
+import { ChannelIntegrationsService } from '../integrations/channel-integrations.service'
 import type { Request } from 'express'
 import type { InboxChannel } from '@bluefish/shared'
 
@@ -24,7 +24,7 @@ interface FbPayload { object?: string; entry?: Array<{ messaging?: FbMessagingEv
 export class InboxWebhooksController {
   private readonly logger = new Logger(InboxWebhooksController.name)
 
-  constructor(private inbox: InboxService, private cfg: ConfigService) {}
+  constructor(private inbox: InboxService, private channels: ChannelIntegrationsService) {}
 
   @Post('line')
   @HttpCode(200)
@@ -33,7 +33,8 @@ export class InboxWebhooksController {
     @Req() req: Request & { rawBody?: Buffer },
     @Body() body: LinePayload,
   ) {
-    const secret = this.cfg.get<string>('LINE_CHANNEL_SECRET') ?? ''
+    const config = await this.channels.getPlain('LINE OA')
+    const secret = config?.channelSecret ?? ''
     if (secret && signature) {
       const raw = req.rawBody ?? Buffer.from(JSON.stringify(body))
       const expected = crypto.createHmac('sha256', secret).update(raw).digest('base64')
@@ -72,24 +73,54 @@ export class InboxWebhooksController {
 
   /** FB verification handshake (GET is exposed via a separate endpoint below, but for simplicity we handle inside POST) */
   @Post('facebook/verify')
-  fbVerify(@Query('hub.mode') mode: string, @Query('hub.verify_token') token: string, @Query('hub.challenge') challenge: string) {
-    const verifyToken = this.cfg.get<string>('FB_VERIFY_TOKEN') ?? ''
+  async fbVerify(@Query('hub.mode') mode: string, @Query('hub.verify_token') token: string, @Query('hub.challenge') challenge: string) {
+    const config = await this.channels.getPlain('Messenger')
+    const verifyToken = config?.verifyToken ?? ''
     if (mode === 'subscribe' && token === verifyToken) return challenge
     throw new ForbiddenException()
   }
 
-  @Post('instagram')
+  /**
+   * Bluefish company contact form (www.bluefishsolution.com/en/contact-us).
+   *
+   * The site posts a JSON envelope with the visitor's name/email/message.
+   * We accept a lightweight shared-secret in `x-bluefish-form-key` so the
+   * public site can push into the CRM without a full auth flow. When
+   * the sharedKey isn't configured (via DB or env) the endpoint is open
+   * (dev/demo mode).
+   *
+   * The visitor's email doubles as the external thread id so subsequent
+   * follow-ups from the same address collapse into one thread.
+   */
+  @Post('website')
   @HttpCode(200)
-  async instagram(
-    @Headers('x-hub-signature-256') signature: string | undefined,
-    @Req() req: Request & { rawBody?: Buffer },
-    @Body() body: FbPayload,
+  async website(
+    @Headers('x-bluefish-form-key') secret: string | undefined,
+    @Body() body: { name?: string; email?: string; company?: string; subject?: string; message?: string; phone?: string },
   ) {
-    return this.metaHandler('Instagram', signature, req, body)
+    const config = await this.channels.getPlain('Website')
+    const expected = config?.sharedKey ?? ''
+    if (expected && secret !== expected) throw new ForbiddenException('Invalid form key')
+    const email = (body.email ?? '').trim().toLowerCase()
+    const message = (body.message ?? '').trim()
+    if (!email || !message) return { ok: false, error: 'email + message required' }
+
+    const subject = (body.subject ?? '').trim()
+    const text = subject ? `${subject}\n\n${message}` : message
+    const authorName = (body.name ?? '').trim() || email
+    const res = await this.inbox.ingestIncoming({
+      channel: 'Website',
+      externalThreadId: email,
+      externalMessageId: undefined,
+      authorName, text,
+      sentAt: new Date(),
+    })
+    return { ok: true, ...res }
   }
 
   private async metaHandler(channel: InboxChannel, signature: string | undefined, req: Request & { rawBody?: Buffer }, body: FbPayload) {
-    const secret = this.cfg.get<string>('META_APP_SECRET') ?? ''
+    const config = await this.channels.getPlain('Messenger')
+    const secret = config?.appSecret ?? ''
     if (secret && signature) {
       const raw = req.rawBody ?? Buffer.from(JSON.stringify(body))
       const expected = 'sha256=' + crypto.createHmac('sha256', secret).update(raw).digest('hex')

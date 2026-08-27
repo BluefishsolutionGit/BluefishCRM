@@ -198,6 +198,25 @@ export interface CreateContactDto {
   isPrimary?: boolean
 }
 
+/** Result from POST /ai/scan-card — used to prefill a Customer + Contact from a business-card photo. */
+export interface ScanCardResultDto {
+  companyName: string | null
+  taxId: string | null
+  contactName: string | null
+  firstName: string | null
+  lastName: string | null
+  position: string | null
+  department: string | null
+  email: string | null
+  mobile: string | null
+  telephone: string | null
+  website: string | null
+  address: string | null
+  city: string | null
+  notes: string | null
+  raw: string | null
+}
+
 export interface UpdateContactDto {
   name?: string
   firstName?: string | null
@@ -1101,7 +1120,7 @@ export interface CreateReportScheduleDto {
 
 // ─────── Inbox ───────
 
-export type InboxChannel = 'LINE' | 'LINE OA' | 'Messenger' | 'Instagram' | 'WhatsApp' | 'Email'
+export type InboxChannel = 'LINE' | 'LINE OA' | 'Messenger' | 'WhatsApp' | 'Email' | 'Website'
 
 export interface InboxMessageDto {
   id: string
@@ -1131,6 +1150,42 @@ export interface InboxThreadDto {
 
 export interface SendInboxMessageDto {
   text: string
+}
+
+// ─────── Channel integrations (config for each Inbox channel) ───────
+
+/** Full list of channel types the Channels manager can configure. */
+export const CHANNEL_INTEGRATION_TYPES = ['LINE OA', 'Messenger', 'Website', 'Email'] as const
+export type ChannelIntegrationType = typeof CHANNEL_INTEGRATION_TYPES[number]
+
+/** Per-channel schema of what secret fields the UI should render + save. */
+export interface ChannelFieldSpec {
+  key: string
+  label: string
+  type: 'text' | 'secret'
+  required: boolean
+  hint?: string
+}
+
+/** Row returned by GET /integrations/channels — secrets always masked. */
+export interface ChannelIntegrationDto {
+  id: string
+  channel: ChannelIntegrationType
+  label: string
+  isActive: boolean
+  webhookUrl: string        // absolute URL the vendor console needs
+  fields: ChannelFieldSpec[]
+  maskedValues: Record<string, string>   // key → masked or empty string
+  hasCredentials: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+/** Payload for PUT /integrations/channels/:channel — plaintext to encrypt. */
+export interface UpsertChannelIntegrationDto {
+  label?: string
+  values: Record<string, string>
+  isActive?: boolean
 }
 
 // ─────── API keys / Webhooks ───────

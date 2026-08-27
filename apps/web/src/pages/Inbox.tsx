@@ -14,11 +14,15 @@ const CHANNEL_FILTERS: Array<{ label: string; value: InboxChannel | 'all'; color
   { label: 'All', value: 'all', color: '#2E1A6B' },
   { label: 'LINE', value: 'LINE OA', color: '#06C755' },
   { label: 'FB', value: 'Messenger', color: '#0084FF' },
-  { label: 'IG', value: 'Instagram', color: '#D6337A' },
+  { label: 'Email', value: 'Email', color: '#5C5C74' },
+  { label: 'Web', value: 'Website', color: '#2A6FDB' },
 ]
 
 function chInitial(channel: string) {
-  return channel === 'Messenger' ? 'M' : channel === 'Instagram' ? 'IG' : 'L'
+  if (channel === 'Messenger') return 'M'
+  if (channel === 'Email') return '✉'
+  if (channel === 'Website') return 'W'
+  return 'L'
 }
 
 function timeShort(iso: string) {
@@ -70,6 +74,16 @@ export default function Inbox() {
     if (channelFilter === 'all') return threads
     return threads.filter((t) => t.channel === channelFilter)
   }, [threads, channelFilter])
+
+  // Keep the right-pane selection consistent with the visible list. Without
+  // this a user who switches from "LINE" to "Email" would still see the last
+  // LINE thread's messages on the right — reads as "filter did nothing".
+  useEffect(() => {
+    if (filtered.length === 0) { setThreadId(null); return }
+    if (!threadId || !filtered.some((t) => t.id === threadId)) {
+      setThreadId(filtered[0].id)
+    }
+  }, [filtered, threadId])
 
   const send = async () => {
     if (!composer.trim() || !activeThread) return

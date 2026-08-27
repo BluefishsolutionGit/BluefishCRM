@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
-import type { ActivityDto, CreateActivityDto } from '@bluefish/shared'
+import type { ActivityDto, ActivityType, CreateActivityDto, CustomerDto } from '@bluefish/shared'
 import { api, ApiError } from '../lib/api'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/ToastContext'
 import { enqueue as enqueueDraft, list as listDrafts, remove as removeDraft, subscribe as subscribeQueue, type OfflineDraft } from '../lib/offlineQueue'
+import VoiceInputButton from '../components/VoiceInputButton'
 
 type Tab = 'today' | 'week' | 'cal' | 'overdue' | 'drafts'
 
@@ -317,21 +318,64 @@ function CalendarView({ ownerId, onOpen }: { ownerId?: string; onOpen: (id: stri
 
 const navBtn: CSSProperties = { width: 26, height: 26, border: '1px solid #E5E7F0', background: '#fff', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8888A0', fontSize: 13, cursor: 'pointer', fontWeight: 700 }
 
+const TASK_TYPES: ActivityType[] = ['task', 'call', 'meeting', 'visit', 'demo', 'follow_up', 'email']
+
+/**
+ * "New task" sheet — full-detail form matching the desktop /activities modal
+ * so a rep can capture everything from mobile without needing to jump to web.
+ *
+ * Fields: type, title, when, duration, customer, location, meeting link
+ * (auto-hidden for types that never have one), notes (with voice dictation).
+ */
 function NewTaskSheet({ onClose }: { onClose: () => void }) {
-  const [type, setType] = useState<'task' | 'call' | 'meeting' | 'visit' | 'follow_up'>('task')
+  const [type, setType] = useState<ActivityType>('task')
   const [title, setTitle] = useState('')
   const [when, setWhen] = useState<string>(() => new Date(Date.now() + 60 * 60 * 1000).toISOString().slice(0, 16))
+  const [durationMin, setDurationMin] = useState<string>('')
+  const [customerId, setCustomerId] = useState<string>('')
+  const [customerQ, setCustomerQ] = useState('')
+  const [customers, setCustomers] = useState<CustomerDto[]>([])
+  const [location, setLocation] = useState('')
+  const [meetingLink, setMeetingLink] = useState('')
+  const [notes, setNotes] = useState('')
+  const [saving, setSaving] = useState(false)
   const { user } = useAuth()
   const toast = useToast()
-  const [saving, setSaving] = useState(false)
+
+  // Load a bounded customer list once; the sheet then filters client-side by
+  // customerQ so search feels instant on the small mobile screen.
+  useEffect(() => {
+    api.customers().then(setCustomers).catch(() => setCustomers([]))
+  }, [])
+
+  const filteredCustomers = useMemo(() => {
+    const q = customerQ.trim().toLowerCase()
+    if (!q) return customers.slice(0, 8)
+    return customers.filter((c) =>
+      c.name.toLowerCase().includes(q) || (c.nameTh ?? '').toLowerCase().includes(q) || c.code.toLowerCase().includes(q)
+    ).slice(0, 8)
+  }, [customers, customerQ])
+
+  const selectedCustomer = customerId ? customers.find((c) => c.id === customerId) ?? null : null
+  const showMeetingLink = type === 'meeting' || type === 'call' || type === 'demo'
 
   const save = async () => {
-    if (!title.trim() || !user) return
+    if (!title.trim() || !user || saving) return
     setSaving(true)
-    const payload: CreateActivityDto = { type, title: title.trim(), scheduledAt: new Date(when).toISOString(), ownerId: user.id }
+    const payload: CreateActivityDto = {
+      type,
+      title: title.trim(),
+      scheduledAt: new Date(when).toISOString(),
+      ownerId: user.id,
+      customerId: customerId || undefined,
+      location: location.trim() || undefined,
+      meetingLink: showMeetingLink && meetingLink.trim() ? meetingLink.trim() : undefined,
+      notes: notes.trim() || undefined,
+      durationMin: durationMin && Number(durationMin) > 0 ? Number(durationMin) : undefined,
+    }
     try {
       if (!navigator.onLine) {
-        await enqueueDraft({ kind: 'activity', label: `Task: ${title.trim()}`, payload })
+        await enqueueDraft({ kind: 'activity', label: `${type}: ${title.trim()}`, payload })
         toast('Offline — queued as draft')
       } else {
         await api.createActivity(payload)
@@ -345,21 +389,175 @@ function NewTaskSheet({ onClose }: { onClose: () => void }) {
 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.35)', display: 'flex', alignItems: 'flex-end', zIndex: 60 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 480, margin: '0 auto', background: '#fff', borderRadius: '18px 18px 0 0', padding: 18 }}>
-        <div style={{ width: 40, height: 4, background: '#D0D0DF', borderRadius: 2, margin: '0 auto 14px' }} />
-        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>New task</div>
-        <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
-          {(['task', 'call', 'meeting', 'visit', 'follow_up'] as const).map((t) => (
-            <div key={t} onClick={() => setType(t)} style={{ padding: '6px 11px', border: '1px solid ' + (type === t ? '#2E1A6B' : '#D0D0DF'), background: type === t ? '#EEF2FF' : '#fff', borderRadius: 999, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>{t}</div>
-          ))}
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%', maxWidth: 480, margin: '0 auto', background: '#fff',
+          borderRadius: '18px 18px 0 0', padding: '10px 18px 18px',
+          maxHeight: '92vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10,
+        }}
+      >
+        <div style={{ width: 40, height: 4, background: '#D0D0DF', borderRadius: 2, margin: '4px auto 6px' }} />
+        <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 4 }}>New task</div>
+
+        {/* Type chips */}
+        <div>
+          <TinyLabel>Type</TinyLabel>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {TASK_TYPES.map((t) => (
+              <div
+                key={t}
+                onClick={() => setType(t)}
+                style={{
+                  padding: '6px 11px',
+                  border: '1px solid ' + (type === t ? '#2A6FDB' : '#D0D0DF'),
+                  background: type === t ? '#EEF3FC' : '#fff',
+                  color: type === t ? '#2A6FDB' : '#5C5C74',
+                  borderRadius: 999, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                  textTransform: 'capitalize',
+                }}
+              >{t.replace('_', ' ')}</div>
+            ))}
+          </div>
         </div>
-        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', border: '1px solid #D0D0DF', borderRadius: 10, fontSize: 14, marginBottom: 8 }} />
-        <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', border: '1px solid #D0D0DF', borderRadius: 10, fontSize: 14, marginBottom: 12 }} />
+
+        {/* Title */}
+        <div>
+          <TinyLabel>Title *</TinyLabel>
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="e.g. Follow-up call with Somchai"
+            style={inp}
+          />
+        </div>
+
+        {/* When + duration */}
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={onClose} style={{ flex: 1, padding: '11px 0', background: '#fff', border: '1px solid #D0D0DF', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
-          <button onClick={save} disabled={saving || !title.trim()} style={{ flex: 1, padding: '11px 0', background: '#2E1A6B', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>{saving ? 'Saving…' : 'Save'}</button>
+          <div style={{ flex: 2 }}>
+            <TinyLabel>Scheduled at *</TinyLabel>
+            <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} style={inp} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <TinyLabel>Duration (min)</TinyLabel>
+            <input
+              type="number" min={0} step={15}
+              value={durationMin}
+              onChange={(e) => setDurationMin(e.target.value)}
+              placeholder="30"
+              style={inp}
+            />
+          </div>
+        </div>
+
+        {/* Customer picker */}
+        <div>
+          <TinyLabel>Customer (optional)</TinyLabel>
+          {selectedCustomer ? (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              background: '#EEF3FC', border: '1px solid #B7CFF3', borderRadius: 10, padding: '8px 12px',
+            }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: '#2A6FDB' }}>{selectedCustomer.name}</div>
+                <div style={{ fontSize: 10.5, color: '#5C5C74' }}>{selectedCustomer.code}{selectedCustomer.industry ? ` · ${selectedCustomer.industry}` : ''}</div>
+              </div>
+              <div onClick={() => { setCustomerId(''); setCustomerQ('') }} style={{ color: '#8888A0', fontSize: 14, cursor: 'pointer', padding: '2px 6px' }}>✕</div>
+            </div>
+          ) : (
+            <>
+              <input
+                placeholder="Search customer…"
+                value={customerQ}
+                onChange={(e) => setCustomerQ(e.target.value)}
+                style={inp}
+              />
+              {(customerQ.trim() || filteredCustomers.length > 0) && (
+                <div style={{
+                  border: '1px solid #E5E7F0', borderTop: 'none',
+                  borderRadius: '0 0 10px 10px', maxHeight: 160, overflowY: 'auto', marginTop: -2,
+                }}>
+                  {filteredCustomers.length === 0 && (
+                    <div style={{ padding: 10, fontSize: 11.5, color: '#8888A0' }}>No matches.</div>
+                  )}
+                  {filteredCustomers.map((c) => (
+                    <div
+                      key={c.id}
+                      onClick={() => { setCustomerId(c.id); setCustomerQ('') }}
+                      style={{
+                        padding: '8px 12px', borderTop: '1px solid #F2F3F9', cursor: 'pointer',
+                        display: 'flex', flexDirection: 'column',
+                      }}
+                    >
+                      <div style={{ fontSize: 12.5, fontWeight: 700 }}>{c.name}</div>
+                      <div style={{ fontSize: 10.5, color: '#8888A0' }}>{c.code} · {c.industry}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Location */}
+        <div>
+          <TinyLabel>📍 Location</TinyLabel>
+          <input
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+            placeholder="Address, floor, room…"
+            style={inp}
+          />
+        </div>
+
+        {/* Meeting link (only for meeting/call/demo) */}
+        {showMeetingLink && (
+          <div>
+            <TinyLabel>🔗 Meeting link</TinyLabel>
+            <input
+              value={meetingLink}
+              onChange={(e) => setMeetingLink(e.target.value)}
+              placeholder="https://teams.microsoft.com/…"
+              style={inp}
+            />
+          </div>
+        )}
+
+        {/* Notes with voice input */}
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <TinyLabel>Notes</TinyLabel>
+            <div style={{ flex: 1 }} />
+            <VoiceInputButton value={notes} onChange={setNotes} size="sm" label="Dictate notes" />
+          </div>
+          <textarea
+            rows={3}
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Agenda, decision maker, prep notes…"
+            style={{ ...inp, resize: 'vertical', fontFamily: 'inherit' }}
+          />
+        </div>
+
+        {/* Actions */}
+        <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+          <button
+            onClick={onClose}
+            style={{ flex: 1, padding: '12px 0', background: '#fff', border: '1px solid #D0D0DF', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
+          >Cancel</button>
+          <button
+            onClick={save}
+            disabled={saving || !title.trim()}
+            style={{ flex: 1, padding: '12px 0', background: '#2E1A6B', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer', opacity: saving || !title.trim() ? 0.5 : 1 }}
+          >{saving ? 'Saving…' : 'Save'}</button>
         </div>
       </div>
     </div>
   )
 }
+
+function TinyLabel({ children }: { children: React.ReactNode }) {
+  return <div style={{ fontSize: 10.5, fontWeight: 800, color: '#5C5C74', letterSpacing: '.04em', textTransform: 'uppercase', marginBottom: 4 }}>{children}</div>
+}
+
+const inp: CSSProperties = { width: '100%', boxSizing: 'border-box', padding: '10px 12px', border: '1px solid #D0D0DF', borderRadius: 10, fontSize: 13.5, outline: 'none' }

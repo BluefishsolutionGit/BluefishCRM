@@ -6,6 +6,7 @@ import { fmt, initialsOf } from '../data/mockData'
 import { statusStyle } from '../lib/styleUtils'
 import { useToast } from '../lib/ToastContext'
 import { useAuth } from '../lib/AuthContext'
+import VoiceInputButton from '../components/VoiceInputButton'
 
 type Tab = 'overview' | 'contacts' | 'opps' | 'quotes' | 'docs' | 'timeline'
 const TABS: [Tab, string][] = [
@@ -296,7 +297,18 @@ function ContactForm({ initial, customerId, onCancel, onSaved }: { initial?: Con
         <Field label="Telephone"><input value={telephone} onChange={(e) => setTelephone(e.target.value)} placeholder="Office landline" style={fieldInput} /></Field>
         <Field label="LINE ID"><input value={lineId} onChange={(e) => setLineId(e.target.value)} style={fieldInput} /></Field>
         <div style={{ gridColumn: '1 / -1' }}>
-          <Field label="Notes"><textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} style={{ ...fieldInput, resize: 'vertical' }} /></Field>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#8888A0', textTransform: 'uppercase', letterSpacing: '.04em' }}>Notes</div>
+            <div style={{ flex: 1 }} />
+            <VoiceInputButton value={notes} onChange={setNotes} size="sm" label="Dictate contact notes" />
+          </div>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={3}
+            placeholder="What was discussed, preferences, best time to reach…"
+            style={{ ...fieldInput, resize: 'vertical' }}
+          />
         </div>
       </div>
       <div style={{ display: 'flex', gap: 12, marginTop: 14, alignItems: 'center' }}>

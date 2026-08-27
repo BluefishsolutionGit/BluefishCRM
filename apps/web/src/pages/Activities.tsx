@@ -4,6 +4,7 @@ import { SERVICE_LINES } from '@bluefish/shared'
 import { api, ApiError } from '../lib/api'
 import { useToast } from '../lib/ToastContext'
 import { useAuth } from '../lib/AuthContext'
+import VoiceInputButton from '../components/VoiceInputButton'
 
 const TYPE_COLOR: Record<ActivityType, string> = {
   meeting: '#2A6FDB', call: '#1F5AC2', visit: '#B4650A', demo: '#6C55E0',
@@ -914,7 +915,11 @@ function ActivityModal({ initial, onClose, onSaved, onDeleted }: { initial: Acti
               <input value={meetingLink} onChange={(e) => setMeetingLink(e.target.value)} placeholder="https://teams.microsoft.com/…" style={inp} />
             </label>
             <label style={{ gridColumn: 'span 2' }}>
-              <FieldLabel>Notes</FieldLabel>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <FieldLabel>Notes</FieldLabel>
+                <div style={{ flex: 1 }} />
+                <VoiceInputButton value={notes} onChange={setNotes} size="sm" label="Dictate note" />
+              </div>
               <textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} style={{ ...inp, resize: 'vertical' }} />
             </label>
             <div style={{ gridColumn: 'span 2' }}>

@@ -16,7 +16,6 @@ import Quotations from './pages/Quotations'
 import QuoteDetail from './pages/QuoteDetail'
 import Contracts from './pages/Contracts'
 import AIWorkspace from './pages/AIWorkspace'
-import MobilePreview from './pages/MobilePreview'
 import MobileShell from './mobile/MobileShell'
 import MobileHome from './mobile/MobileHome'
 import MobileCustomers from './mobile/MobileCustomers'
@@ -31,6 +30,7 @@ import MobileInbox, { MobileInboxThread } from './mobile/MobileInbox'
 import MobileReports from './mobile/MobileReports'
 import MobileNearby from './mobile/MobileNearby'
 import MobileAi from './mobile/MobileAi'
+import MobileMore from './mobile/MobileMore'
 import Settings from './pages/Settings'
 import Products from './pages/Products'
 import Documents from './pages/Documents'
@@ -80,7 +80,6 @@ createRoot(document.getElementById('root')!).render(
             <Route path="/quotations/:id" element={<QuoteDetail />} />
             <Route path="/contracts" element={<Contracts />} />
             <Route path="/ai" element={<AIWorkspace />} />
-            <Route path="/mobile" element={<MobilePreview />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/products" element={<Products />} />
             <Route path="/documents" element={<Documents />} />
@@ -115,6 +114,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="reports" element={<MobileReports />} />
             <Route path="nearby" element={<MobileNearby />} />
             <Route path="ai" element={<MobileAi />} />
+            <Route path="more" element={<MobileMore />} />
           </Route>
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>

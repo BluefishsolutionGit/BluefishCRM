@@ -4,7 +4,7 @@ const SOURCE_SCORE: Record<string, number> = {
   'LINE OA': 20,
   'Facebook Ads': 15,
   'Website': 10,
-  'Instagram': 5,
+  'Email': 8,
 }
 
 export function scoreLead(input: {

@@ -568,9 +568,10 @@ MICROSOFT_WEBHOOK_URL (optional — if unset, near-realtime falls back to 5-min 
 | `src/pages/Activities.tsx` | UI-07 |
 | `src/pages/Quotations.tsx`, `QuoteDetail.tsx` | UI-08 |
 | `src/pages/AIWorkspace.tsx` | UI-11 |
-| `src/pages/MobilePreview.tsx` | UI-12 |
+| `src/mobile/*` (MobileShell + per-screen files) | UI-12 — real mobile PWA at `/m` (replaces the old MobilePreview mockup, removed Aug 2026) |
 | `src/pages/Contracts.tsx` | Contract Mgmt (6 sub-tabs) |
-| `src/pages/Inbox.tsx` | Omnichannel (LINE/FB/IG) |
+| `src/pages/Inbox.tsx` | Omnichannel (LINE OA / Messenger / Email / Website contact form) |
+| `src/pages/Settings.tsx` — `InboxChannelsSection` | Channel integration credentials (DB-backed, AES-256-GCM at rest) |
 | `src/data/mockData.ts` | Mock data reference — model schema สำหรับ backend |
 | `src/lib/styleUtils.ts` | Design token helpers |
 | `src/components/AppLayout.tsx` | Shell (sidebar + topbar + toast) |

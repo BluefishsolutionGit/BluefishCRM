@@ -165,13 +165,13 @@ function ScoreInfoModal({ onClose }: { onClose: () => void }) {
           Score is 0–100. Higher is hotter. Recomputed on every create / edit — no manual override.
         </div>
 
-        <ScoreSection title="1. Source (base)" total="+5 … +30">
+        <ScoreSection title="1. Source (base)" total="+8 … +30">
           <ScoreRow label="e-GP Tender" value="+30" />
           <ScoreRow label="Referral" value="+25" />
           <ScoreRow label="LINE OA" value="+20" />
           <ScoreRow label="Facebook Ads" value="+15" />
           <ScoreRow label="Website" value="+10" />
-          <ScoreRow label="Instagram" value="+5" />
+          <ScoreRow label="Email" value="+8" />
           <ScoreRow label="anything else" value="+10 (default)" />
         </ScoreSection>
 

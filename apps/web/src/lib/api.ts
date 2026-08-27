@@ -122,6 +122,18 @@ async function authDownload(path: string, fallbackFilename: string): Promise<voi
   URL.revokeObjectURL(url)
 }
 
+/** Build a query-string suffix for the dashboards endpoints. Empty/undefined
+ *  values are skipped and 'all' is treated as "no filter" to match Pipeline's
+ *  chip conventions. */
+function dashQs(filter: { serviceOrProduct?: string; ownerId?: string; period?: string }): string {
+  const qs = new URLSearchParams()
+  if (filter.serviceOrProduct && filter.serviceOrProduct !== 'all') qs.set('serviceOrProduct', filter.serviceOrProduct)
+  if (filter.ownerId && filter.ownerId !== 'all') qs.set('ownerId', filter.ownerId)
+  if (filter.period) qs.set('period', filter.period)
+  const s = qs.toString()
+  return s ? `?${s}` : ''
+}
+
 async function request<T>(path: string, init: RequestInit = {}, _retry = false): Promise<T> {
   const headers = new Headers(init.headers)
   if (!(init.body instanceof FormData)) {
@@ -554,12 +566,16 @@ export const api = {
     request<import('@bluefish/shared').EnvelopeDto[]>(`/esign/contracts/${contractId}`),
 
   // ─────── Dashboards ───────
-  execDashboard: () => request<import('@bluefish/shared').ExecutiveDashboardDto>('/dashboards/executive'),
-  salesDashboard: () => request<import('@bluefish/shared').SalesDashboardDto>('/dashboards/sales'),
-  pipelineDashboard: () => request<import('@bluefish/shared').PipelineDashboardDto>('/dashboards/pipeline'),
-  revenueDashboard: () => request<import('@bluefish/shared').RevenueDashboardDto>('/dashboards/revenue'),
-  byServiceDashboard: (period?: string) =>
-    request<import('@bluefish/shared').ByServiceDashboardDto>(`/dashboards/by-service${period ? `?period=${period}` : ''}`),
+  execDashboard: (filter: { serviceOrProduct?: string; ownerId?: string } = {}) =>
+    request<import('@bluefish/shared').ExecutiveDashboardDto>(`/dashboards/executive${dashQs(filter)}`),
+  salesDashboard: (filter: { serviceOrProduct?: string; ownerId?: string } = {}) =>
+    request<import('@bluefish/shared').SalesDashboardDto>(`/dashboards/sales${dashQs(filter)}`),
+  pipelineDashboard: (filter: { serviceOrProduct?: string; ownerId?: string } = {}) =>
+    request<import('@bluefish/shared').PipelineDashboardDto>(`/dashboards/pipeline${dashQs(filter)}`),
+  revenueDashboard: (filter: { serviceOrProduct?: string; ownerId?: string } = {}) =>
+    request<import('@bluefish/shared').RevenueDashboardDto>(`/dashboards/revenue${dashQs(filter)}`),
+  byServiceDashboard: (period?: string, filter: { serviceOrProduct?: string; ownerId?: string } = {}) =>
+    request<import('@bluefish/shared').ByServiceDashboardDto>(`/dashboards/by-service${dashQs({ ...filter, period })}`),
   salesTargets: (period?: string) =>
     request<import('@bluefish/shared').SalesTargetDto[]>(`/sales-targets${period ? `?period=${period}` : ''}`),
   setSalesTarget: (service: string, period: string, amount: number) =>
@@ -614,6 +630,22 @@ export const api = {
   aiReview: (id: string, decision: 'accept' | 'reject', comment?: string) =>
     request<import('@bluefish/shared').AiResultDto>(`/ai/review-queue/${id}/review`, { method: 'POST', body: JSON.stringify({ decision, comment }) }),
   aiCost: () => request<import('@bluefish/shared').AiCostSummaryDto>('/ai/cost-summary'),
+
+  // ─────── Channel integrations (Inbox config) ───────
+  channelIntegrations: () =>
+    request<import('@bluefish/shared').ChannelIntegrationDto[]>('/integrations/channels'),
+  upsertChannelIntegration: (channel: string, data: import('@bluefish/shared').UpsertChannelIntegrationDto) =>
+    request<import('@bluefish/shared').ChannelIntegrationDto>(`/integrations/channels/${encodeURIComponent(channel)}`, {
+      method: 'PUT', body: JSON.stringify(data),
+    }),
+  deleteChannelIntegration: (channel: string) =>
+    request<{ ok: true }>(`/integrations/channels/${encodeURIComponent(channel)}`, { method: 'DELETE' }),
+
+  scanCard: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return request<import('@bluefish/shared').ScanCardResultDto>('/ai/scan-card', { method: 'POST', body: form })
+  },
 
   auditLogs: (filter: { entity?: string; entityId?: string; userId?: string; limit?: number } = {}) => {
     const params = new URLSearchParams()

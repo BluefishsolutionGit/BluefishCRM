@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState, type CSSProperties, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type FormEvent } from 'react'
 import { useAuth } from '../lib/AuthContext'
 import { api, ApiError } from '../lib/api'
 import { useToast } from '../lib/ToastContext'
-import type { CalendarAccountDto, CreateUserDto, RoleDto, UpdateUserDto, UserDto } from '@bluefish/shared'
+import type { CalendarAccountDto, ChannelIntegrationDto, CreateUserDto, RoleDto, UpdateUserDto, UserDto } from '@bluefish/shared'
 import { SERVICE_LINES } from '@bluefish/shared'
 import MasterData from './MasterData'
 
@@ -95,9 +95,12 @@ export default function Settings() {
       )}
 
       {tab === 'integrations' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 16, alignItems: 'start' }}>
-          <CalendarSyncCard onToast={toast} />
-          {canManageUsers && <SalesTargetsCard onToast={toast} />}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 16, alignItems: 'start' }}>
+            <CalendarSyncCard onToast={toast} />
+            {canManageUsers && <SalesTargetsCard onToast={toast} />}
+          </div>
+          {canManageUsers && <InboxChannelsSection onToast={toast} />}
         </div>
       )}
 
@@ -917,6 +920,212 @@ function MfaCard({ onToast }: { onToast: (msg: string) => void }) {
     </div>
   )
 }
+
+/* ═══════════════════════ Inbox channels section ═══════════════════════ */
+
+const CHANNEL_META: Record<string, { color: string; description: string }> = {
+  'LINE OA':  { color: '#06C755', description: 'Bluefish official LINE Business channel' },
+  Messenger:  { color: '#0084FF', description: 'Facebook Page Messenger integration' },
+  Website:    { color: '#2A6FDB', description: 'Contact form on www.bluefishsolution.com' },
+  Email:      { color: '#5C5C74', description: 'Inbound email parse (Postmark / SendGrid)' },
+}
+
+function InboxChannelsSection({ onToast }: { onToast: (m: string) => void }) {
+  const [rows, setRows] = useState<ChannelIntegrationDto[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const reload = useCallback(async () => {
+    setLoading(true)
+    try {
+      setRows(await api.channelIntegrations())
+    } catch (e) {
+      onToast(e instanceof ApiError ? e.message : 'Failed to load channels')
+    } finally { setLoading(false) }
+  }, [onToast])
+
+  useEffect(() => { void reload() }, [reload])
+
+  return (
+    <div style={card}>
+      <div style={cardTitle}>Inbox channels</div>
+      <div style={{ padding: '4px 20px 6px', color: '#5C5C74', fontSize: 12.5 }}>
+        Configure the credentials for each Inbox channel. Secrets are encrypted at rest;
+        rotate anytime — the change takes effect on the next incoming message.
+      </div>
+      {loading && <div style={{ padding: 16, color: '#8888A0', fontSize: 12.5 }}>Loading…</div>}
+      {!loading && (
+        <div style={{ padding: '4px 20px 18px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14 }}>
+          {rows.map((row) => (
+            <ChannelIntegrationCard key={row.channel} row={row} onSaved={reload} onToast={onToast} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ChannelIntegrationCard({ row, onSaved, onToast }: {
+  row: ChannelIntegrationDto
+  onSaved: () => void
+  onToast: (m: string) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  // Empty strings until edited — the UI never receives real secret values back
+  // from the server, so a save only replaces fields the user touches.
+  const [values, setValues] = useState<Record<string, string>>({})
+  const [saving, setSaving] = useState(false)
+
+  const meta = CHANNEL_META[row.channel] ?? { color: '#5C5C74', description: '' }
+  const connected = row.hasCredentials && row.isActive
+  const statusColor = connected ? '#0E9C7E' : row.hasCredentials ? '#B4650A' : '#8888A0'
+  const statusLabel = connected ? 'Connected' : row.hasCredentials ? 'Disabled' : 'Not configured'
+
+  const startEdit = () => {
+    setValues({})     // fresh — user only fills what they want to change
+    setEditing(true)
+  }
+
+  const save = async () => {
+    if (saving) return
+    setSaving(true)
+    try {
+      await api.upsertChannelIntegration(row.channel, { values })
+      onToast(`${row.channel} saved`)
+      setEditing(false)
+      setValues({})
+      onSaved()
+    } catch (e) {
+      onToast(e instanceof ApiError ? e.message : 'Save failed')
+    } finally { setSaving(false) }
+  }
+
+  const toggleActive = async () => {
+    try {
+      await api.upsertChannelIntegration(row.channel, { values: {}, isActive: !row.isActive })
+      onToast(`${row.channel} ${!row.isActive ? 'enabled' : 'disabled'}`)
+      onSaved()
+    } catch (e) {
+      onToast(e instanceof ApiError ? e.message : 'Toggle failed')
+    }
+  }
+
+  const disconnect = async () => {
+    if (!row.hasCredentials) return
+    if (!window.confirm(`Remove ${row.channel} credentials?`)) return
+    try {
+      await api.deleteChannelIntegration(row.channel)
+      onToast(`${row.channel} disconnected`)
+      onSaved()
+    } catch (e) {
+      onToast(e instanceof ApiError ? e.message : 'Delete failed')
+    }
+  }
+
+  const copyUrl = async () => {
+    try { await navigator.clipboard.writeText(row.webhookUrl); onToast('Webhook URL copied') }
+    catch { onToast(`URL: ${row.webhookUrl}`) }
+  }
+
+  return (
+    <div style={{
+      border: '1px solid #E5E7F0', borderRadius: 12, background: '#fff',
+      overflow: 'hidden', display: 'flex', flexDirection: 'column',
+    }}>
+      <div style={{
+        padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 10,
+        borderBottom: '1px solid #F2F3F9', background: hexToRgbaLocal(meta.color, 0.06),
+      }}>
+        <div style={{ width: 30, height: 30, borderRadius: 9, background: meta.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800 }}>
+          {row.channel === 'LINE OA' ? 'L' : row.channel === 'Messenger' ? 'M' : row.channel === 'Website' ? 'W' : '✉'}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13.5, fontWeight: 700 }}>{row.channel}</div>
+          <div style={{ fontSize: 10.5, color: '#8082A5', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {meta.description}
+          </div>
+        </div>
+        <div style={{
+          display: 'inline-flex', alignItems: 'center', gap: 5,
+          fontSize: 10.5, fontWeight: 700, color: statusColor,
+          padding: '3px 10px', borderRadius: 999,
+          background: hexToRgbaLocal(statusColor, 0.12),
+        }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: statusColor }} />
+          {statusLabel}
+        </div>
+      </div>
+
+      <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div>
+          <div style={{ fontSize: 10.5, fontWeight: 700, color: '#5C5C74', letterSpacing: '.03em', textTransform: 'uppercase', marginBottom: 4 }}>Webhook URL</div>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <code style={{ flex: 1, background: '#F7F8FC', border: '1px solid #E5E7F0', borderRadius: 8, padding: '6px 10px', fontSize: 11, color: '#3B3B52', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.webhookUrl}</code>
+            <button type="button" onClick={copyUrl} style={ghostBtnSm}>Copy</button>
+          </div>
+        </div>
+
+        {row.fields.map((f) => (
+          <div key={f.key}>
+            <div style={{ fontSize: 10.5, fontWeight: 700, color: '#5C5C74', letterSpacing: '.03em', textTransform: 'uppercase', marginBottom: 4 }}>
+              {f.label}{f.required ? ' *' : ''}
+            </div>
+            {editing ? (
+              <input
+                type={f.type === 'secret' ? 'password' : 'text'}
+                value={values[f.key] ?? ''}
+                onChange={(e) => setValues((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                placeholder={row.maskedValues[f.key] || (f.hint ?? '')}
+                style={{ ...inputStyle, width: '100%', boxSizing: 'border-box' }}
+              />
+            ) : (
+              <div style={{ fontSize: 12.5, color: row.maskedValues[f.key] ? '#3B3B52' : '#8082A5', fontFamily: f.type === 'secret' ? "'IBM Plex Mono', monospace" : 'inherit' }}>
+                {row.maskedValues[f.key] || <em>not set</em>}
+              </div>
+            )}
+            {f.hint && editing && (
+              <div style={{ fontSize: 10.5, color: '#8082A5', marginTop: 3 }}>{f.hint}</div>
+            )}
+          </div>
+        ))}
+
+        <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+          {editing ? (
+            <>
+              <button type="button" onClick={save} disabled={saving} style={{ ...primaryBtnSm, opacity: saving ? 0.6 : 1 }}>
+                {saving ? 'Saving…' : 'Save'}
+              </button>
+              <button type="button" onClick={() => { setEditing(false); setValues({}) }} style={ghostBtnSm}>Cancel</button>
+            </>
+          ) : (
+            <>
+              <button type="button" onClick={startEdit} style={primaryBtnSm}>
+                {row.hasCredentials ? 'Rotate / Edit' : 'Configure'}
+              </button>
+              {row.hasCredentials && (
+                <button type="button" onClick={toggleActive} style={ghostBtnSm}>
+                  {row.isActive ? 'Disable' : 'Enable'}
+                </button>
+              )}
+              {row.hasCredentials && (
+                <button type="button" onClick={disconnect} style={dangerBtnSm}>Disconnect</button>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function hexToRgbaLocal(hex: string, alpha: number): string {
+  const h = hex.replace('#', '')
+  const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16)
+  return `rgba(${r},${g},${b},${alpha})`
+}
+
+const primaryBtnSm: CSSProperties = { background: '#2A6FDB', color: '#fff', border: 'none', borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }
+const ghostBtnSm: CSSProperties = { background: '#fff', color: '#5C5C74', border: '1px solid #E5E7F0', borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }
+const dangerBtnSm: CSSProperties = { background: '#fff', color: '#C0392B', border: '1px solid #F5B7B1', borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }
 
 /* ═══════════════════════ styles ═══════════════════════ */
 

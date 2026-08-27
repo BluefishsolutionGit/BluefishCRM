@@ -54,6 +54,7 @@ model User {
   resetTokens         PasswordResetToken[]
   authProviders       AuthProvider[]
   competitorContracts CompetitorContract[]
+  channelIntegrationsCreated ChannelIntegration[]
 }
 
 model Customer {
@@ -954,4 +955,24 @@ model CompetitorContract {
   @@index([ownerId])
   @@index([endDate])
   @@index([status])
+}
+
+/// Per-channel Inbox integration credentials. Secrets in `credentials` are
+/// AES-256-GCM encrypted at rest (see integrations/crypto.ts). Phase 1 UI
+/// enforces single-instance per channel; the unique on (channel, label) leaves
+/// the door open for multi-tenant expansion without a schema change.
+model ChannelIntegration {
+  id           String   @id @default(cuid())
+  channel      String   // 'LINE OA' | 'Messenger' | 'Website' | 'Email'
+  label        String   @default("Default")
+  credentials  String   // encrypted JSON blob: base64(iv||tag||ciphertext)
+  isActive     Boolean  @default(true)
+  createdById  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  createdBy    User?    @relation(fields: [createdById], references: [id])
+
+  @@unique([channel, label])
+  @@index([channel])
 }

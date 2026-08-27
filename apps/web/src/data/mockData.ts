@@ -84,7 +84,7 @@ export const leadsData: Lead[] = [
   { id: 'l4', name: 'คุณกิตติศักดิ์ พรหมมา', company: 'Udon Agro Industry', source: 'Website', score: 61, ownerI: 'KS', status: 'Qualified', value: '฿2.4M' },
   { id: 'l5', name: 'คุณเมธาวี ลิ้มสกุล', company: 'Siam Data Center Co., Ltd.', source: 'Referral', score: 88, ownerI: 'ST', status: 'Qualified', value: '฿6.0M' },
   { id: 'l6', name: 'คุณประเสริฐ วงศ์สว่าง', company: 'Hatyai Municipality (RFP)', source: 'e-GP Tender', score: 79, ownerI: 'AI', status: 'AI Sourced', value: '฿3.8M' },
-  { id: 'l7', name: 'คุณชลธิชา แสงทอง', company: 'Rimping Retail Group', source: 'Instagram', score: 55, ownerI: 'PW', status: 'New', value: '฿480K' },
+  { id: 'l7', name: 'คุณชลธิชา แสงทอง', company: 'Rimping Retail Group', source: 'Website', score: 55, ownerI: 'PW', status: 'New', value: '฿480K' },
 ]
 
 export interface Thread {
@@ -108,7 +108,7 @@ export const threadsData: Thread[] = [
     { side: 'out', text: 'Of course! Would Tuesday 14 Jul, 10:00 work? We can demo the traceability module.', time: 'Tue 16:41' },
     { side: 'in', text: 'Tuesday works. Please send a calendar invite.', time: 'Tue 17:02' },
   ]},
-  { id: 't4', channel: 'Instagram', name: 'rimping.retail', company: 'Rimping Retail Group', time: 'Yesterday', unread: 0, member: false, owner: 'Ploy W.', tag: 'New lead', deal: '— no open deal —', dealMeta: 'Lead score 55 · from Instagram', preview: 'ราคาแพ็กเกจเริ่มต้นเท่าไหร่ครับ', msgs: [
+  { id: 't4', channel: 'Website', name: 'rimping.retail', company: 'Rimping Retail Group', time: 'Yesterday', unread: 0, member: false, owner: 'Ploy W.', tag: 'New lead', deal: '— no open deal —', dealMeta: 'Lead score 55 · from Website', preview: 'ราคาแพ็กเกจเริ่มต้นเท่าไหร่ครับ', msgs: [
     { side: 'in', text: 'สอบถามราคาแพ็กเกจ WMS เริ่มต้นสำหรับ 2 คลังครับ', time: 'Mon 19:44' },
     { side: 'out', text: 'เริ่มต้นที่ ฿480K ครับ เดี๋ยวทีมงานส่งรายละเอียดทาง email ได้ไหมครับ', time: 'Mon 20:10' },
   ]},

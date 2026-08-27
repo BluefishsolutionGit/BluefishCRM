@@ -20,19 +20,49 @@ Set them to `inactive`. They can no longer log in but their history stays — do
 
 ## Channels and integrations
 
+All Inbox channel credentials are managed in **Settings → Integrations → Inbox channels**.
+Secrets are encrypted at rest with AES-256-GCM (`INTEGRATION_ENC_KEY`); rotate anytime, no
+restart required. The **Copy** button next to each channel copies the exact webhook URL to
+paste into the vendor console. Env-var fallbacks (`LINE_CHANNEL_SECRET`, `META_APP_SECRET`,
+`FB_VERIFY_TOKEN`, `INBOX_WEBSITE_KEY`) still work for legacy deployments — webhooks read DB
+first, env second.
+
+Four channel types are supported: **LINE OA, Messenger, Website (Bluefish contact form), Email.**
+Instagram DM is not supported (removed August 2026).
+
 ### LINE OA
 1. LINE Developers Console → your channel → **Messaging API**.
-2. Set the webhook URL to `https://<prod>/api/webhooks/inbox/line`.
-3. Copy the **Channel secret** into the API env as `LINE_CHANNEL_SECRET`, restart the API.
-4. Enable "Use webhook".
+2. Copy the **Webhook URL** shown in Settings → Inbox channels → LINE OA into the console.
+3. In Settings → Inbox channels → LINE OA click **Configure**, paste the **Channel Secret**
+   and **Channel Access Token**, Save.
+4. Back in the LINE console, enable "Use webhook".
 5. Send a test message — it should appear in Inbox within 30 seconds.
 
-### Facebook Messenger + Instagram DM
+### Facebook Messenger
 1. Meta for Developers → your app → Messenger → **Webhooks**.
-2. Callback URL: `https://<prod>/api/webhooks/inbox/facebook` (or `/instagram`).
-3. Verify token: value of `FB_VERIFY_TOKEN` env (default `bluefish-fb-verify`).
-4. Copy the app secret into `META_APP_SECRET`, restart.
-5. Subscribe your page/account to `messages` and `messaging_postbacks`.
+2. Callback URL: **Copy** from Settings → Inbox channels → Messenger.
+3. In Settings pick a **Verify Token** (any string) and paste it in the same Meta form.
+4. In Settings paste the app's **App Secret** (secret) and optionally **Page Access Token** (for outbound sends), Save.
+5. Subscribe your page to `messages` and `messaging_postbacks`.
+
+### Website (Bluefish contact form)
+The `www.bluefishsolution.com/en/contact-us` form posts leads straight into the CRM Inbox.
+
+1. In Settings → Inbox channels → Website click **Configure**, pick any random string as the
+   **Shared form key**, Save.
+2. Copy the webhook URL. On the marketing site's form handler, POST JSON to that URL with the
+   header `x-bluefish-form-key: <same key>`:
+   ```json
+   { "name": "John Doe", "email": "john@acme.co.th", "company": "ACME",
+     "subject": "WMS pricing", "message": "…", "phone": "+66 8x-xxx-xxxx" }
+   ```
+3. Every submission from the same email collapses into one Inbox thread; use **Link customer**
+   to attach the CRM Customer once a match is found.
+
+### Email
+Placeholder for inbound-email parse via SendGrid Inbound Parse / Postmark / Mailgun webhooks.
+Configure once we ship the receiver — for now the endpoint accepts credentials but no messages
+route into it.
 
 ### Microsoft 365 calendar
 

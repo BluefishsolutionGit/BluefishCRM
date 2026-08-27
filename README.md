@@ -79,6 +79,23 @@ MICROSOFT_WEBHOOK_URL=https://<public tunnel or host>/api/integrations/calendar/
 Without these, the "Connect (dev stub)" button in **Settings → Integrations** still exercises
 the full sync flow end-to-end (simulated events + attendees + RSVP + recurrence).
 
+**Recommended for production:**
+
+```
+# Encrypts Inbox channel secrets at rest. Generate with: openssl rand -base64 32
+INTEGRATION_ENC_KEY=<32-byte base64>
+
+# Shown as the copy-paste webhook URL in Settings → Inbox channels
+PUBLIC_API_URL=https://crm.bluefishsolution.com/api
+
+# Business-card scan uses Anthropic vision when set (falls back to a deterministic mock)
+ANTHROPIC_API_KEY=<sk-ant-...>
+AI_VISION_MODEL=claude-haiku-4-5-20251001         # optional override
+```
+
+Legacy env vars (`LINE_CHANNEL_SECRET`, `META_APP_SECRET`, `FB_VERIFY_TOKEN`, `INBOX_WEBSITE_KEY`) still
+work as fallbacks — webhooks read DB first, env second.
+
 ## Feature status
 
 See `plan.md` for the full 28-sprint plan.
@@ -86,6 +103,13 @@ See `plan.md` for the full 28-sprint plan.
 - ✅ Phase 0 — Monorepo scaffold, PostgreSQL, NestJS + Prisma, docker-compose
 - ✅ Phases 1–8 — Auth/SSO, Sales core, Quotations, Contracts, AI suite, Reports, Mobile, CI/CD
 - ✅ Microsoft 365 calendar integration — two-way sync, delta queries, webhooks, recurrence, attendees + RSVP tracking, notifications
+- ✅ **Inbox omnichannel** — LINE OA, Facebook Messenger, Email, Bluefish contact form (`Website`).
+  Credentials managed in **Settings → Integrations → Inbox channels** (AES-256-GCM encrypted at rest).
+- ✅ **Voice dictation** on desktop note fields (Activities, Opportunities, Leads, Customer contacts) + mobile
+- ✅ **Business-card scan** — camera → AI vision extraction → auto-fill new Customer + Contact,
+  or attach a Contact to an existing Customer
+- ✅ **Executive Dashboard filters** — service chips + salesperson dropdown, matching the Pipeline UX
+- ✅ **Mobile Home dashboard** — role-aware scope selector (Overall / per-service / any rep for managers)
 - See `docs/USER-GUIDE.md` and `docs/ADMIN-GUIDE.md` for feature-by-feature docs
 
 ## Microsoft 365 sync — feature summary

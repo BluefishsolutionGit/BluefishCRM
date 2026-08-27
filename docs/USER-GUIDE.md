@@ -10,8 +10,12 @@ For sales reps and everyday users. Everything here you can do without asking IT.
 
 ## Everyday screens
 
-### Dashboard
+### Dashboard (Executive)
 Your KPI landing page. **Pipeline** is what could close; **MTD** is what already closed this month; **Tasks** is what you have to do today.
+
+**Service + salesperson filters** — the chip row at the top narrows the whole dashboard to one
+service line (Box / 3S / 3D / AI&RPA) or one rep, exactly like the Pipeline page. Clear the
+filter with the **Clear** link next to the "Filtered" badge in the title.
 
 ### Customers
 Every company you work with. Search by name; click a card to open the account. The account page shows contacts, activity history, open deals, and documents.
@@ -49,16 +53,58 @@ Draft a quote from any opportunity. Add products with quantities and discounts. 
 Contracts your legal team draft. If you own the customer relationship, you'll see the contract on the account page.
 
 ### Inbox
-Messages from customers on LINE, Facebook Messenger, and Instagram DM — all in one place. Click a conversation to reply. Use the **quick replies** for common answers.
+Messages from customers on LINE, Facebook Messenger, Email, and the **Bluefish website contact form**
+— all in one place. Click a conversation to reply. Use the **quick replies** for common answers.
+Switching a channel chip auto-selects the first conversation in that channel; the right pane always
+matches the visible list.
+
+### Voice dictation on note fields
+A small microphone appears next to note-style fields on desktop (Activities → Notes, Opportunity → Notes
+& Description, Lead → Notes / follow-up, Customer → Contact notes). Click it, speak, click again to stop.
+The transcript is **appended** to whatever you were already typing — never overwrites. Default language
+is Thai (`th-TH`); the browser falls back to English if Thai isn't recognised. Requires HTTPS or
+localhost; Firefox is unsupported and the button is hidden there.
 
 ## Mobile-only features
 
 Open the app on your phone at `/m` (the desktop URL + `/m`).
 
-- **GPS check-in**: tap on Home. Records where you are with a `visit` activity. Handy at the customer's office.
-- **Scan card**: opens the camera. Snap a business card; the system uploads it and OCRs the fields where possible.
-- **Voice note**: 5-second recording, uploaded as a document. Use for quick notes after a meeting.
-- **Offline drafts**: if you're on the metro with no signal, create the task anyway. It syncs when you reconnect.
+### Bottom nav
+Home · Leads · Pipeline · Customers · Tasks · **More**. The **More** tab holds the quick-capture
+tools below. Tap the **Bluefish CRM** label in the header for a full page index (Contracts,
+Documents, Quotations, Inbox, Reports, Nearby, AI Workspace, etc.).
+
+### Home dashboard scope
+Chip row at the top of Home lets you re-scope the KPI card:
+- **Sales rep** — defaults to your primary service; you also see **Only me** for your personal
+  numbers. Your assigned services are marked with a small coloured dot.
+- **Manager / admin / auditor** — defaults to **Overall**; you can drill into any service, or tap
+  **Only me ▾** to pick a specific sales rep from a bottom-sheet list (ranked by closed value).
+  The **TODAY** list also follows the rep you're viewing.
+
+### Quick actions (in **More**)
+- **Scan card** — camera opens; snap a business card; AI extracts the company + person fields;
+  a review sheet auto-searches existing customers by name/tax ID. Pick "Attach to existing"
+  → only a new **Contact** is created; otherwise a new **Customer + Contact** in one save.
+- **Scan QR** — reads QR / barcode. If it looks like a Bluefish deep link (`CT-YYYY-####`,
+  `QT-YYYY-####`, or an in-app URL) it navigates there directly; otherwise it opens a
+  pre-filled **Log activity** sheet.
+- **GPS check-in** — creates a `visit` activity stamped with your current lat/lng.
+- **Voice note** — Web-Speech dictation, appends to the Activity notes field. Tap once to
+  start, again to stop; auto-stops after 20s.
+
+### Pipeline card view
+The mobile Pipeline (`/m/opportunities`) has a **▢▢ / ☰** toggle. **▢▢** shows swipeable
+Kanban cards — one column per stage with gradient headers (blue / orange / purple / green /
+grey) and dot indicators at the bottom for the position. **☰** falls back to the grouped list.
+
+### New task detail
+Tap **+ New task** anywhere; the sheet matches the desktop Activities form: type chips,
+title, scheduled at, duration, customer picker (search + pick), location, meeting link (auto-shown
+for meeting/call/demo), and **Notes** with the same voice-dictation button as the desktop.
+
+### Offline drafts
+If you're on the metro with no signal, create the task anyway. It syncs when you reconnect.
 
 ## Working with your team
 
@@ -93,5 +139,5 @@ Open **Settings** from the top-right menu:
 - **Add a new user** → your admin
 - **Change your role/permissions** → your manager + admin
 - **Reset MFA if you lost your device** → your admin
-- **Integrate a new channel (LINE / FB)** → admin
+- **Integrate a new channel (LINE / FB / Website)** → admin (see Settings → Integrations → Inbox channels)
 - **Set up scheduled reports for the whole team** → admin

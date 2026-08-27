@@ -26,7 +26,6 @@ const NAV: NavEntry[] = [
   { path: '/customers', label: 'Customers', icon: icons.users },
   { path: '/documents', label: 'Documents', icon: icons.doc },
   { path: '/reports', label: 'Reports', icon: icons.kanban },
-  { path: '/mobile', label: 'Mobile', icon: icons.phone },
   { spacer: true },
   { path: '/ai', label: 'AI', icon: icons.spark },
 ]
@@ -53,7 +52,6 @@ const CRUMB_MAP: Record<string, string> = {
   documents: 'Documents',
   reports: 'Reports',
   ai: 'AI Workspace',
-  mobile: 'Mobile',
   audit: 'Audit trail',
   settings: 'Settings',
 }
