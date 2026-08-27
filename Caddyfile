@@ -1,8 +1,8 @@
 # Caddy 2 config for Bluefish CRM.
-# Replace `crm.bluefishsolution.com` with your real domain before deploy.
+# Replace `crm.bluefishsolution.tech` with your real domain before deploy.
 # Caddy auto-provisions a Let's Encrypt cert on first request.
 
-crm.bluefishsolution.com {
+crm.bluefishsolution.tech {
 	encode zstd gzip
 
 	# API — everything under /api goes to the Nest container (port 4000).

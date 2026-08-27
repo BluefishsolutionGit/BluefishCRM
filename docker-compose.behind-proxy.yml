@@ -1,0 +1,60 @@
+# Variant of the production stack for a VPS that ALREADY has a reverse
+# proxy handling 80/443 for other subdomains (e.g. xxx1.bluefishsolution.tech,
+# xxx2.bluefishsolution.tech).
+#
+# Differences vs docker-compose.prod.yml:
+#   - No Caddy container — you'll add a vhost to the existing proxy instead
+#   - `api` and `web` bind to 127.0.0.1 only (never exposed publicly)
+#   - The existing proxy talks to those ports to reach the CRM
+#
+# Run:  docker compose -f docker-compose.behind-proxy.yml up -d --build
+#
+# Ports you need in your existing proxy config:
+#   crm.bluefishsolution.tech          → 127.0.0.1:8080  (SPA / Nginx container)
+#   crm.bluefishsolution.tech/api/*    → 127.0.0.1:4000  (Nest container)
+# Sample vhost snippets: docs/DEPLOY.md § 4.
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER:     ${POSTGRES_USER:-bluefish}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB:       ${POSTGRES_DB:-bluefish_crm}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backups:/backups
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB']
+      interval: 10s
+      retries: 6
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-bluefish}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-bluefish_crm}
+      NODE_ENV: production
+    ports:
+      # 127.0.0.1 binding = internal only; the host's existing reverse
+      # proxy talks to this. Change 4000 if you need a different host port.
+      - '127.0.0.1:4000:4000'
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        VITE_API_BASE: ${VITE_API_BASE:-/api}
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:8080:80'
+
+volumes:
+  pgdata:

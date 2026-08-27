@@ -86,7 +86,7 @@ the full sync flow end-to-end (simulated events + attendees + RSVP + recurrence)
 INTEGRATION_ENC_KEY=<32-byte base64>
 
 # Shown as the copy-paste webhook URL in Settings → Inbox channels
-PUBLIC_API_URL=https://crm.bluefishsolution.com/api
+PUBLIC_API_URL=https://crm.bluefishsolution.tech/api
 
 # Business-card scan uses Anthropic vision when set (falls back to a deterministic mock)
 ANTHROPIC_API_KEY=<sk-ant-...>

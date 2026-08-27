@@ -4,8 +4,14 @@ Step-by-step for a **Hostinger VPS** (or any Docker-capable host) that already
 has other Docker workloads running. Everything below is written so a fresh ops
 engineer can follow it top-to-bottom without prior context.
 
-> **Recommended stack:** Docker + Docker Compose + Caddy reverse proxy + a
-> **dedicated Postgres container** for the CRM. Total footprint ≈ 400 MB RAM,
+> **Target domain:** `crm.bluefishsolution.tech`
+> Other subdomains on this VPS: `xxx1.bluefishsolution.tech`, `xxx2.bluefishsolution.tech`, …
+> — port 80/443 is already claimed by whichever reverse proxy fronts those, so the
+> CRM must sit **behind** that existing proxy (see § 4). Use
+> `docker-compose.behind-proxy.yml` for this layout.
+>
+> **Recommended stack:** Docker + Docker Compose + a **dedicated Postgres container**
+> for the CRM, fronted by your existing reverse proxy. Total footprint ≈ 400 MB RAM,
 > 2 GB disk once seeded.
 
 ---
@@ -70,7 +76,7 @@ sudo ufw status              # (or your equivalent) — 80/443 open
 ### DNS
 Point the CRM subdomain at the VPS **A** record:
 ```
-crm.bluefishsolution.com   A   <vps-public-ipv4>
+crm.bluefishsolution.tech   A   <vps-public-ipv4>
 ```
 TTL 5 min for the cutover; you can raise it after.
 
@@ -103,54 +109,215 @@ nano .env
 | `JWT_SECRET`            | `openssl rand -base64 48`                                    |
 | `REFRESH_TOKEN_SECRET`  | `openssl rand -base64 48`                                    |
 | `INTEGRATION_ENC_KEY`   | `openssl rand -base64 32` — **encrypts Inbox channel secrets** |
-| `CORS_ORIGINS`          | Your public HTTPS URL, e.g. `https://crm.bluefishsolution.com` |
-| `PUBLIC_API_URL`        | `https://crm.bluefishsolution.com/api` (same origin as SPA)  |
+| `CORS_ORIGINS`          | Your public HTTPS URL, e.g. `https://crm.bluefishsolution.tech` |
+| `PUBLIC_API_URL`        | `https://crm.bluefishsolution.tech/api` (same origin as SPA)  |
 
-Update the Caddyfile with your real domain:
-
-```bash
-sed -i 's/crm\.bluefishsolution\.com/YOUR-DOMAIN.example.com/' Caddyfile
-```
+The domain is already `crm.bluefishsolution.tech` in the shipped configs.
+If you deploy behind an existing reverse proxy (see § 4 — the default for
+this VPS since other subdomains already use it), you can ignore the
+`Caddyfile` entirely; it's only used when the CRM stack owns 80/443.
 
 ---
 
-## 4. Reverse proxy: same-host or shared with existing Docker?
+## 4. Reverse proxy
 
-Two layouts depending on what's already on the VPS.
+Your VPS already hosts `xxx1.bluefishsolution.tech`, `xxx2.bluefishsolution.tech`,
+etc. — port 80/443 is already claimed by an existing reverse proxy on the
+host. **The CRM has to sit behind that existing proxy**; running a second
+one (its own Caddy) would fight for the same ports.
 
-### Layout A — CRM owns 80/443 (recommended if the VPS is new-ish)
-Use the `caddy` service in `docker-compose.prod.yml` as-is. Caddy will
-auto-obtain a Let's Encrypt certificate on first request.
+### The layout
 
-### Layout B — an existing reverse proxy already binds 80/443
-Remove the `caddy` service from `docker-compose.prod.yml` and instead expose
-`web` on a host port (say `127.0.0.1:8080`) and `api` on `127.0.0.1:4000`.
-Then add a vhost to your existing Nginx/Caddy/Traefik that:
+```
+                 ┌────────────────────────────────────────┐
+                 │  Existing reverse proxy on 80/443     │
+                 │  (Caddy / Nginx / Traefik / NPM...)   │
+                 └──┬───────────────┬─────────────────┬──┘
+                    │ xxx1.blue…    │ xxx2.blue…      │ crm.bluefishsolution.tech
+                    ▼               ▼                 ▼
+        (existing app 1)   (existing app 2)   127.0.0.1:8080  ← web (Nginx SPA)
+                                              127.0.0.1:4000  ← api (Nest)
+                                                     │
+                                                     ▼
+                                              postgres (compose network only)
+```
 
-- routes `/api/*` → `http://127.0.0.1:4000`
-- routes everything else → `http://127.0.0.1:8080`
-- terminates TLS with your existing cert
+### Use the "behind-proxy" compose file
 
-The same-origin + same-domain layout is what `PUBLIC_API_URL` and
-`VITE_API_BASE=/api` assume. If you split the API onto its own subdomain,
-set `VITE_API_BASE=https://api.YOUR-DOMAIN` in `.env` **before building**,
-and add the API subdomain to `CORS_ORIGINS` (still points to the SPA).
+`docker-compose.behind-proxy.yml` omits the CRM's own Caddy and binds
+`web` + `api` to `127.0.0.1` on the host — reachable only by the existing
+proxy, never from the public internet.
+
+```bash
+docker compose -f docker-compose.behind-proxy.yml up -d --build
+```
+
+### Add a vhost to your existing proxy
+
+Pick the snippet that matches whatever proxy you already run.
+
+<details>
+<summary><b>Caddy</b> — paste into the existing Caddyfile</summary>
+
+```caddy
+crm.bluefishsolution.tech {
+	encode zstd gzip
+
+	handle_path /api* {
+		reverse_proxy 127.0.0.1:4000
+	}
+	reverse_proxy 127.0.0.1:8080
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options    "nosniff"
+		Referrer-Policy           "strict-origin-when-cross-origin"
+		Permissions-Policy        "geolocation=(self), microphone=(self), camera=(self)"
+		-Server
+	}
+}
+```
+Then reload: `docker exec <caddy-container> caddy reload --config /etc/caddy/Caddyfile`
+(or `systemctl reload caddy` on bare-metal Caddy).
+</details>
+
+<details>
+<summary><b>Nginx</b> — new file under <code>/etc/nginx/sites-available/</code></summary>
+
+```nginx
+server {
+    listen 80;
+    server_name crm.bluefishsolution.tech;
+    location / { return 301 https://$host$request_uri; }
+}
+
+server {
+    listen 443 ssl http2;
+    server_name crm.bluefishsolution.tech;
+
+    # Certbot managed — see § 4.1
+    ssl_certificate     /etc/letsencrypt/live/crm.bluefishsolution.tech/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/crm.bluefishsolution.tech/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options    "nosniff" always;
+    add_header Referrer-Policy           "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy        "geolocation=(self), microphone=(self), camera=(self)" always;
+
+    client_max_body_size 25M;      # allow document uploads
+
+    # API — strip the /api prefix before forwarding
+    location /api/ {
+        proxy_pass http://127.0.0.1:4000/api/;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # SPA
+    location / {
+        proxy_pass http://127.0.0.1:8080/;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+Enable and reload:
+```bash
+sudo ln -s /etc/nginx/sites-available/crm.conf /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+```
+</details>
+
+<details>
+<summary><b>Traefik</b> — add labels via a compose override</summary>
+
+Create `docker-compose.traefik.yml` next to the main compose file:
+
+```yaml
+services:
+  web:
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.crm-web.rule=Host(`crm.bluefishsolution.tech`)
+      - traefik.http.routers.crm-web.entrypoints=websecure
+      - traefik.http.routers.crm-web.tls.certresolver=le
+      - traefik.http.services.crm-web.loadbalancer.server.port=80
+    networks: [ crm, traefik ]
+
+  api:
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.crm-api.rule=Host(`crm.bluefishsolution.tech`) && PathPrefix(`/api`)
+      - traefik.http.routers.crm-api.entrypoints=websecure
+      - traefik.http.routers.crm-api.tls.certresolver=le
+      - traefik.http.services.crm-api.loadbalancer.server.port=4000
+      - traefik.http.routers.crm-api.priority=100
+    networks: [ crm, traefik ]
+
+networks:
+  traefik:
+    external: true             # the network Traefik already uses
+  crm:
+```
+Bring up: `docker compose -f docker-compose.behind-proxy.yml -f docker-compose.traefik.yml up -d`.
+Remove the `ports:` from web + api in `docker-compose.behind-proxy.yml` when using Traefik — the traffic flows over the shared Docker network, not the host.
+</details>
+
+<details>
+<summary><b>Nginx Proxy Manager</b> (GUI) — quick clicks</summary>
+
+1. Hosts → Proxy Hosts → **Add Proxy Host**.
+2. Domain: `crm.bluefishsolution.tech`. Forward Hostname/IP: `127.0.0.1`. Port: `8080`.
+3. **Custom locations** tab → add `/api` → forward to `127.0.0.1:4000` (same scheme).
+4. **SSL** tab → request a new Let's Encrypt cert, force SSL, HSTS on.
+5. **Advanced** tab → `client_max_body_size 25M;` (uploads).
+</details>
+
+### 4.1 TLS for the CRM subdomain
+
+- **Caddy / Traefik / NPM** — cert issued automatically on first request (they own ACME).
+- **Nginx** — run `sudo certbot --nginx -d crm.bluefishsolution.tech` once; certbot writes the
+  `ssl_certificate*` paths above and installs a renewal cron.
+
+### 4.2 Different-origin API (rare)
+
+The default assumes `crm.bluefishsolution.tech` serves both the SPA and `/api/*`.
+If you'd rather split the API onto `api-crm.bluefishsolution.tech`:
+
+- Build the SPA with `VITE_API_BASE=https://api-crm.bluefishsolution.tech` (Vite inlines
+  this at build time — must be set before `docker compose build`).
+- Add `api-crm.bluefishsolution.tech` as a second vhost on your reverse proxy pointing at `127.0.0.1:4000`.
+- Set `CORS_ORIGINS=https://crm.bluefishsolution.tech` in `.env` — it stays the SPA origin.
 
 ---
 
 ## 5. First deploy
 
+Pick the compose file that matches your reverse-proxy layout:
+
+| Situation                                                              | Compose file                            |
+|------------------------------------------------------------------------|-----------------------------------------|
+| VPS already has a proxy handling other subdomains (your case) ✅       | `docker-compose.behind-proxy.yml`       |
+| Fresh VPS, CRM is the only public service                              | `docker-compose.prod.yml` (with Caddy)  |
+
+Replace `<compose-file>` below with the one you picked:
+
 ```bash
 # Build all three images (postgres pulls, api + web build locally).
-docker compose -f docker-compose.prod.yml build
+docker compose -f <compose-file> build
 
 # Bring the stack up in the background. The api container's
 # ENTRYPOINT runs `prisma migrate deploy` before serving — no
 # separate migration step needed.
-docker compose -f docker-compose.prod.yml up -d
+docker compose -f <compose-file> up -d
 
 # Watch it come up.
-docker compose -f docker-compose.prod.yml logs -f api web
+docker compose -f <compose-file> logs -f api web
 ```
 
 Expected log lines from `api` on a clean start:
@@ -169,7 +336,7 @@ For a fresh install you'll want the initial roles + admin user in place.
 The full demo seed also drops in a sample dataset:
 
 ```bash
-docker compose -f docker-compose.prod.yml exec api npx tsx apps/api/prisma/seed.ts
+docker compose -f <compose-file> exec api npx tsx apps/api/prisma/seed.ts
 ```
 
 **Change the demo passwords immediately** — they all ship as `demo1234`
@@ -185,22 +352,33 @@ Run each check from the VPS or a laptop with `curl`:
 
 ```bash
 # 1. Liveness
-curl -sf https://crm.bluefishsolution.com/api/health && echo OK
+curl -sf https://crm.bluefishsolution.tech/api/health && echo OK
 
 # 2. Detailed health — DB ping, memory, uptime
-curl -s  https://crm.bluefishsolution.com/api/health/detailed | jq .
+curl -s  https://crm.bluefishsolution.tech/api/health/detailed | jq .
 
 # 3. Login page loads
-curl -sI https://crm.bluefishsolution.com/ | head -3
+curl -sI https://crm.bluefishsolution.tech/ | head -3
 ```
 
 Then in the browser:
-- Open `https://crm.bluefishsolution.com/`, sign in with the admin creds
+- Open `https://crm.bluefishsolution.tech/`, sign in with the admin creds
 - Go to **Settings → Integrations → Inbox channels** — the four channel
   cards should render as **Not configured** (or **Connected** if you set
   env fallbacks)
 - Create a test opportunity in Pipeline
 - Open `/m` on a phone → PWA install prompt should appear
+
+**Also verify from the VPS the internal ports are only reachable locally**
+(sanity check — the CRM containers must NOT be exposed publicly):
+
+```bash
+# Should succeed on the VPS itself
+curl -sf http://127.0.0.1:4000/api/health && echo INTERNAL-OK
+
+# Should FAIL from outside the VPS — otherwise your firewall is too open
+curl -sf --max-time 3 http://<vps-public-ip>:4000/api/health && echo BAD || echo GOOD
+```
 
 ---
 
@@ -219,7 +397,7 @@ For each channel in **Settings → Integrations → Inbox channels**, click
 Website form snippet for the marketing site:
 
 ```javascript
-await fetch('https://crm.bluefishsolution.com/api/webhooks/inbox/website', {
+await fetch('https://crm.bluefishsolution.tech/api/webhooks/inbox/website', {
   method: 'POST',
   headers: {
     'content-type': 'application/json',
@@ -240,9 +418,14 @@ await fetch('https://crm.bluefishsolution.com/api/webhooks/inbox/website', {
 **Nightly `pg_dump` cron on the host** (writes to the `./backups` volume
 already mounted into the postgres container):
 
+The container name Docker gives to your Postgres depends on the compose
+file you're using; find it with `docker compose -f <compose-file> ps`.
+Replace `<pg-container>` below with whatever shows up (typically
+`bluefish-crm-postgres-1`).
+
 ```bash
 # /etc/cron.d/bluefish-backup
-0 2 * * * root  docker exec bluefish-crm-postgres-1 \
+0 2 * * * root  docker exec <pg-container> \
   sh -c 'pg_dump -U bluefish bluefish_crm | gzip > /backups/crm-$(date +\%F).sql.gz'
 
 # Keep 30 days
@@ -253,7 +436,7 @@ Test the restore path once before you rely on it:
 
 ```bash
 gunzip -c backups/crm-2026-08-27.sql.gz | \
-  docker exec -i bluefish-crm-postgres-1 psql -U bluefish -d bluefish_crm
+  docker exec -i <pg-container> psql -U bluefish -d bluefish_crm
 ```
 
 Ship the backups off-box (S3, Backblaze, or `rclone` to Google Drive).
@@ -268,11 +451,11 @@ Zero-downtime for the SPA; the API blip is ~5 seconds.
 cd /opt/bluefish-crm
 git pull
 
-# Rebuild changed images
-docker compose -f docker-compose.prod.yml build api web
+# Rebuild changed images (replace <compose-file> with the one you use)
+docker compose -f <compose-file> build api web
 
 # Rolling restart. Postgres stays up; api migrates on its own.
-docker compose -f docker-compose.prod.yml up -d api web
+docker compose -f <compose-file> up -d api web
 ```
 
 If a migration fails on the new api, the container restart-loops. Check
@@ -280,8 +463,8 @@ If a migration fails on the new api, the container restart-loops. Check
 
 ```bash
 git checkout <previous-good-sha>
-docker compose -f docker-compose.prod.yml build api
-docker compose -f docker-compose.prod.yml up -d api
+docker compose -f <compose-file> build api
+docker compose -f <compose-file> up -d api
 ```
 
 ---
@@ -316,6 +499,9 @@ docker compose -f docker-compose.prod.yml logs -f --tail=100 api
 | "voice-to-text not supported"                   | You're on Firefox or HTTP. Web Speech requires Chromium/Safari on HTTPS               |
 | Web push failing                                | VAPID keys mismatch — regenerate ONE pair and set BOTH env + the frontend rebuild     |
 | Inbox channels show "dev fallback" warning      | `INTEGRATION_ENC_KEY` not set — set it, `docker compose restart api`                  |
+| `docker compose up` fails with "port 80 in use"  | You picked `docker-compose.prod.yml` but VPS already runs a proxy — switch to `docker-compose.behind-proxy.yml` (see § 4) |
+| 502 from the existing proxy toward CRM           | `docker compose ps` — is `api` / `web` up? Then `curl 127.0.0.1:8080` on the VPS. If OK, the vhost paths in the proxy are wrong. |
+| `crm.bluefishsolution.tech` doesn't resolve      | DNS A record missing or TTL hasn't propagated — `dig +short crm.bluefishsolution.tech` should return the VPS IP |
 
 ---
 
