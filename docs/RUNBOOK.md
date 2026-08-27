@@ -123,15 +123,29 @@ Purpose: give on-call engineers the fastest possible path from "something's wron
 
 ## Deploy procedure
 
+**First-time install:** see `docs/DEPLOY.md` — step-by-step for a Hostinger VPS or any Docker host, including the "dedicated vs shared Postgres" decision, Caddy TLS, backups.
+
+**Routine update (Docker deployment):**
+
+```bash
+cd /opt/bluefish-crm
+git pull
+docker compose -f docker-compose.prod.yml build api web
+docker compose -f docker-compose.prod.yml up -d api web    # api auto-runs prisma migrate deploy
+```
+
+Watch `/api/health/detailed` for 60s, then `bluefish_http_errors_total` for 5 min.
+
+**Non-Docker deploy (bare-metal, legacy):**
+
 1. `git pull` on the API host.
 2. `npm ci --workspaces` at the repo root.
 3. `npm --workspace @bluefish/api run build`.
 4. `npm --workspace @bluefish/api run prisma:migrate:deploy` (never `db push` in prod).
 5. `systemctl restart bluefish-api` (or `docker compose up -d --build bluefish-api`).
-6. Watch `/api/health/detailed` for 60s, then `bluefish_http_errors_total` for 5 min.
-7. On the web side: `npm --workspace @bluefish/web run build` → deploy `dist/` to the web host (nginx or Hostinger static).
+6. On the web side: `npm --workspace @bluefish/web run build` → deploy `dist/` to the web host (nginx or Hostinger static).
 
-Rollback: `git checkout <previous-tag>` and repeat steps 2-5. If a migration was applied, run the manual `down.sql` snippet stored in `apps/api/prisma/migrations/<timestamp>_*/rollback.sql` (create this file per migration going forward).
+**Rollback:** `git checkout <previous-tag>` and rebuild. If a migration was applied, run the manual `down.sql` snippet stored in `apps/api/prisma/migrations/<timestamp>_*/rollback.sql` (create this file per migration going forward).
 
 ## Log locations
 

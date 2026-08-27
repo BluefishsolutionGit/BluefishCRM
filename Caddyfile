@@ -1,0 +1,30 @@
+# Caddy 2 config for Bluefish CRM.
+# Replace `crm.bluefishsolution.com` with your real domain before deploy.
+# Caddy auto-provisions a Let's Encrypt cert on first request.
+
+crm.bluefishsolution.com {
+	encode zstd gzip
+
+	# API — everything under /api goes to the Nest container (port 4000).
+	# Trailing slash matters: `/api/*` includes /api itself.
+	handle_path /api* {
+		reverse_proxy api:4000
+	}
+
+	# Everything else = the SPA (Nginx container).
+	reverse_proxy web:80
+
+	# Common hardening.
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options    "nosniff"
+		Referrer-Policy           "strict-origin-when-cross-origin"
+		Permissions-Policy        "geolocation=(self), microphone=(self), camera=(self)"
+		-Server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

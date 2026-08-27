@@ -111,6 +111,8 @@ See `plan.md` for the full 28-sprint plan.
 - ✅ **Executive Dashboard filters** — service chips + salesperson dropdown, matching the Pipeline UX
 - ✅ **Mobile Home dashboard** — role-aware scope selector (Overall / per-service / any rep for managers)
 - See `docs/USER-GUIDE.md` and `docs/ADMIN-GUIDE.md` for feature-by-feature docs
+- **Production deploy on Hostinger VPS (or any Docker host):** `docs/DEPLOY.md` — step-by-step,
+  covers dedicated vs shared Postgres, Caddy TLS, backups, updates, rollback
 
 ## Microsoft 365 sync — feature summary
 

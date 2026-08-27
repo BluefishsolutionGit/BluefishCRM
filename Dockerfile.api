@@ -1,0 +1,45 @@
+# ─── build stage ─────────────────────────────────────────────────────
+FROM node:20-alpine AS build
+WORKDIR /repo
+
+# Copy workspace descriptor + all package manifests first so npm ci can
+# leverage Docker's layer cache when only source changes.
+COPY package.json package-lock.json ./
+COPY apps/api/package.json apps/api/package.json
+COPY apps/web/package.json apps/web/package.json
+COPY packages/shared/package.json packages/shared/package.json
+
+RUN npm ci --workspaces --include-workspace-root
+
+# Full source (skip node_modules via .dockerignore).
+COPY packages/shared packages/shared
+COPY apps/api apps/api
+
+# Prisma client depends on the schema, generate then compile TS.
+RUN npx --workspace @bluefish/api prisma generate
+RUN npm run build --workspace @bluefish/shared
+RUN npm run build --workspace @bluefish/api
+
+
+# ─── runtime stage ───────────────────────────────────────────────────
+FROM node:20-alpine AS runtime
+WORKDIR /app
+ENV NODE_ENV=production
+
+# Copy only what's needed to run — pruning dev deps saves ~200MB.
+COPY --from=build /repo/package.json /repo/package-lock.json ./
+COPY --from=build /repo/apps/api/package.json apps/api/package.json
+COPY --from=build /repo/packages/shared/package.json packages/shared/package.json
+RUN npm ci --omit=dev --workspaces --include-workspace-root && npm cache clean --force
+
+COPY --from=build /repo/apps/api/dist                            apps/api/dist
+COPY --from=build /repo/apps/api/prisma                          apps/api/prisma
+COPY --from=build /repo/packages/shared/dist                     packages/shared/dist
+COPY --from=build /repo/node_modules/.prisma                     node_modules/.prisma
+COPY --from=build /repo/node_modules/@prisma                     node_modules/@prisma
+
+EXPOSE 4000
+
+# `prisma migrate deploy` is idempotent — safe to run on every start so a
+# fresh deploy self-heals its schema without a separate `docker exec`.
+CMD ["sh", "-c", "npx prisma migrate deploy --schema=apps/api/prisma/schema.prisma && node apps/api/dist/main.js"]

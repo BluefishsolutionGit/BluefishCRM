@@ -1,0 +1,33 @@
+**/node_modules
+**/dist
+**/.next
+**/.cache
+**/.turbo
+**/.vite
+
+# git / IDE
+.git
+.gitignore
+.idea
+.vscode
+*.log
+
+# tests + fixtures
+**/coverage
+**/*.test.ts
+**/*.spec.ts
+**/__tests__
+
+# docs / assets we never bake into images
+docs
+requirements
+*.md
+*.png
+*.csv
+*.tar
+*.zip
+
+# host-side env files — production env comes from docker-compose
+.env
+.env.*
+!.env.example
