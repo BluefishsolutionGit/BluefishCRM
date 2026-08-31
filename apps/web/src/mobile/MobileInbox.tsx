@@ -11,7 +11,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import type { CustomerDto, InboxChannel, InboxMessageDto, InboxThreadDto, UserDto } from '@bluefish/shared'
+import type { CustomerDto, InboxChannel, InboxMessageDto, InboxThreadDto } from '@bluefish/shared'
 import { api, ApiError } from '../lib/api'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/ToastContext'
@@ -28,7 +28,6 @@ const CHANNEL_STYLE: Record<InboxChannel, { bg: string; fg: string; short: strin
 const CHANNELS: InboxChannel[] = ['LINE', 'LINE OA', 'Messenger', 'WhatsApp', 'Email', 'Website']
 
 const backBtn: CSSProperties = { fontSize: 14, color: '#2A6FDB', cursor: 'pointer' }
-const card: CSSProperties = { background: '#fff', border: '1px solid #E5E7F0', borderRadius: 13, padding: '14px 16px' }
 const inp: CSSProperties = { width: '100%', border: '1px solid #D0D0DF', borderRadius: 10, padding: '10px 12px', fontSize: 13.5, outline: 'none', boxSizing: 'border-box' }
 
 // ═══════════════════════════════════════════════════════════════════════

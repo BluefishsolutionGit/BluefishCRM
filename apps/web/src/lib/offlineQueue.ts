@@ -135,7 +135,7 @@ async function replay(draft: OfflineDraft): Promise<void> {
       return
     case 'activity.complete': {
       const p = draft.payload as DraftPayloads['activity.complete']
-      await api.updateActivity(p.activityId, { status: 'Completed' })
+      await api.updateActivity(p.activityId, { status: 'completed' })
       return
     }
     case 'lead':

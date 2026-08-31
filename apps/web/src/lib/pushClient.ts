@@ -42,14 +42,16 @@ export async function subscribePush(): Promise<{ ok: true } | { ok: false; reaso
   if (perm !== 'granted') return { ok: false, reason: 'Notification permission was not granted.' }
 
   // VAPID key
-  const { publicKey } = await api.pushVapidKey().catch(() => ({ publicKey: null }))
+  const { publicKey } = await api.pushPublicKey().catch(() => ({ publicKey: null }))
   if (!publicKey) return { ok: false, reason: 'Server VAPID key not configured.' }
 
   const reg = await navigator.serviceWorker.ready
   const existing = await reg.pushManager.getSubscription()
   const sub = existing ?? await reg.pushManager.subscribe({
     userVisibleOnly: true,
-    applicationServerKey: urlBase64ToUint8Array(publicKey),
+    // Cast: TS 5+ requires the Uint8Array's buffer to be ArrayBuffer (not
+    // ArrayBufferLike). Ours always is — runtime cost zero.
+    applicationServerKey: urlBase64ToUint8Array(publicKey) as unknown as BufferSource,
   })
 
   const raw = sub.toJSON() as { endpoint?: string; keys?: { p256dh?: string; auth?: string } }
@@ -59,8 +61,7 @@ export async function subscribePush(): Promise<{ ok: true } | { ok: false; reaso
   try {
     await api.pushSubscribe({
       endpoint: raw.endpoint,
-      p256dh: raw.keys.p256dh,
-      auth: raw.keys.auth,
+      keys: { p256dh: raw.keys.p256dh, auth: raw.keys.auth },
       userAgent: navigator.userAgent,
     })
     return { ok: true }

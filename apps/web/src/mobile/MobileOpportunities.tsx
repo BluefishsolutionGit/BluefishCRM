@@ -244,7 +244,7 @@ function KanbanCards({ filtered, grouped, activeStage, setActiveStage, scrollerR
 
       {/* Scroll-snap horizontal row — each column takes 100% of the shell width */}
       <div
-        ref={scrollerRef}
+        ref={scrollerRef as React.RefObject<HTMLDivElement>}
         onScroll={onScroll}
         style={{
           display: 'flex',

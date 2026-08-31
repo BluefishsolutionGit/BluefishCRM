@@ -416,7 +416,7 @@ export function MobileOpportunityDetail() {
     const patch: Parameters<typeof api.updateOpportunity>[1] = {}
     if (editing === 'value') patch.value = draftValue
     if (editing === 'probability') patch.probability = draftProb
-    if (editing === 'closeDate') patch.closeDate = draftCloseDate ? new Date(draftCloseDate).toISOString() : null
+    if (editing === 'closeDate') patch.closeDate = draftCloseDate ? new Date(draftCloseDate).toISOString() : undefined
     if (editing === 'notes') patch.notes = draftNotes
     try {
       const updated = await api.updateOpportunity(o.id, patch)

@@ -114,7 +114,7 @@ export default function Documents() {
         if (cnt === 0) continue
         items.push({ key: s, label: s, count: cnt, tone: SERVICE_STYLE[s], onPick: () => setPick({ view, value: s } as SelectionKey) })
       }
-      if (noSvc > 0) items.push({ key: '__nosvc', label: 'No service tag', count: noSvc, tone: { bg: '#F2F3F9', fg: '#8888A0' }, onPick: () => setPick({ view, value: '__nosvc' } as SelectionKey) })
+      if (noSvc > 0) items.push({ key: '__nosvc', label: 'No service tag', count: noSvc, tone: { bg: '#F2F3F9', fg: '#8888A0' }, onPick: () => setPick({ view, value: '__nosvc' } as unknown as SelectionKey) })
     }
     return items
   }, [documents, view, availableServices])

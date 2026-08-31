@@ -489,13 +489,6 @@ export const api = {
     request<void>(`/notifications/${encodeURIComponent(key)}/read`, { method: 'POST' }),
   markAllNotificationsRead: () =>
     request<void>('/notifications/read-all', { method: 'POST' }),
-  pushVapidKey: () => request<{ publicKey: string | null }>('/notifications/vapid-public-key'),
-  pushSubscribe: (data: { endpoint: string; p256dh: string; auth: string; userAgent?: string }) =>
-    request<void>('/notifications/subscribe', { method: 'POST', body: JSON.stringify(data) }),
-  pushUnsubscribe: (endpoint: string) =>
-    request<void>('/notifications/subscribe', { method: 'DELETE', body: JSON.stringify({ endpoint }) }),
-  pushSendTest: () => request<{ ok: number; gone: number; failed: number }>('/notifications/subscribe/test', { method: 'POST' }),
-
   // ─────── WebAuthn ───────
   webauthnRegisterOptions: () => request<import('@simplewebauthn/browser').PublicKeyCredentialCreationOptionsJSON>('/auth/webauthn/register/options', { method: 'POST', body: '{}' }),
   webauthnRegisterVerify: (data: { response: unknown; deviceLabel?: string }) =>

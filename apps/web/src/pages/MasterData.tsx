@@ -5,7 +5,6 @@ import type {
 } from '@bluefish/shared'
 import { api, ApiError } from '../lib/api'
 import { useAuth } from '../lib/AuthContext'
-import { useToast } from '../lib/ToastContext'
 
 type MasterTab = 'industries' | 'products' | 'contracts'
 
