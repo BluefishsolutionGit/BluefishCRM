@@ -2,6 +2,12 @@
 FROM node:20-alpine AS build
 WORKDIR /repo
 
+# Prisma's schema/query engines need libssl at runtime; Alpine ships
+# openssl-dev but not always libssl3 on the slim node image. Install
+# it explicitly so `prisma generate` doesn't fall back to the wrong
+# binary target.
+RUN apk add --no-cache openssl
+
 # Copy workspace descriptor + all package manifests first so npm ci can
 # leverage Docker's layer cache when only source changes.
 COPY package.json package-lock.json ./
@@ -25,6 +31,9 @@ RUN npm run build --workspace @bluefish/api
 FROM node:20-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
+
+# openssl is required by the Prisma query & migration engines at runtime.
+RUN apk add --no-cache openssl
 
 # Copy only what's needed to run — pruning dev deps saves ~200MB.
 COPY --from=build /repo/package.json /repo/package-lock.json ./

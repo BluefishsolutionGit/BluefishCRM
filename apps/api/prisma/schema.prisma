@@ -1,5 +1,10 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // "native" covers local dev on macOS/glibc-linux; the musl target is
+  // what the Alpine-based Docker runtime uses. Without the second target
+  // Prisma downloads only the "linux-musl" (openssl 1.1) binary, which
+  // fails at runtime on modern Alpine (openssl 3).
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
