@@ -234,7 +234,28 @@ async function main() {
     { name: 'คุณประเสริฐ วงศ์สว่าง', companyName: 'Hatyai Municipality (RFP)', source: 'e-GP Tender', ownerKey: null, status: 'AI Sourced', estValue: 3800000, email: 'prasert@hatyai.go.th', serviceOrProduct: '3D' },
     { name: 'คุณชลธิชา แสงทอง', companyName: 'Rimping Retail Group', source: 'Website', ownerKey: 'PW', status: 'New', estValue: 480000 },
   ]
-  const { scoreLead } = await import('../src/leads/lead-scoring')
+  // Inlined from apps/api/src/leads/lead-scoring.ts — self-contained so
+  // the seed can run in the production runtime image (which only carries
+  // apps/api/dist, not src). Keep this in sync manually if the scoring
+  // rules ever change.
+  const SOURCE_SCORE: Record<string, number> = {
+    'e-GP Tender': 30, 'Referral': 25, 'LINE OA': 20,
+    'Facebook Ads': 15, 'Website': 10, 'Email': 8,
+  }
+  const scoreLead = (input: { source: string; email?: string | null; phone?: string | null; estValue?: number | null; companyName?: string | null }): number => {
+    let s = 0
+    s += SOURCE_SCORE[input.source] ?? 10
+    if (input.email && input.email.length > 0) s += 15
+    if (input.phone && input.phone.length > 0) s += 15
+    if (input.estValue) {
+      if (input.estValue >= 5_000_000) s += 25
+      else if (input.estValue >= 1_000_000) s += 20
+      else if (input.estValue >= 500_000) s += 12
+      else s += 5
+    }
+    if (input.companyName && input.companyName.length >= 10) s += 5
+    return Math.max(0, Math.min(100, s))
+  }
   for (const l of leadRows) {
     const ownerId = l.ownerKey ? owners[l.ownerKey] : null
     await prisma.lead.upsert({
