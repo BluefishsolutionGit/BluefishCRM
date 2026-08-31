@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type FormEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import type { CustomerDto, DocumentCategory, DocumentDto, ServiceLine } from '@bluefish/shared'
 import { DOCUMENT_CATEGORIES, SERVICE_LINES } from '@bluefish/shared'
 import DocumentViewer, { type ViewableVersion } from '../components/DocumentViewer'
@@ -387,13 +387,24 @@ function DocGrid({ rows, loading, selected, setSelected, canWrite, del, onView }
       {rows.map((d) => {
         const cat = CAT_STYLE[d.category] ?? CAT_STYLE.other
         const cv = d.currentVersion
+        const openPrimary = (e: ReactMouseEvent) => {
+          e.stopPropagation()
+          if (d.kind === 'link' && d.url) { window.open(d.url, '_blank', 'noopener'); return }
+          if (cv) onView({ id: cv.id, filename: cv.filename, mimeType: cv.mimeType, sizeBytes: cv.sizeBytes, createdAt: cv.createdAt, uploadedByName: cv.uploadedByName, notes: cv.notes })
+          else setSelected(d)
+        }
+        const canOpenViewer = d.kind === 'file' && !!cv
         return (
           <div key={d.id} onClick={() => setSelected(d)} style={{ ...grid, padding: '12px 18px', borderBottom: '1px solid #F2F3F9', alignItems: 'center', cursor: 'pointer', background: selected?.id === d.id ? '#F7F8FC' : 'transparent' }}>
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0 }}>
               <svg viewBox="0 0 24 24" width="18" height="18" style={{ flex: 'none' }}><path d="M6.5 3h8l4 4v14h-12z M14 3v5h4.5" fill="none" stroke="#5C5C74" strokeWidth={1.7} strokeLinejoin="round" /></svg>
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', gap: 6, alignItems: 'center' }}>
-                  {d.name}
+                  <span
+                    onClick={openPrimary}
+                    title={canOpenViewer ? 'Open in viewer' : d.kind === 'link' ? 'Open link' : 'Show details'}
+                    style={{ color: '#2A6FDB', cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}
+                  >{d.name}</span>
                   {d.isCentral && <span style={{ background: '#F4F1FD', color: '#4A3AB8', fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 999, textTransform: 'uppercase' }}>central</span>}
                   {d.kind === 'link' && <span style={{ background: '#EEF0FA', color: '#4A3AB8', fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 999, textTransform: 'uppercase' }}>link</span>}
                 </div>

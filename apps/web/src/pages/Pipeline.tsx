@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type DragEvent, type FormEvent } from 'react'
-import type { CreateOpportunityDto, CustomerDto, ForecastDto, OpportunityDto, OpportunityStage, UserDto } from '@bluefish/shared'
+import type { CreateOpportunityDto, CustomerDto, ForecastDto, ManagerHintPriority, OpportunityDto, OpportunityStage, UserDto } from '@bluefish/shared'
 import { SERVICE_LINES } from '@bluefish/shared'
 import { api, ApiError } from '../lib/api'
 import { av } from '../lib/styleUtils'
 import { useToast } from '../lib/ToastContext'
 import { useAuth } from '../lib/AuthContext'
-import OpportunityDetailModal from '../components/OpportunityDetailModal'
+import OpportunityDetailModal, { MANAGER_HINT_STYLE } from '../components/OpportunityDetailModal'
 
 type View = 'kanban' | 'probability' | 'list' | 'forecast'
 
@@ -393,11 +393,7 @@ export default function Pipeline() {
                         {new Date(d.closeDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
                       </div>
                     )}
-                    {d.managerHint && (
-                      <div style={{ marginTop: 9, background: '#F4F1FD', borderRadius: 8, padding: '7px 9px', fontSize: 11, lineHeight: 1.45, color: '#4A3AB8', display: 'flex', gap: 6 }} title="Manager suggestion">
-                        <span>✦</span><span>{d.managerHint}</span>
-                      </div>
-                    )}
+                    {d.managerHint && <ManagerHintCardPill hint={d.managerHint} priority={d.managerHintPriority} />}
                   </div>
                 ))}
               </div>
@@ -1315,3 +1311,25 @@ function FormField({ label, hint, children }: { label: string; hint?: string; ch
 }
 
 const createBtn: CSSProperties = { background: '#2A6FDB', color: '#fff', border: 'none', borderRadius: 9, padding: '8px 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }
+
+// Card-sized manager-hint pill — colored by priority so the kanban scanner can
+// spot "urgent" cards without reading them. See MANAGER_HINT_STYLE in the modal.
+function ManagerHintCardPill({ hint, priority }: { hint: string; priority: ManagerHintPriority | null }) {
+  const tone = MANAGER_HINT_STYLE[priority ?? 'info']
+  return (
+    <div
+      title={`Manager suggestion (${tone.label})`}
+      style={{
+        marginTop: 9, background: tone.bg, border: `1px solid ${tone.border}`,
+        borderLeft: `3px solid ${tone.accent}`,
+        borderRadius: 8, padding: '6px 9px',
+        fontSize: 11, lineHeight: 1.45, color: tone.fg,
+        display: 'flex', gap: 6, alignItems: 'flex-start',
+      }}
+    >
+      <span style={{ fontSize: 12, lineHeight: 1 }}>{tone.icon}</span>
+      <span style={{ flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{hint}</span>
+      {priority === 'urgent' && <span style={{ fontSize: 9, fontWeight: 800, background: tone.accent, color: '#fff', padding: '0 5px', borderRadius: 999, letterSpacing: '.06em', textTransform: 'uppercase', flex: 'none' }}>NOW</span>}
+    </div>
+  )
+}

@@ -69,6 +69,7 @@ export class OpportunitiesService {
         decisionDate: input.decisionDate ? new Date(input.decisionDate) : null,
         serviceOrProduct: input.serviceOrProduct ?? null,
         competitor: input.competitor ?? null, managerHint: input.managerHint ?? null,
+        managerHintPriority: input.managerHintPriority ?? null,
         notes: input.notes ?? null,
       },
       include: { customer: true, owner: true, lines: { include: { product: true } } },
@@ -162,7 +163,8 @@ export class OpportunitiesService {
     value: number; probability: number
     closeDate: Date | null; bidDeadline: Date | null; decisionDate: Date | null
     serviceOrProduct: string | null; competitor: string | null
-    lostReason: string | null; wonReason: string | null; managerHint: string | null
+    lostReason: string | null; wonReason: string | null
+    managerHint: string | null; managerHintPriority: string | null
     notes: string | null
     createdAt: Date; updatedAt: Date
     customer: { name: string }; owner: { name: string }
@@ -179,7 +181,9 @@ export class OpportunitiesService {
       decisionDate: row.decisionDate?.toISOString() ?? null,
       serviceOrProduct: row.serviceOrProduct,
       competitor: row.competitor, lostReason: row.lostReason, wonReason: row.wonReason,
-      managerHint: row.managerHint, notes: row.notes,
+      managerHint: row.managerHint,
+      managerHintPriority: (row.managerHintPriority as OpportunityDto['managerHintPriority']) ?? null,
+      notes: row.notes,
       lines: row.lines.map((l): OpportunityLineDto => ({
         id: l.id, productId: l.productId,
         productCode: l.product.code, productName: l.product.name,

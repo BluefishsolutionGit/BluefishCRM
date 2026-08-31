@@ -189,7 +189,8 @@ model Opportunity {
   competitor   String?
   lostReason   String?
   wonReason    String?
-  managerHint  String?
+  managerHint         String?
+  managerHintPriority String?   // 'info' | 'watch' | 'urgent' — how the coach line should read
   notes        String?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt

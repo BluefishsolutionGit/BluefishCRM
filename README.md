@@ -110,6 +110,23 @@ See `plan.md` for the full 28-sprint plan.
   or attach a Contact to an existing Customer
 - ✅ **Executive Dashboard filters** — service chips + salesperson dropdown, matching the Pipeline UX
 - ✅ **Mobile Home dashboard** — role-aware scope selector (Overall / per-service / any rep for managers)
+- ✅ **Customer document portal** — the Documents tab on a Customer groups every file by
+  Project (opportunity) → Category (contract, quotation, invoice, …). Direct upload with a
+  project + category picker; inline viewer for PDFs/images
+- ✅ **Opportunity attachments** — the Pipeline deal modal has an **Attachments** tab that lists
+  every file linked to the deal, uploads new ones (auto-scoped to the deal *and* the customer),
+  and opens them in the shared viewer
+- ✅ **Manager suggestion priority** — the coach line on a deal now carries a tier
+  (`Info ✦` / `Watch ⚠` / `Urgent 🔥`). Callout color and pipeline card accent change with the
+  tier so triage is a glance, not a read
+- ✅ **Contact form redesign** — Customer → Contacts → Edit is a sectioned form
+  (Identity / Reach / Notes) with live avatar preview, primary-contact switch, iconed reach
+  fields (mail / phone / LINE), and inline email validation
+- ✅ **Expandable mobile contacts** — tap a contact card on the mobile customer detail to reveal
+  all fields (position, department, office phone, LINE ID, notes) with quick-call / mail / copy
+- ✅ **Cross-origin document viewer fix** — DocumentViewer fetches the file as a Bearer-auth'd
+  blob and renders via `blob:` URL, so PDFs open inline in Firefox/Safari without hitting the
+  API's `X-Frame-Options: SAMEORIGIN`
 - See `docs/USER-GUIDE.md` and `docs/ADMIN-GUIDE.md` for feature-by-feature docs
 - **Production deploy on Hostinger VPS (or any Docker host):** `docs/DEPLOY.md` — step-by-step,
   covers dedicated vs shared Postgres, Caddy TLS, backups, updates, rollback

@@ -110,15 +110,7 @@ export function MobileCustomerDetail() {
       {contacts.length > 0 && (
         <div style={card}>
           <div style={sectionLabel}>Contacts ({contacts.length})</div>
-          {contacts.slice(0, 6).map((ct) => (
-            <div key={ct.id} style={{ padding: '8px 0', borderTop: '1px solid #F1F1F5', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 700 }}>{ct.name}</div>
-                <div style={{ fontSize: 11, color: '#5C5C74' }}>{ct.role || '—'}{ct.email ? ` · ${ct.email}` : ''}</div>
-              </div>
-              {ct.phone && <a href={`tel:${ct.phone}`} style={{ fontSize: 11, color: '#2A6FDB', textDecoration: 'none' }}>Call</a>}
-            </div>
-          ))}
+          <ContactsList contacts={contacts} />
         </div>
       )}
 
@@ -152,6 +144,130 @@ export function MobileCustomerDetail() {
       {logOpen && <LogActivitySheet defaultCustomerId={id} onClose={() => setLogOpen(false)} onSaved={() => { setLogOpen(false); void reload() }} />}
     </div>
   )
+}
+
+// ── Contacts (tap-to-expand card with all fields + quick actions) ──────
+function ContactsList({ contacts }: { contacts: ContactDto[] }) {
+  const [showAll, setShowAll] = useState(false)
+  // Primary contacts first, then the rest — reps expect the "main" person on top.
+  const sorted = useMemo(() =>
+    [...contacts].sort((a, b) => (b.isPrimary ? 1 : 0) - (a.isPrimary ? 1 : 0)),
+    [contacts])
+  const shown = showAll ? sorted : sorted.slice(0, 6)
+  return (
+    <>
+      {shown.map((ct) => <ContactCard key={ct.id} c={ct} />)}
+      {contacts.length > 6 && !showAll && (
+        <div onClick={() => setShowAll(true)} style={{ padding: '10px 0 2px', textAlign: 'center', fontSize: 12, fontWeight: 700, color: '#2A6FDB', cursor: 'pointer' }}>
+          Show all {contacts.length} contacts
+        </div>
+      )}
+    </>
+  )
+}
+
+function ContactCard({ c }: { c: ContactDto }) {
+  const [open, setOpen] = useState(false)
+  const toast = useToast()
+  const title = [c.position, c.department].filter(Boolean).join(' · ') || c.role || ''
+  const summary = title || c.email || c.phone || '—'
+  const copy = async (text: string, label: string) => {
+    try { await navigator.clipboard.writeText(text); toast(`${label} copied`) }
+    catch { toast('Copy failed') }
+  }
+
+  return (
+    <div style={{ borderTop: '1px solid #F1F1F5' }}>
+      <div
+        onClick={() => setOpen((v) => !v)}
+        style={{ padding: '10px 0', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}
+      >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13.5, fontWeight: 700, color: '#1E1E30', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span>{c.name}</span>
+            {c.nickname && <span style={{ fontSize: 11, fontWeight: 600, color: '#8888A0' }}>({c.nickname})</span>}
+            {c.isPrimary && <span style={{ background: '#E4EDFC', color: '#2A6FDB', fontSize: 9.5, fontWeight: 800, padding: '1px 6px', borderRadius: 999, textTransform: 'uppercase', letterSpacing: '.05em' }}>primary</span>}
+          </div>
+          <div style={{ fontSize: 11, color: '#5C5C74', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{summary}</div>
+        </div>
+        {c.phone && (
+          <a
+            href={`tel:${c.phone}`}
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: 32, height: 32, borderRadius: '50%', background: '#EAF3EC', color: '#0E6E4E', display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none', flex: 'none' }}
+            title="Call"
+          >
+            <svg viewBox="0 0 24 24" width="15" height="15"><path d="M6.6 10.8a15.1 15.1 0 006.6 6.6l2.2-2.2c.3-.3.7-.4 1-.3a11 11 0 003.5.6c.6 0 1 .4 1 1V20c0 .6-.4 1-1 1A17 17 0 013 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1a11 11 0 00.6 3.5c.1.4 0 .7-.3 1L6.6 10.8z" fill="currentColor" /></svg>
+          </a>
+        )}
+        <div style={{ color: '#8888A0', fontSize: 13, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .12s', flex: 'none' }}>▾</div>
+      </div>
+
+      {open && (
+        <div style={{ padding: '4px 0 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {c.role && c.role !== c.position && <Row label="Role" value={c.role} />}
+          {c.position && <Row label="Position" value={c.position} />}
+          {c.department && <Row label="Department" value={c.department} />}
+          {c.email && (
+            <Row
+              label="Email"
+              value={c.email}
+              action={<a href={`mailto:${c.email}`} style={pillLink}>Mail</a>}
+              onCopy={() => copy(c.email, 'Email')}
+            />
+          )}
+          {c.phone && (
+            <Row
+              label="Mobile"
+              value={c.phone}
+              action={<a href={`tel:${c.phone}`} style={pillLink}>Call</a>}
+              onCopy={() => copy(c.phone, 'Phone')}
+            />
+          )}
+          {c.telephone && (
+            <Row
+              label="Office"
+              value={c.telephone}
+              action={<a href={`tel:${c.telephone}`} style={pillLink}>Call</a>}
+              onCopy={() => copy(c.telephone!, 'Office phone')}
+            />
+          )}
+          {c.lineId && (
+            <Row
+              label="LINE"
+              value={c.lineId}
+              onCopy={() => copy(c.lineId!, 'LINE ID')}
+            />
+          )}
+          {c.notes && (
+            <div style={{ background: '#F7F8FC', borderRadius: 9, padding: '8px 10px', marginTop: 2 }}>
+              <div style={{ ...label, marginBottom: 3 }}>Notes</div>
+              <div style={{ fontSize: 12.5, color: '#3B3B52', whiteSpace: 'pre-wrap' }}>{c.notes}</div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Row({ label: lb, value: v, action, onCopy }: { label: string; value: string; action?: React.ReactNode; onCopy?: () => void }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ ...label, width: 76, flex: 'none' }}>{lb}</div>
+      <div
+        onClick={onCopy}
+        style={{ flex: 1, minWidth: 0, fontSize: 13, color: '#1E1E30', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', cursor: onCopy ? 'pointer' : 'default' }}
+        title={onCopy ? 'Tap to copy' : undefined}
+      >{v}</div>
+      {action}
+    </div>
+  )
+}
+
+const pillLink: CSSProperties = {
+  background: '#EEF0FA', color: '#2A6FDB', textDecoration: 'none',
+  fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 999, flex: 'none',
 }
 
 // ═══════════════════════════════════════════════════════════════════════

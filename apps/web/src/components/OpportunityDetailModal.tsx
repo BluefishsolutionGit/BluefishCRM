@@ -1,10 +1,11 @@
-import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
-import type { ActivityDto, ActivityType, CreateActivityDto, OpportunityDto, OpportunityStage, UpdateOpportunityDto } from '@bluefish/shared'
-import { SERVICE_LINES } from '@bluefish/shared'
+import { useEffect, useRef, useState, type ChangeEvent, type CSSProperties, type FormEvent } from 'react'
+import type { ActivityDto, ActivityType, CreateActivityDto, DocumentDto, ManagerHintPriority, OpportunityDto, OpportunityStage, UpdateOpportunityDto } from '@bluefish/shared'
+import { MANAGER_HINT_PRIORITIES, SERVICE_LINES } from '@bluefish/shared'
 import { api, ApiError } from '../lib/api'
 import { useToast } from '../lib/ToastContext'
 import { useAuth } from '../lib/AuthContext'
 import VoiceInputButton from './VoiceInputButton'
+import DocumentViewer, { type ViewableVersion } from './DocumentViewer'
 
 interface Props {
   opp: OpportunityDto | null
@@ -24,8 +25,9 @@ const ACT_ICON: Record<ActivityType, string> = {
 const fmt = (n: number) => n >= 1e6 ? '฿' + (n / 1e6).toFixed(1) + 'M' : '฿' + Math.round(n / 1e3) + 'K'
 
 export default function OpportunityDetailModal({ opp, onClose, onChanged, onDeleted }: Props) {
-  const [tab, setTab] = useState<'details' | 'activities'>('details')
+  const [tab, setTab] = useState<'details' | 'activities' | 'attachments'>('details')
   const [activities, setActivities] = useState<ActivityDto[]>([])
+  const [attachments, setAttachments] = useState<DocumentDto[]>([])
   const [addingActivity, setAddingActivity] = useState(false)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState<UpdateOpportunityDto>({})
@@ -33,6 +35,9 @@ export default function OpportunityDetailModal({ opp, onClose, onChanged, onDele
   const { hasPermission, user } = useAuth()
   const canWrite = hasPermission('opportunity:write')
   const canEditManagerHint = user?.role === 'admin' || user?.role === 'sales_manager'
+
+  const reloadAttachments = (id: string) =>
+    api.documents({ opportunityId: id }).then(setAttachments).catch(() => setAttachments([]))
 
   useEffect(() => {
     if (!opp) return
@@ -47,9 +52,11 @@ export default function OpportunityDetailModal({ opp, onClose, onChanged, onDele
       serviceOrProduct: opp.serviceOrProduct ?? undefined,
       competitor: opp.competitor ?? undefined,
       managerHint: opp.managerHint ?? undefined,
+      managerHintPriority: opp.managerHintPriority ?? undefined,
       notes: opp.notes ?? undefined,
     })
     api.activities({ opportunityId: opp.id }).then(setActivities).catch(() => setActivities([]))
+    reloadAttachments(opp.id)
   }, [opp])
 
   if (!opp) return null
@@ -68,6 +75,7 @@ export default function OpportunityDetailModal({ opp, onClose, onChanged, onDele
         competitor: form.competitor || undefined,
         notes: form.notes || undefined,
         managerHint: form.managerHint || undefined,
+        managerHintPriority: form.managerHint ? (form.managerHintPriority ?? 'info') : undefined,
         closeDate: form.closeDate || undefined,
         bidDeadline: form.bidDeadline || undefined,
         decisionDate: form.decisionDate || undefined,
@@ -75,9 +83,16 @@ export default function OpportunityDetailModal({ opp, onClose, onChanged, onDele
       const updated = await api.updateOpportunity(opp.id, patch)
       toast('Saved')
       onChanged(updated)
+      return true
     } catch (e) {
       toast(e instanceof ApiError ? e.message : 'Save failed')
+      return false
     } finally { setSaving(false) }
+  }
+
+  const saveAndClose = async (e?: FormEvent) => {
+    e?.preventDefault()
+    if (await save()) onClose()
   }
 
   const remove = async () => {
@@ -126,16 +141,18 @@ export default function OpportunityDetailModal({ opp, onClose, onChanged, onDele
 
         {/* Tabs */}
         <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid #E5E7F0', padding: '0 22px' }}>
-          {(['details', 'activities'] as const).map((t) => (
+          {(['details', 'activities', 'attachments'] as const).map((t) => (
             <div key={t} onClick={() => setTab(t)} style={tabStyle(tab === t)}>
-              {t === 'details' ? 'Details & Notes' : `Activities (${activities.length})`}
+              {t === 'details' ? 'Details & Notes'
+                : t === 'activities' ? `Activities (${activities.length})`
+                : `Attachments (${attachments.length})`}
             </div>
           ))}
         </div>
 
         <div style={{ flex: 1, overflow: 'auto', padding: '18px 22px' }}>
           {tab === 'details' && (
-            <form onSubmit={save} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <form onSubmit={saveAndClose} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 14px' }}>
                 <Field label="Stage">
                   <select disabled={!canWrite} value={form.stage ?? opp.stage} onChange={(e) => set('stage', e.target.value as OpportunityStage)} style={inp}>
@@ -190,25 +207,15 @@ export default function OpportunityDetailModal({ opp, onClose, onChanged, onDele
                 </div>
               </div>
               {canEditManagerHint ? (
-                <div style={{ background: '#F4F1FD', border: '1px solid #DCD4F6', borderRadius: 10, padding: '10px 14px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#4A3AB8', fontWeight: 700, marginBottom: 6 }}>
-                    <span>✦</span>
-                    <span>Manager suggestion</span>
-                    <span style={{ marginLeft: 4, fontSize: 10, background: '#EEE7FF', color: '#6C55E0', padding: '1px 6px', borderRadius: 5, fontWeight: 700, letterSpacing: 0.3, textTransform: 'uppercase' }}>{user?.role === 'admin' ? 'admin' : 'manager'}</span>
-                  </div>
-                  <textarea
-                    value={form.managerHint ?? ''}
-                    onChange={(e) => set('managerHint', e.target.value)}
-                    rows={2}
-                    placeholder="Coach the deal owner — next best move, blockers to raise, timing cues…"
-                    style={{ ...inp, resize: 'vertical', fontFamily: 'inherit', background: '#fff', color: '#4A3AB8' }}
-                  />
-                  <div style={{ fontSize: 11, color: '#8082A5', marginTop: 5 }}>Visible to the deal owner on the card. Only Sales Manager and Admin can edit.</div>
-                </div>
+                <ManagerHintEditor
+                  hint={form.managerHint ?? ''}
+                  priority={form.managerHintPriority ?? null}
+                  onHintChange={(v) => set('managerHint', v)}
+                  onPriorityChange={(p) => set('managerHintPriority', p)}
+                  role={user?.role === 'admin' ? 'admin' : 'manager'}
+                />
               ) : opp.managerHint ? (
-                <div style={{ background: '#F4F1FD', border: '1px solid #DCD4F6', borderRadius: 10, padding: '10px 14px', fontSize: 12.5, color: '#4A3AB8', display: 'flex', gap: 8 }}>
-                  <span>✦</span><span><b>Manager suggestion:</b> {opp.managerHint}</span>
-                </div>
+                <ManagerHintDisplay hint={opp.managerHint} priority={opp.managerHintPriority} />
               ) : null}
               {canWrite && (
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
@@ -217,6 +224,15 @@ export default function OpportunityDetailModal({ opp, onClose, onChanged, onDele
                 </div>
               )}
             </form>
+          )}
+
+          {tab === 'attachments' && (
+            <OpportunityAttachments
+              opp={opp}
+              docs={attachments}
+              canWrite={canWrite}
+              onReload={() => reloadAttachments(opp.id)}
+            />
           )}
 
           {tab === 'activities' && (
@@ -259,6 +275,109 @@ export default function OpportunityDetailModal({ opp, onClose, onChanged, onDele
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+// ── Manager suggestion — priority-driven callout ─────────────────────
+// Each priority tier is a distinct visual so a rep triaging their pipeline
+// can spot an urgent coach line from across the room, not read into it.
+export const MANAGER_HINT_STYLE: Record<ManagerHintPriority, {
+  bg: string; border: string; fg: string; accent: string; icon: string; label: string; hint: string
+}> = {
+  info: {
+    bg: '#F4F1FD', border: '#DCD4F6', fg: '#4A3AB8', accent: '#6C55E0',
+    icon: '✦', label: 'Info', hint: 'Gentle nudge — a heads-up or observation.',
+  },
+  watch: {
+    bg: '#FEF3E2', border: '#F5D9AC', fg: '#8A4A00', accent: '#D2601A',
+    icon: '⚠', label: 'Watch', hint: 'Needs attention — deadline or risk approaching.',
+  },
+  urgent: {
+    bg: '#FDECEA', border: '#F5B7B1', fg: '#A11E10', accent: '#C0392B',
+    icon: '🔥', label: 'Urgent', hint: 'Act today — deal will slip otherwise.',
+  },
+}
+
+function ManagerHintEditor({ hint, priority, onHintChange, onPriorityChange, role }: {
+  hint: string
+  priority: ManagerHintPriority | null
+  onHintChange: (v: string) => void
+  onPriorityChange: (p: ManagerHintPriority) => void
+  role: 'admin' | 'manager'
+}) {
+  const effective = priority ?? 'info'
+  const tone = MANAGER_HINT_STYLE[effective]
+  return (
+    <div style={{ background: tone.bg, border: `1.5px solid ${tone.border}`, borderRadius: 12, padding: '12px 14px', transition: 'background .12s, border-color .12s' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 14 }}>{tone.icon}</span>
+        <span style={{ fontSize: 12.5, fontWeight: 800, color: tone.fg, letterSpacing: '.02em' }}>Manager suggestion</span>
+        <span style={{ fontSize: 10, background: '#fff', color: tone.accent, padding: '1px 7px', borderRadius: 5, fontWeight: 700, letterSpacing: 0.3, textTransform: 'uppercase', border: `1px solid ${tone.border}` }}>{role}</span>
+        <div style={{ flex: 1 }} />
+        <PriorityChips value={priority} onChange={onPriorityChange} />
+      </div>
+      <textarea
+        value={hint}
+        onChange={(e) => onHintChange(e.target.value)}
+        rows={2}
+        placeholder="Coach the deal owner — next best move, blockers to raise, timing cues…"
+        style={{ ...inp, resize: 'vertical', fontFamily: 'inherit', background: '#fff', color: tone.fg, borderColor: tone.border }}
+      />
+      <div style={{ fontSize: 11, color: tone.fg, opacity: 0.75, marginTop: 6, display: 'flex', gap: 8, alignItems: 'center' }}>
+        <span style={{ fontSize: 11 }}>{tone.hint}</span>
+        <div style={{ flex: 1 }} />
+        <span>Visible to the deal owner on the card. Only Manager & Admin can edit.</span>
+      </div>
+    </div>
+  )
+}
+
+function ManagerHintDisplay({ hint, priority }: { hint: string; priority: ManagerHintPriority | null }) {
+  const tone = MANAGER_HINT_STYLE[priority ?? 'info']
+  return (
+    <div style={{
+      background: tone.bg, border: `1.5px solid ${tone.border}`, borderRadius: 12,
+      padding: '10px 14px', fontSize: 12.5, color: tone.fg,
+      display: 'flex', gap: 10, alignItems: 'flex-start',
+    }}>
+      <span style={{ fontSize: 14, lineHeight: 1.2 }}>{tone.icon}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2, fontWeight: 800 }}>
+          Manager suggestion
+          <span style={{ background: tone.accent, color: '#fff', fontSize: 9.5, fontWeight: 800, padding: '1px 6px', borderRadius: 999, textTransform: 'uppercase', letterSpacing: '.06em' }}>{tone.label}</span>
+        </div>
+        <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.4 }}>{hint}</div>
+      </div>
+    </div>
+  )
+}
+
+function PriorityChips({ value, onChange }: { value: ManagerHintPriority | null; onChange: (p: ManagerHintPriority) => void }) {
+  return (
+    <div style={{ display: 'flex', gap: 4 }}>
+      {MANAGER_HINT_PRIORITIES.map((p) => {
+        const t = MANAGER_HINT_STYLE[p]
+        const active = (value ?? 'info') === p
+        return (
+          <div
+            key={p}
+            onClick={() => onChange(p)}
+            title={t.hint}
+            style={{
+              cursor: 'pointer', fontSize: 10.5, fontWeight: 800, letterSpacing: '.04em',
+              padding: '3px 9px', borderRadius: 999,
+              background: active ? t.accent : '#fff',
+              color: active ? '#fff' : t.accent,
+              border: `1px solid ${active ? t.accent : t.border}`,
+              display: 'flex', alignItems: 'center', gap: 3, textTransform: 'uppercase',
+              transition: 'background .12s, color .12s',
+            }}
+          >
+            <span style={{ fontSize: 11 }}>{t.icon}</span>{t.label}
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -333,6 +452,97 @@ function AddActivityForm({ opp, onCancel, onCreated }: { opp: OpportunityDto; on
     </form>
   )
 }
+
+function OpportunityAttachments({ opp, docs, canWrite, onReload }: {
+  opp: OpportunityDto; docs: DocumentDto[]; canWrite: boolean; onReload: () => void
+}) {
+  const toast = useToast()
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [viewing, setViewing] = useState<ViewableVersion | null>(null)
+
+  const onFilePicked = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setUploading(true)
+    try {
+      // Scope the doc to both the opportunity and its customer — the same doc
+      // then also appears in the customer's Documents list, which is what a
+      // rep expects (proposal PDF is "the customer's proposal", not orphan).
+      await api.uploadDocument(file, { opportunityId: opp.id, customerId: opp.customerId })
+      toast('File attached'); onReload()
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : 'Upload failed')
+    } finally { setUploading(false) }
+  }
+
+  const remove = async (d: DocumentDto) => {
+    if (!window.confirm(`Remove "${d.name}"?`)) return
+    try { await api.deleteDocument(d.id); toast('Removed'); onReload() }
+    catch (err) { toast(err instanceof ApiError ? err.message : 'Delete failed') }
+  }
+
+  const openFile = (d: DocumentDto) => {
+    if (d.kind === 'link' && d.url) { window.open(d.url, '_blank', 'noopener'); return }
+    const cv = d.currentVersion
+    if (!cv) return
+    setViewing({ id: cv.id, filename: cv.filename, mimeType: cv.mimeType, sizeBytes: cv.sizeBytes, createdAt: cv.createdAt, uploadedByName: cv.uploadedByName, notes: cv.notes })
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12, gap: 8 }}>
+        <div style={{ fontSize: 12, color: '#5C5C74' }}>Files attached here are also linked to <b>{opp.customerName}</b> and appear on the Documents page.</div>
+        <div style={{ flex: 1 }} />
+        {canWrite && (
+          <>
+            <input ref={fileInputRef} type="file" onChange={onFilePicked} style={{ display: 'none' }} />
+            <div onClick={() => !uploading && fileInputRef.current?.click()} style={{ ...attachPrimaryBtn, opacity: uploading ? 0.5 : 1 }}>{uploading ? 'Uploading…' : '+ Upload file'}</div>
+          </>
+        )}
+      </div>
+
+      {docs.length === 0 && <div style={{ padding: 24, textAlign: 'center', color: '#8888A0', fontSize: 13 }}>No files attached to this deal yet.</div>}
+
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        {docs.map((d) => {
+          const cv = d.currentVersion
+          const sub = d.kind === 'link'
+            ? d.url ?? ''
+            : cv ? `${cv.filename} · ${Math.max(1, Math.round(cv.sizeBytes / 1024))} KB` : '—'
+          return (
+            <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderTop: '1px solid #F2F3F9' }}>
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: '#F1F1F5', color: '#5C5C74', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
+                <svg viewBox="0 0 24 24" width="16" height="16"><path d="M6.5 3h8l4 4v14h-12z M14 3v5h4.5" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinejoin="round" /></svg>
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div
+                  onClick={() => openFile(d)}
+                  title={d.kind === 'link' ? 'Open link' : 'Open in viewer'}
+                  style={{ fontSize: 13, fontWeight: 700, color: '#2A6FDB', cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                >{d.name}</div>
+                <div style={{ fontSize: 11, color: '#8888A0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <span style={{ background: '#F2F3F9', color: '#5C5C74', fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 5, marginRight: 6, textTransform: 'uppercase' }}>{d.category}</span>
+                  {sub}
+                  {' · '}{d.uploadedByName}
+                  {cv ? ` · ${new Date(cv.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' })}` : ''}
+                </div>
+              </div>
+              {canWrite && (
+                <div onClick={() => remove(d)} title="Remove" style={{ color: '#C0392B', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', padding: '4px 8px' }}>Remove</div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {viewing && <DocumentViewer version={viewing} onClose={() => setViewing(null)} />}
+    </div>
+  )
+}
+
+const attachPrimaryBtn: CSSProperties = { background: '#2A6FDB', color: '#fff', border: 'none', borderRadius: 9, padding: '8px 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (

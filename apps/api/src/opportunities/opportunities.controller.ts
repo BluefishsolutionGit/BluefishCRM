@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common'
-import { IsInt, IsOptional, IsString, Max, Min, MinLength } from 'class-validator'
+import { IsIn, IsInt, IsOptional, IsString, Max, Min, MinLength } from 'class-validator'
 import { JwtAuthGuard } from '../auth/jwt.guard'
 import { PermissionsGuard } from '../auth/permissions.guard'
 import { RequirePermissions } from '../auth/permissions.decorator'
@@ -7,7 +7,7 @@ import { PERMISSIONS } from '../auth/permissions'
 import { OpportunitiesService } from './opportunities.service'
 import { auditContext } from '../common/request-context'
 import type { Request } from 'express'
-import type { ForecastDto, OpportunityDto, OpportunityStage } from '@bluefish/shared'
+import { MANAGER_HINT_PRIORITIES, type ForecastDto, type ManagerHintPriority, type OpportunityDto, type OpportunityStage } from '@bluefish/shared'
 
 interface JwtRequest extends Request { user?: { sub: string; email: string; role: string } }
 
@@ -24,6 +24,7 @@ class CreateBody {
   @IsOptional() @IsString() serviceOrProduct?: string
   @IsOptional() @IsString() competitor?: string
   @IsOptional() @IsString() managerHint?: string
+  @IsOptional() @IsIn(MANAGER_HINT_PRIORITIES as readonly string[]) managerHintPriority?: ManagerHintPriority
   @IsOptional() @IsString() notes?: string
 }
 class UpdateBody {
@@ -41,6 +42,7 @@ class UpdateBody {
   @IsOptional() @IsString() lostReason?: string
   @IsOptional() @IsString() wonReason?: string
   @IsOptional() @IsString() managerHint?: string
+  @IsOptional() @IsIn(MANAGER_HINT_PRIORITIES as readonly string[]) managerHintPriority?: ManagerHintPriority
   @IsOptional() @IsString() notes?: string
 }
 class StageBody { @IsString() @MinLength(1) stage!: OpportunityStage }

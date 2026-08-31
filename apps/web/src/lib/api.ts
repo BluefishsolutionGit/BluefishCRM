@@ -382,6 +382,28 @@ export const api = {
   }) => request<DocumentDto>(`/documents/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteDocument: (id: string) => request<void>(`/documents/${id}`, { method: 'DELETE' }),
   documentDownloadUrl: (versionId: string) => `${API_BASE}/documents/versions/${versionId}/download`,
+  /**
+   * Fetch a document version as a Blob with the Bearer token attached. Used by
+   * DocumentViewer to build a same-origin `blob:` URL — the raw download URL
+   * cannot be embedded in an <iframe>/<img> across origins (helmet's
+   * X-Frame-Options), and would 401 anyway since <iframe src> can't carry the
+   * Authorization header.
+   */
+  documentVersionBlob: async (versionId: string): Promise<Blob> => {
+    const headers = new Headers()
+    const token = getToken()
+    if (token) headers.set('Authorization', `Bearer ${token}`)
+    const res = await fetch(`${API_BASE}/documents/versions/${versionId}/download`, { headers, credentials: 'include' })
+    if (!res.ok) {
+      let msg = res.statusText
+      try {
+        const body = (await res.json()) as { message?: string | string[] }
+        if (body.message) msg = Array.isArray(body.message) ? body.message.join(', ') : body.message
+      } catch { /* not JSON */ }
+      throw new ApiError(res.status, msg)
+    }
+    return res.blob()
+  },
 
   // ─────── Contracts ───────
   contracts: (filter: { status?: string | string[]; customerId?: string; service?: string | string[]; q?: string } = {}) => {

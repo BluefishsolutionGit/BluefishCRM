@@ -338,6 +338,17 @@ export interface OpportunityLineDto {
 export const SERVICE_LINES = ['Box', '3S', '3D', 'AI&RPA'] as const
 export type ServiceLine = (typeof SERVICE_LINES)[number]
 
+/**
+ * How a "manager suggestion" line on a deal should read to the owner. Drives
+ * the callout color / icon on the pipeline card & modal so a rep can eyeball
+ * "am I on track" vs "act now" at a glance.
+ *   - info   → gentle nudge (default when a hint is written without a level)
+ *   - watch  → deadline or risk approaching
+ *   - urgent → do something today
+ */
+export const MANAGER_HINT_PRIORITIES = ['info', 'watch', 'urgent'] as const
+export type ManagerHintPriority = (typeof MANAGER_HINT_PRIORITIES)[number]
+
 export interface OpportunityDto {
   id: string
   title: string
@@ -356,6 +367,7 @@ export interface OpportunityDto {
   lostReason: string | null
   wonReason: string | null
   managerHint: string | null
+  managerHintPriority: ManagerHintPriority | null
   notes: string | null
   lines: OpportunityLineDto[]
   createdAt: string
@@ -375,6 +387,7 @@ export interface CreateOpportunityDto {
   serviceOrProduct?: string
   competitor?: string
   managerHint?: string
+  managerHintPriority?: ManagerHintPriority
   notes?: string
 }
 

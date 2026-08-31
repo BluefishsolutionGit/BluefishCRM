@@ -18,13 +18,47 @@ service line (Box / 3S / 3D / AI&RPA) or one rep, exactly like the Pipeline page
 filter with the **Clear** link next to the "Filtered" badge in the title.
 
 ### Customers
-Every company you work with. Search by name; click a card to open the account. The account page shows contacts, activity history, open deals, and documents.
+Every company you work with. Search by name; click a card to open the account. The account page has three tabs:
+
+- **Overview** — company profile card + key contacts summary
+- **Contacts** — full contact list with **Add / Edit contact**. The edit form is a sectioned
+  layout (Identity / Reach / Notes) with a live avatar preview, a big **Primary contact** switch,
+  iconed email / mobile / office phone / LINE ID fields, and inline email validation. Voice
+  dictation is in the top-right of the Notes box.
+- **Documents (portal)** — every file for this company, **grouped by Project → Category**.
+  Each project is a collapsible card; inside it, files are split by document type (Contract,
+  Quotation, Invoice, TOR, …) with color-coded pills. A "General · Company-wide" bucket at the
+  bottom holds files with no deal link (registration, MOU, brochures). Click a filename to open
+  the inline viewer; the download arrow saves it locally.
+  - **+ Upload file** at the top opens a modal where you pick the Project (auto-populated with
+    the customer's opportunities), Category (or leave "Auto-detect"), and optional description.
+  - Each project card has its own **+ File** button that pre-selects that project.
+  - The search bar and the category chip row above the list filter across every project at once.
 
 ### Leads
 People who might become customers. Add a lead in a few seconds — name + company + source is enough. The system scores it automatically. Convert to an opportunity when they're ready to buy.
 
 ### Pipeline
-Your deals grouped by stage. Drag between stages as they progress. Click a deal to add line items or update the amount.
+Your deals grouped by stage. Drag between stages as they progress. Click a deal to open its detail
+modal with three tabs:
+
+- **Details & Notes** — stage, amount, probability, close/bid/decision dates, competitor, notes.
+  Managers and admins see a **Manager suggestion** callout with a priority tier picker:
+  - `Info ✦` (purple) — gentle nudge / heads-up
+  - `Watch ⚠` (amber) — deadline or risk approaching
+  - `Urgent 🔥` (red) — do something today, or the deal slips
+
+  The callout background and the accent strip on the deal's kanban card change with the tier —
+  urgent hints also get a small `NOW` badge on the card so they stand out at a glance. Reps see
+  it read-only; only Manager / Admin can edit and change the tier.
+- **Activities** — every meeting / call / visit / task on this deal; **+ Add activity** links
+  the new item to the deal + customer automatically.
+- **Attachments** — every file linked to this deal. **+ Upload file** attaches a document that
+  also appears on the customer's Documents portal (proposals, POs, signed contracts stay
+  together with the deal and the account). Click a filename to open in the inline viewer.
+
+**Save changes** closes the modal on success (errors keep it open so you can fix and retry).
+Editing the title inline auto-saves on blur without closing.
 
 ### Activities
 Everything you've done or plan to do: meetings, calls, visits, follow-ups. Filter by date range or owner.
@@ -105,6 +139,14 @@ for meeting/call/demo), and **Notes** with the same voice-dictation button as th
 
 ### Offline drafts
 If you're on the metro with no signal, create the task anyway. It syncs when you reconnect.
+
+### Contacts on the mobile customer detail
+On a customer's page, each contact starts collapsed showing name, nickname, primary badge (if
+set), and a round green **Call** button. **Tap the contact card** to expand — you get the full
+profile: role, position, department, email (with **Mail** pill), mobile & office phone (each
+with **Call** pills), LINE ID, and any notes. Tapping any of email / mobile / office / LINE
+copies the value to the clipboard. Primary contacts always sort to the top; if there are more
+than 6, tap **Show all N contacts** to expand the list.
 
 ## Working with your team
 
