@@ -284,6 +284,115 @@ Remove the `ports:` from web + api in `docker-compose.behind-proxy.yml` when usi
 - **Nginx** — run `sudo certbot --nginx -d crm.bluefishsolution.tech` once; certbot writes the
   `ssl_certificate*` paths above and installs a renewal cron.
 
+### 4.3 Concrete layout for the current Bluefish Hostinger VPS
+
+Discovered on the target host (August 2026 snapshot):
+
+- **Reverse proxy:** system Nginx (host service, not in Docker). Config at `/etc/nginx/sites-available/`, symlink into `sites-enabled/`. Reload with `sudo nginx -t && sudo systemctl reload nginx`.
+- **Existing Docker containers already claim these host ports:**
+  | Container            | Host bind              |
+  |----------------------|------------------------|
+  | `blue_apm_frontend`  | `127.0.0.1:8080` ← blocks default |
+  | `lms_frontend`       | `127.0.0.1:8081`       |
+  | shared `postgres`    | internal `5432` on `database-network` |
+- **App convention:** apps live under `/opt/apps/<name>/`, user `dev` (in `docker` group). Follow the same pattern → `/opt/apps/bluefish_crm/`.
+- **Ports for CRM:** `WEB_HOST_PORT=8082` (8080/8081 taken), `API_HOST_PORT=4000` (free). Set these in `.env` before `docker compose up`.
+- **Postgres:** run our own dedicated container (default in the compose file). Shared postgres exists but is coupled to blue_apm; keeping CRM's DB isolated is worth the ~120 MB RAM cost on a 15 GB box.
+
+**Nginx vhost specific to this VPS** — save as `/etc/nginx/sites-available/crm.bluefishsolution.tech.conf`:
+
+```nginx
+server {
+    listen 80;
+    listen [::]:80;
+    server_name crm.bluefishsolution.tech;
+    location /.well-known/acme-challenge/ { root /var/www/html; }
+    location / { return 301 https://$host$request_uri; }
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name crm.bluefishsolution.tech;
+
+    # Certbot fills these in on first `certbot --nginx -d crm.bluefishsolution.tech`
+    ssl_certificate     /etc/letsencrypt/live/crm.bluefishsolution.tech/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/crm.bluefishsolution.tech/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options    "nosniff" always;
+    add_header Referrer-Policy           "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy        "geolocation=(self), microphone=(self), camera=(self)" always;
+
+    client_max_body_size 25M;      # PDFs / images upload
+
+    # API — /api prefix must be kept (Nest mounts under it)
+    location /api/ {
+        proxy_pass http://127.0.0.1:4000/api/;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 90s;
+    }
+
+    # SPA (Nginx-in-container serving the built React bundle)
+    location / {
+        proxy_pass http://127.0.0.1:8082/;   # WEB_HOST_PORT
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+Enable + issue cert + reload:
+
+```bash
+sudo ln -s /etc/nginx/sites-available/crm.bluefishsolution.tech.conf /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
+
+# First-time TLS cert (certbot patches the vhost with the real cert paths):
+sudo certbot --nginx -d crm.bluefishsolution.tech
+```
+
+**Full sequence for this VPS:**
+
+```bash
+# 1. Clone into the /opt/apps convention
+sudo mkdir -p /opt/apps/bluefish_crm
+sudo chown $USER:$USER /opt/apps/bluefish_crm
+cd /opt/apps/bluefish_crm
+git clone https://github.com/BluefishsolutionGit/BluefishCRM.git .
+
+# 2. Config — remember to set WEB_HOST_PORT=8082 to dodge blue_apm_frontend
+cp .env.production.example .env
+nano .env
+#   Fill: POSTGRES_PASSWORD, JWT_SECRET, REFRESH_TOKEN_SECRET, INTEGRATION_ENC_KEY
+#   Change: WEB_HOST_PORT=8082  (leave API_HOST_PORT=4000)
+#   Confirm: CORS_ORIGINS=https://crm.bluefishsolution.tech
+#            PUBLIC_API_URL=https://crm.bluefishsolution.tech/api
+
+# 3. Build + up
+docker compose -f docker-compose.behind-proxy.yml build
+docker compose -f docker-compose.behind-proxy.yml up -d
+docker compose -f docker-compose.behind-proxy.yml logs -f api web
+
+# 4. Seed (once)
+docker compose -f docker-compose.behind-proxy.yml exec api npx tsx apps/api/prisma/seed.ts
+
+# 5. Nginx vhost (see snippet above) + certbot
+
+# 6. Verify
+curl -sf https://crm.bluefishsolution.tech/api/health && echo OK
+```
+
 ### 4.2 Different-origin API (rare)
 
 The default assumes `crm.bluefishsolution.tech` serves both the SPA and `/api/*`.
