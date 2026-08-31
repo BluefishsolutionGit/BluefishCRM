@@ -1,20 +1,8 @@
--- CreateTable
-CREATE TABLE "PushSubscription" (
-    "id"            TEXT NOT NULL,
-    "userId"        TEXT NOT NULL,
-    "endpoint"      TEXT NOT NULL,
-    "p256dh"        TEXT NOT NULL,
-    "auth"          TEXT NOT NULL,
-    "userAgent"     TEXT,
-    "lastSuccessAt" TIMESTAMP(3),
-    "lastErrorAt"   TIMESTAMP(3),
-    "createdAt"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT "PushSubscription_pkey" PRIMARY KEY ("id")
-);
-
-CREATE UNIQUE INDEX "PushSubscription_endpoint_key" ON "PushSubscription"("endpoint");
-CREATE INDEX "PushSubscription_userId_idx" ON "PushSubscription"("userId");
+-- NOTE: The `PushSubscription` table was already introduced by the earlier
+-- migration `20260712022912_inbox_integrations`. It used to be re-created
+-- here (duplicate CREATE TABLE) which fails on a fresh database with
+-- "relation PushSubscription already exists". The redundant block has been
+-- removed — this migration now only adds the WebAuthn tables.
 
 -- CreateTable
 CREATE TABLE "WebAuthnCredential" (
