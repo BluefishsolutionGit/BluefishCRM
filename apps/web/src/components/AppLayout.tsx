@@ -89,9 +89,13 @@ export default function AppLayout() {
 
   return (
     <ToastProvider>
-      <div style={{ width: '100vw', height: '100vh', overflow: 'auto', background: '#fff' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', minWidth: 1280, width: '100%', minHeight: '100%', background: '#fff' }}>
-          {/* ROW 1 — Brand + search + notif + user */}
+      <div style={{ width: '100%', height: '100vh', overflowX: 'hidden', overflowY: 'auto', background: '#fff' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', width: '100%', minHeight: '100%', background: '#fff' }}>
+          {/* ROW 1 — Brand + search + notif + user
+              minWidth removed — the layout used to force ≥ 1280 which meant
+              anything under 13" laptop got a horizontal scrollbar. Header row
+              now shrinks; row 2 (nav) already has overflowX: auto and scrolls
+              nav pills within itself. */}
           <div
             style={{
               height: 56,
