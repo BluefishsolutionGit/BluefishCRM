@@ -387,11 +387,16 @@ export default function Pipeline() {
                     draggable={canMove}
                     onDragStart={(e: DragEvent<HTMLDivElement>) => { setDragId(d.id); e.dataTransfer.effectAllowed = 'move' }}
                     onClick={() => setSelectedOpp(d)}
-                    style={{ background: '#fff', border: '1px solid #E5E7F0', borderRadius: 12, padding: '13px 14px', cursor: canMove ? 'grab' : 'pointer', boxShadow: '0 1px 2px rgba(14,31,25,.05)' }}
+                    style={{
+                      background: '#fff', border: '1px solid #E5E7F0', borderRadius: 12,
+                      padding: '13px 14px', cursor: canMove ? 'grab' : 'pointer',
+                      boxShadow: '0 1px 2px rgba(14,31,25,.05)',
+                      ...(d.stage === 'Lost' ? LOST_ROW_STYLE : null),
+                    }}
                     title="Click to open · drag to move"
                   >
                     <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.35, flex: 1 }}>{d.title}</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.35, flex: 1, color: d.stage === 'Lost' ? '#8888A0' : undefined }}>{d.title}</div>
                       {d.serviceOrProduct && (
                         <span style={{ background: hexToRgba(SERVICE_COLOR[d.serviceOrProduct] ?? '#5C5C74', 0.12), color: SERVICE_COLOR[d.serviceOrProduct] ?? '#5C5C74', border: `1px solid ${hexToRgba(SERVICE_COLOR[d.serviceOrProduct] ?? '#5C5C74', 0.35)}`, borderRadius: 6, fontSize: 10, fontWeight: 700, padding: '2px 6px', whiteSpace: 'nowrap', flex: 'none' }}>
                           {d.serviceOrProduct}
@@ -482,7 +487,12 @@ export default function Pipeline() {
                       draggable={canMove}
                       onDragStart={(e: DragEvent<HTMLDivElement>) => { setDragId(d.id); e.dataTransfer.effectAllowed = 'move' }}
                       onClick={() => setSelectedOpp(d)}
-                      style={{ background: '#fff', border: '1px solid #E5E7F0', borderRadius: 12, padding: '13px 14px', cursor: canMove ? 'grab' : 'pointer', boxShadow: '0 1px 2px rgba(14,31,25,.05)' }}
+                      style={{
+                        background: '#fff', border: '1px solid #E5E7F0', borderRadius: 12,
+                        padding: '13px 14px', cursor: canMove ? 'grab' : 'pointer',
+                        boxShadow: '0 1px 2px rgba(14,31,25,.05)',
+                        ...(d.stage === 'Lost' ? LOST_ROW_STYLE : null),
+                      }}
                       title="Click to open · drag to change probability"
                     >
                       <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
@@ -532,8 +542,16 @@ export default function Pipeline() {
               <div>Opportunity</div><div>Service</div><div>Owner</div><div>Stage</div><div style={{ textAlign: 'right' }}>Amount</div><div>Probability</div><div>Close</div>
             </div>
             {filteredOpps.map((o) => (
-              <div key={o.id} onClick={() => setSelectedOpp(o)} style={{ ...gridColsList, padding: '12px 18px', borderBottom: '1px solid #F2F3F9', alignItems: 'center', cursor: 'pointer' }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#2A6FDB' }}>{o.title} — {o.customerName}</div>
+              <div
+                key={o.id}
+                onClick={() => setSelectedOpp(o)}
+                style={{
+                  ...gridColsList, padding: '12px 18px',
+                  borderBottom: '1px solid #F2F3F9', alignItems: 'center', cursor: 'pointer',
+                  ...(o.stage === 'Lost' ? LOST_ROW_STYLE : null),
+                }}
+              >
+                <div style={{ fontSize: 13, fontWeight: 600, color: o.stage === 'Lost' ? '#8888A0' : '#2A6FDB' }}>{o.title} — {o.customerName}</div>
                 <div>
                   {o.serviceOrProduct ? (
                     <span style={{ background: hexToRgba(SERVICE_COLOR[o.serviceOrProduct] ?? '#5C5C74', 0.12), color: SERVICE_COLOR[o.serviceOrProduct] ?? '#5C5C74', border: `1px solid ${hexToRgba(SERVICE_COLOR[o.serviceOrProduct] ?? '#5C5C74', 0.35)}`, borderRadius: 6, fontSize: 10.5, fontWeight: 700, padding: '2px 7px' }}>
@@ -951,6 +969,11 @@ function viewTab(active: boolean): CSSProperties {
   return { borderRadius: 7, fontSize: 12, fontWeight: 600, padding: '5px 13px', cursor: 'pointer', background: active ? '#2E1A6B' : 'transparent', color: active ? '#fff' : '#5C5C74' }
 }
 const gridColsList: CSSProperties = { display: 'grid', gridTemplateColumns: '2.4fr 100px 130px 130px 130px 110px 130px', gap: 10 }
+
+// Applied to Lost opportunity cards (Kanban + By %) and list rows so a rep
+// scanning the pipeline can immediately tell a deal is dead. Muted bg, muted
+// text, softened border — but still readable so the row is not invisible.
+const LOST_ROW_STYLE: CSSProperties = { background: '#EEEEF3', color: '#8888A0', borderColor: '#D6D8E5' }
 const ioBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid #E5E7F0', background: '#fff', borderRadius: 9, padding: '7px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: '#3B3B52', textDecoration: 'none' }
 
 function ServiceFilterRow({ filter, onFilter, counts }: { filter: string; onFilter: (v: string) => void; counts: Record<string, number> }) {
