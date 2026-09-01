@@ -5,6 +5,10 @@ body {
   background: #eef2fa;
   color: #1e1e30;
   font-family: 'IBM Plex Sans Thai', system-ui, sans-serif;
+  /* Prevent any page from producing a horizontal scrollbar on narrow phones
+     — a stray 100vw or fixed-width element shouldn't force the whole app
+     to scroll sideways. Vertical scroll works as normal. */
+  overflow-x: hidden;
 }
 * {
   box-sizing: border-box;

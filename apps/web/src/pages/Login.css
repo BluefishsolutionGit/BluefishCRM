@@ -104,3 +104,50 @@
   color: #e0533d;
   font-weight: 700;
 }
+
+/* ── Responsive ─────────────────────────────────────────────────────
+   Phone: hide the decorative graphic, stretch the form to fill,
+   drop the huge inner padding, and let the card sit inside the safe
+   viewport without the outer 28px gap eating the little width we have. */
+
+@media (max-width: 767px) {
+  .login-page {
+    padding: 12px;
+    min-height: 100dvh;  /* dvh follows mobile URL-bar collapse */
+    height: 100dvh;
+  }
+  .login-card {
+    max-width: 100%;
+    max-height: 100%;
+    height: auto;
+    min-height: 100%;
+    border-radius: 20px;
+    flex-direction: column;
+  }
+  .login-graphic {
+    display: none;  /* hero graphic is desktop candy; on a phone it just eats space */
+  }
+  .login-form-panel {
+    flex: 1;
+    min-width: 0;
+    padding: 32px 22px;
+  }
+}
+
+/* Tablet portrait — shrink the graphic, keep it visible, tighten padding. */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .login-page {
+    padding: 20px;
+  }
+  .login-card {
+    max-width: 100%;
+    max-height: 100%;
+  }
+  .login-graphic {
+    flex: 0.6;
+  }
+  .login-form-panel {
+    min-width: 0;
+    padding: 40px 36px;
+  }
+}
