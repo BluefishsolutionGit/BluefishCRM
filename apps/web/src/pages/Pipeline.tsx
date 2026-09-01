@@ -143,6 +143,10 @@ export default function Pipeline() {
   const [columns, setColumns] = useState<PipelineColumn[]>(() => loadConfig())
   const [probBuckets, setProbBuckets] = useState<ProbBucket[]>(() => loadProbConfig())
   const [showArchived, setShowArchived] = useState(false)
+  // By % view — Won/Lost deals still have a probability so they'd otherwise
+  // pile into the 0% / 100% buckets. Hide them by default so the % view is
+  // an "active pipeline" view. Toggle mirrors Kanban's Show archived.
+  const [showClosedInProb, setShowClosedInProb] = useState(false)
   const [showManage, setShowManage] = useState(false)
   const [showManageProb, setShowManageProb] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
@@ -206,9 +210,14 @@ export default function Pipeline() {
     return m
   }, [opps])
 
+  // Opps used by By % — filter closed (Won/Lost) unless the user opts in.
+  const probFilteredOpps = useMemo(() =>
+    showClosedInProb ? filteredOpps : filteredOpps.filter((o) => o.stage !== 'Won' && o.stage !== 'Lost'),
+    [filteredOpps, showClosedInProb])
+
   const probColumnsWithDeals = useMemo(() => {
     const grouped = new Map<number, OpportunityDto[]>(probBuckets.map((b) => [b.pct, []]))
-    for (const o of filteredOpps) {
+    for (const o of probFilteredOpps) {
       const bucket = nearestBucket(o.probability, probBuckets)
       grouped.get(bucket)!.push(o)
     }
@@ -216,7 +225,7 @@ export default function Pipeline() {
       const deals = grouped.get(b.pct) ?? []
       return { pct: b.pct, color: b.color, deals, total: deals.reduce((a, o) => a + o.value, 0) }
     })
-  }, [filteredOpps, probBuckets])
+  }, [probFilteredOpps, probBuckets])
 
   const pipeTotal = filteredOpps.filter((o) => o.stage !== 'Won' && o.stage !== 'Lost').reduce((a, o) => a + o.value, 0)
 
@@ -332,9 +341,11 @@ export default function Pipeline() {
           {loading && <div style={{ color: '#8888A0', padding: 24 }}>Loading…</div>}
           {/* Bar + columns share ONE horizontal scroller so their widths line up
               perfectly — bar's stage labels sit exactly above their columns even
-              when Archived (Lost) is toggled in/out. */}
+              when Archived (Lost) is toggled in/out. Inner min-width: 100% lets
+              columns flex-grow to fill the viewport when there's slack; if their
+              min-widths overflow, this scroller handles it. */}
           <div style={{ flex: 1, minHeight: 0, overflowX: 'auto', overflowY: 'hidden' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, height: '100%', minWidth: 'max-content' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, height: '100%', minWidth: '100%' }}>
               <PipelineBar columns={visibleColumns} opps={filteredOpps} mode="columns" />
               <div style={{ display: 'flex', gap: 13, flex: 1, minHeight: 0, paddingBottom: 20 }}>
                 {columnsWithDeals.map((col) => (
@@ -350,7 +361,7 @@ export default function Pipeline() {
                   }
                 }}
                 style={{
-                  width: KANBAN_COL_WIDTH, minWidth: KANBAN_COL_WIDTH,
+                  flex: `1 1 ${KANBAN_COL_WIDTH}px`, minWidth: KANBAN_COL_WIDTH,
                   background: col.isArchived ? '#F1F1F7' : '#EAEAF4',
                   borderRadius: 14, padding: 12,
                   display: 'flex', flexDirection: 'column', gap: 10,
@@ -419,16 +430,20 @@ export default function Pipeline() {
           </div>
           <div style={{ display: 'flex', gap: 18, marginTop: 10, marginBottom: 12, fontSize: 12.5, color: '#5C5C74', alignItems: 'center' }}>
             <div>Total open <b style={{ color: '#1E1E30', fontFamily: "'Space Grotesk'" }}>{fmt(pipeTotal)}</b></div>
-            <div>{filteredOpps.length} of {opps.length} deals</div>
+            <div>{probFilteredOpps.length} of {opps.length} deals</div>
             <div style={{ flex: 1 }} />
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#5C5C74', cursor: 'pointer' }}>
+              <input type="checkbox" checked={showClosedInProb} onChange={(e) => setShowClosedInProb(e.target.checked)} />
+              Show closed deals (Won/Lost)
+            </label>
             <div style={{ fontSize: 11.5, color: '#8888A0' }}>{canMove ? 'Drag between % columns to update probability' : 'Read-only'}</div>
           </div>
           {loading && <div style={{ color: '#8888A0', padding: 24 }}>Loading…</div>}
           {/* Bar + columns share one horizontal scroller so labels align even
               when the visible bucket list widens past the viewport. */}
           <div style={{ flex: 1, minHeight: 0, overflowX: 'auto', overflowY: 'hidden' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, height: '100%', minWidth: 'max-content' }}>
-              <ProbabilityBar buckets={probBuckets} opps={filteredOpps} mode="columns" />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, height: '100%', minWidth: '100%' }}>
+              <ProbabilityBar buckets={probBuckets} opps={probFilteredOpps} mode="columns" />
               <div style={{ display: 'flex', gap: 13, flex: 1, minHeight: 0, paddingBottom: 20 }}>
                 {probColumnsWithDeals.map((col) => {
               const color = col.color
@@ -445,7 +460,7 @@ export default function Pipeline() {
                     }
                   }}
                   style={{
-                    width: KANBAN_COL_WIDTH, minWidth: KANBAN_COL_WIDTH,
+                    flex: `1 1 ${KANBAN_COL_WIDTH}px`, minWidth: KANBAN_COL_WIDTH,
                     background: '#EAEAF4',
                     borderRadius: 14, padding: 12,
                     display: 'flex', flexDirection: 'column', gap: 10,
@@ -1042,8 +1057,11 @@ function PipelineBar({
                   ? `polygon(0 0, 100% 0, 100% 100%, 0 100%, ${CHEV}px 50%)`
                   : `polygon(0 0, calc(100% - ${CHEV}px) 0, 100% 50%, calc(100% - ${CHEV}px) 100%, 0 100%, ${CHEV}px 50%)`)
 
+        // In 'columns' mode, bar items track the column widths below — same
+        // flex-basis so they grow/shrink together. In 'stretch' mode (List view)
+        // they use the interlocking chevron layout with negative overlap.
         const perItemStyle: CSSProperties = mode === 'columns'
-          ? { width: KANBAN_COL_WIDTH, minWidth: KANBAN_COL_WIDTH }
+          ? { flex: `1 1 ${KANBAN_COL_WIDTH}px`, minWidth: KANBAN_COL_WIDTH }
           : { flex: 1, minWidth: 0, marginLeft: isFirst ? 0 : -CHEV }
 
         return (
@@ -1121,8 +1139,11 @@ function ProbabilityBar({
                   ? `polygon(0 0, 100% 0, 100% 100%, 0 100%, ${CHEV}px 50%)`
                   : `polygon(0 0, calc(100% - ${CHEV}px) 0, 100% 50%, calc(100% - ${CHEV}px) 100%, 0 100%, ${CHEV}px 50%)`)
 
+        // In 'columns' mode, bar items track the column widths below — same
+        // flex-basis so they grow/shrink together. In 'stretch' mode (List view)
+        // they use the interlocking chevron layout with negative overlap.
         const perItemStyle: CSSProperties = mode === 'columns'
-          ? { width: KANBAN_COL_WIDTH, minWidth: KANBAN_COL_WIDTH }
+          ? { flex: `1 1 ${KANBAN_COL_WIDTH}px`, minWidth: KANBAN_COL_WIDTH }
           : { flex: 1, minWidth: 0, marginLeft: isFirst ? 0 : -CHEV }
 
         return (
