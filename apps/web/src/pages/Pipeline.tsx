@@ -143,10 +143,11 @@ export default function Pipeline() {
   const [columns, setColumns] = useState<PipelineColumn[]>(() => loadConfig())
   const [probBuckets, setProbBuckets] = useState<ProbBucket[]>(() => loadProbConfig())
   const [showArchived, setShowArchived] = useState(false)
-  // By % view — Won/Lost deals still have a probability so they'd otherwise
-  // pile into the 0% / 100% buckets. Hide them by default so the % view is
-  // an "active pipeline" view. Toggle mirrors Kanban's Show archived.
-  const [showClosedInProb, setShowClosedInProb] = useState(false)
+  // By % view — Lost deals still have a probability so they'd pile into the
+  // lowest bucket. Hide them by default, mirroring how Kanban hides the Lost
+  // column via `isArchived`. Won stays visible (matches Kanban's Won column
+  // which is NOT archived).
+  const [showLostInProb, setShowLostInProb] = useState(false)
   const [showManage, setShowManage] = useState(false)
   const [showManageProb, setShowManageProb] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
@@ -210,10 +211,11 @@ export default function Pipeline() {
     return m
   }, [opps])
 
-  // Opps used by By % — filter closed (Won/Lost) unless the user opts in.
+  // Opps used by By % — hide Lost deals unless the user opts in. Won stays
+  // visible to match Kanban (Won column isn't archived).
   const probFilteredOpps = useMemo(() =>
-    showClosedInProb ? filteredOpps : filteredOpps.filter((o) => o.stage !== 'Won' && o.stage !== 'Lost'),
-    [filteredOpps, showClosedInProb])
+    showLostInProb ? filteredOpps : filteredOpps.filter((o) => o.stage !== 'Lost'),
+    [filteredOpps, showLostInProb])
 
   const probColumnsWithDeals = useMemo(() => {
     const grouped = new Map<number, OpportunityDto[]>(probBuckets.map((b) => [b.pct, []]))
@@ -433,8 +435,8 @@ export default function Pipeline() {
             <div>{probFilteredOpps.length} of {opps.length} deals</div>
             <div style={{ flex: 1 }} />
             <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#5C5C74', cursor: 'pointer' }}>
-              <input type="checkbox" checked={showClosedInProb} onChange={(e) => setShowClosedInProb(e.target.checked)} />
-              Show closed deals (Won/Lost)
+              <input type="checkbox" checked={showLostInProb} onChange={(e) => setShowLostInProb(e.target.checked)} />
+              Show Lost deals
             </label>
             <div style={{ fontSize: 11.5, color: '#8888A0' }}>{canMove ? 'Drag between % columns to update probability' : 'Read-only'}</div>
           </div>
