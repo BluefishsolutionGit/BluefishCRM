@@ -417,16 +417,20 @@ export default function Pipeline() {
               <OwnerFilter value={ownerFilter} owners={ownerOptions} onChange={setOwnerFilter} />
             )}
           </div>
-          <ProbabilityBar buckets={probBuckets} opps={filteredOpps} />
-          <div style={{ display: 'flex', gap: 18, marginBottom: 14, fontSize: 12.5, color: '#5C5C74', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 18, marginTop: 10, marginBottom: 12, fontSize: 12.5, color: '#5C5C74', alignItems: 'center' }}>
             <div>Total open <b style={{ color: '#1E1E30', fontFamily: "'Space Grotesk'" }}>{fmt(pipeTotal)}</b></div>
             <div>{filteredOpps.length} of {opps.length} deals</div>
             <div style={{ flex: 1 }} />
             <div style={{ fontSize: 11.5, color: '#8888A0' }}>{canMove ? 'Drag between % columns to update probability' : 'Read-only'}</div>
           </div>
           {loading && <div style={{ color: '#8888A0', padding: 24 }}>Loading…</div>}
-          <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 13, overflow: 'auto', paddingBottom: 20 }}>
-            {probColumnsWithDeals.map((col) => {
+          {/* Bar + columns share one horizontal scroller so labels align even
+              when the visible bucket list widens past the viewport. */}
+          <div style={{ flex: 1, minHeight: 0, overflowX: 'auto', overflowY: 'hidden' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, height: '100%', minWidth: 'max-content' }}>
+              <ProbabilityBar buckets={probBuckets} opps={filteredOpps} mode="columns" />
+              <div style={{ display: 'flex', gap: 13, flex: 1, minHeight: 0, paddingBottom: 20 }}>
+                {probColumnsWithDeals.map((col) => {
               const color = col.color
               return (
                 <div
@@ -441,7 +445,7 @@ export default function Pipeline() {
                     }
                   }}
                   style={{
-                    width: 296, minWidth: 296,
+                    width: KANBAN_COL_WIDTH, minWidth: KANBAN_COL_WIDTH,
                     background: '#EAEAF4',
                     borderRadius: 14, padding: 12,
                     display: 'flex', flexDirection: 'column', gap: 10,
@@ -491,6 +495,8 @@ export default function Pipeline() {
                 </div>
               )
             })}
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -1080,7 +1086,13 @@ function PipelineBar({
 
 /* ─────────────── Probability Bar (chevron summary, % view) ─────────────── */
 
-function ProbabilityBar({ buckets, opps }: { buckets: ProbBucket[]; opps: OpportunityDto[] }) {
+function ProbabilityBar({
+  buckets, opps, mode = 'stretch',
+}: {
+  buckets: ProbBucket[]
+  opps: OpportunityDto[]
+  mode?: 'stretch' | 'columns'
+}) {
   const items = useMemo(() => buckets.map((b) => {
     const deals = opps.filter((o) => nearestBucket(o.probability, buckets) === b.pct)
     return { pct: b.pct, color: b.color, count: deals.length, total: deals.reduce((a, o) => a + o.value, 0) }
@@ -1088,32 +1100,41 @@ function ProbabilityBar({ buckets, opps }: { buckets: ProbBucket[]; opps: Opport
 
   if (items.length === 0) return null
 
-  const CHEV = 14
+  const CHEV = 12
+  const gap = mode === 'columns' ? KANBAN_COL_GAP : 0
   return (
-    <div style={{ display: 'flex', height: 48, marginBottom: 14, minWidth: 0 }}>
+    <div style={{ display: 'flex', gap, height: 44, flex: 'none', marginBottom: mode === 'stretch' ? 14 : 0 }}>
       {items.map((it, i) => {
         const isFirst = i === 0
         const isLast = i === items.length - 1
         const active = it.count > 0
         const bg = active ? it.color : '#E5E7F0'
         const fg = active ? '#fff' : '#5C5C74'
-        const clip = isFirst && isLast
-          ? undefined
-          : isFirst
-            ? `polygon(0 0, calc(100% - ${CHEV}px) 0, 100% 50%, calc(100% - ${CHEV}px) 100%, 0 100%)`
-            : isLast
-              ? `polygon(0 0, 100% 0, 100% 100%, 0 100%, ${CHEV}px 50%)`
-              : `polygon(0 0, calc(100% - ${CHEV}px) 0, 100% 50%, calc(100% - ${CHEV}px) 100%, 0 100%, ${CHEV}px 50%)`
+
+        const clip = mode === 'columns'
+          ? (isLast ? undefined : `polygon(0 0, calc(100% - ${CHEV}px) 0, 100% 50%, calc(100% - ${CHEV}px) 100%, 0 100%)`)
+          : (isFirst && isLast
+              ? undefined
+              : isFirst
+                ? `polygon(0 0, calc(100% - ${CHEV}px) 0, 100% 50%, calc(100% - ${CHEV}px) 100%, 0 100%)`
+                : isLast
+                  ? `polygon(0 0, 100% 0, 100% 100%, 0 100%, ${CHEV}px 50%)`
+                  : `polygon(0 0, calc(100% - ${CHEV}px) 0, 100% 50%, calc(100% - ${CHEV}px) 100%, 0 100%, ${CHEV}px 50%)`)
+
+        const perItemStyle: CSSProperties = mode === 'columns'
+          ? { width: KANBAN_COL_WIDTH, minWidth: KANBAN_COL_WIDTH }
+          : { flex: 1, minWidth: 0, marginLeft: isFirst ? 0 : -CHEV }
+
         return (
           <div
             key={it.pct}
             title={`${it.pct}% — ${it.count} deal${it.count === 1 ? '' : 's'} · ${fmt(it.total)}`}
             style={{
-              flex: 1, minWidth: 0,
+              ...perItemStyle,
               background: bg, color: fg,
               clipPath: clip,
-              marginLeft: isFirst ? 0 : -CHEV,
-              paddingLeft: isFirst ? 14 : CHEV + 10,
+              borderRadius: mode === 'columns' && isLast ? 8 : 0,
+              paddingLeft: mode === 'stretch' && !isFirst ? CHEV + 10 : 14,
               paddingRight: isLast ? 14 : CHEV + 10,
               display: 'flex', alignItems: 'center', gap: 10,
             }}
