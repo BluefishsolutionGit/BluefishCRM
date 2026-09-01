@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent, type CSSProperties, type FormEvent } from 'react'
-import type { ActivityDto, ActivityType, CreateActivityDto, DocumentDto, ManagerHintPriority, OpportunityDto, OpportunityStage, UpdateOpportunityDto } from '@bluefish/shared'
+import type { ActivityDto, ActivityType, CreateActivityDto, CustomerDto, DocumentDto, ManagerHintPriority, OpportunityDto, OpportunityStage, UpdateOpportunityDto, UserDto } from '@bluefish/shared'
 import { MANAGER_HINT_PRIORITIES, SERVICE_LINES } from '@bluefish/shared'
 import { api, ApiError } from '../lib/api'
 import { useToast } from '../lib/ToastContext'
@@ -28,6 +28,8 @@ export default function OpportunityDetailModal({ opp, onClose, onChanged, onDele
   const [tab, setTab] = useState<'details' | 'activities' | 'attachments'>('details')
   const [activities, setActivities] = useState<ActivityDto[]>([])
   const [attachments, setAttachments] = useState<DocumentDto[]>([])
+  const [customers, setCustomers] = useState<CustomerDto[]>([])
+  const [users, setUsers] = useState<UserDto[]>([])
   const [addingActivity, setAddingActivity] = useState(false)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState<UpdateOpportunityDto>({})
@@ -43,6 +45,8 @@ export default function OpportunityDetailModal({ opp, onClose, onChanged, onDele
     if (!opp) return
     setForm({
       title: opp.title,
+      customerId: opp.customerId,
+      ownerId: opp.ownerId,
       stage: opp.stage,
       value: opp.value,
       probability: opp.probability,
@@ -57,6 +61,10 @@ export default function OpportunityDetailModal({ opp, onClose, onChanged, onDele
     })
     api.activities({ opportunityId: opp.id }).then(setActivities).catch(() => setActivities([]))
     reloadAttachments(opp.id)
+    // Lookup lists for the Customer + Owner pickers. Loaded once per open.
+    if (customers.length === 0) api.customers().then(setCustomers).catch(() => setCustomers([]))
+    if (users.length === 0) api.users().then(setUsers).catch(() => setUsers([]))
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, [opp])
 
   if (!opp) return null
@@ -154,6 +162,28 @@ export default function OpportunityDetailModal({ opp, onClose, onChanged, onDele
           {tab === 'details' && (
             <form onSubmit={saveAndClose} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 14px' }}>
+                <Field label="Customer" hint="Reassign this deal to a different company">
+                  <select disabled={!canWrite} value={form.customerId ?? opp.customerId} onChange={(e) => set('customerId', e.target.value)} style={inp}>
+                    {/* Sorted alphabetically. Show code inline so operators can spot duplicates. */}
+                    {[...customers].sort((a, b) => a.name.localeCompare(b.name)).map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}{c.code ? ` (${c.code})` : ''}</option>
+                    ))}
+                    {/* Guarantee current customer is selectable even if list hasn't loaded yet */}
+                    {!customers.some((c) => c.id === opp.customerId) && (
+                      <option value={opp.customerId}>{opp.customerName}</option>
+                    )}
+                  </select>
+                </Field>
+                <Field label="Owner" hint="Sales rep responsible for the deal">
+                  <select disabled={!canWrite} value={form.ownerId ?? opp.ownerId} onChange={(e) => set('ownerId', e.target.value)} style={inp}>
+                    {[...users].sort((a, b) => a.name.localeCompare(b.name)).map((u) => (
+                      <option key={u.id} value={u.id}>{u.name} ({u.email})</option>
+                    ))}
+                    {!users.some((u) => u.id === opp.ownerId) && (
+                      <option value={opp.ownerId}>{opp.ownerName}</option>
+                    )}
+                  </select>
+                </Field>
                 <Field label="Stage">
                   <select disabled={!canWrite} value={form.stage ?? opp.stage} onChange={(e) => set('stage', e.target.value as OpportunityStage)} style={inp}>
                     {STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
