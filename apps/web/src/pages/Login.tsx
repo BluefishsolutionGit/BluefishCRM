@@ -19,8 +19,8 @@ function fishTransform(rotation: number, radius: number, scale: number): string 
 }
 
 export default function Login() {
-  const [email, setEmail] = useState('nattaya@bluefishsolution.com')
-  const [password, setPassword] = useState('demo1234')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [showPw, setShowPw] = useState(false)
   const [fEmail, setFEmail] = useState(false)
   const [fPw, setFPw] = useState(false)
