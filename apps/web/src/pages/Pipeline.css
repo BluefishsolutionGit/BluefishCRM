@@ -1,0 +1,27 @@
+/* Pipeline "List" view — 7 cols: Opportunity · Service · Owner · Stage · Amount · Probability · Close */
+.pipeline-list-grid {
+  display: grid;
+  grid-template-columns: 2.4fr 100px 130px 130px 130px 110px 130px;
+  gap: 10px;
+}
+
+/* Tablet landscape: drop Owner + Probability, keep Service/Stage/Amount/Close */
+@media (max-width: 1279px) {
+  .pipeline-list-grid {
+    grid-template-columns: 2.4fr 90px 110px 100px 110px;
+  }
+  .pipeline-list-grid > :nth-child(3),  /* Owner */
+  .pipeline-list-grid > :nth-child(6) { /* Probability */
+    display: none !important;
+  }
+}
+
+/* Tablet portrait: also drop Service pill */
+@media (max-width: 1023px) {
+  .pipeline-list-grid {
+    grid-template-columns: 2.6fr 100px 100px 100px;
+  }
+  .pipeline-list-grid > :nth-child(2) { /* Service */
+    display: none !important;
+  }
+}

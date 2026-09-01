@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import type { CustomerDto, QuotationDto, QuotationStatus } from '@bluefish/shared'
 import { api, ApiError } from '../lib/api'
 import { useToast } from '../lib/ToastContext'
+import './Quotations.css'
 import { useAuth } from '../lib/AuthContext'
 
 const STATUS_STYLE: Record<QuotationStatus, { bg: string; fg: string }> = {
@@ -44,7 +45,7 @@ export default function Quotations() {
       </div>
 
       <div style={{ background: '#fff', border: '1px solid #E5E7F0', borderRadius: 14, overflow: 'hidden' }}>
-        <div style={{ ...gridCols, padding: '11px 18px', borderBottom: '1px solid #E5E7F0', fontSize: 10.5, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: '#8888A0' }}>
+        <div className="quotes-grid" style={{ padding: '11px 18px', borderBottom: '1px solid #E5E7F0', fontSize: 10.5, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: '#8888A0' }}>
           <div>Quote #</div><div>Customer</div><div>Owner</div><div>Version</div><div>Status</div><div>Created</div><div style={{ textAlign: 'right' }}>Grand total</div>
         </div>
         {loading && <div style={{ padding: 24, textAlign: 'center', color: '#8888A0', fontSize: 13 }}>Loading…</div>}
@@ -52,7 +53,7 @@ export default function Quotations() {
         {quotations.map((q) => {
           const s = STATUS_STYLE[q.status]
           return (
-            <div key={q.id} onClick={() => navigate(`/quotations/${q.id}`)} style={{ ...gridCols, padding: '13px 18px', borderBottom: '1px solid #F2F3F9', alignItems: 'center', cursor: 'pointer' }}>
+            <div key={q.id} className="quotes-grid" onClick={() => navigate(`/quotations/${q.id}`)} style={{ padding: '13px 18px', borderBottom: '1px solid #F2F3F9', alignItems: 'center', cursor: 'pointer' }}>
               <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12.5, fontWeight: 500 }}>{q.no}</div>
               <div style={{ fontSize: 13, fontWeight: 600 }}>{q.customerName}</div>
               <div style={{ fontSize: 12.5, color: '#3B3B52' }}>{q.ownerName}</div>
@@ -116,7 +117,7 @@ function NewQuotationModal({ onClose, onCreated }: { onClose: () => void; onCrea
   )
 }
 
-const gridCols: CSSProperties = { display: 'grid', gridTemplateColumns: '150px 1.6fr 130px 80px 150px 130px 130px', gap: 10 }
+// gridCols moved to Quotations.css .quotes-grid for responsive column drops
 const primaryBtn: CSSProperties = { background: '#2A6FDB', color: '#fff', borderRadius: 9, padding: '8px 16px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }
 const backdrop: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(30,26,48,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 20 }
 const dialog: CSSProperties = { background: '#fff', width: '100%', maxWidth: 520, borderRadius: 14, boxShadow: '0 30px 80px -30px rgba(30,26,48,.4)' }

@@ -5,6 +5,7 @@ import DocumentViewer, { type ViewableVersion } from '../components/DocumentView
 import { api, ApiError } from '../lib/api'
 import { useToast } from '../lib/ToastContext'
 import { useAuth } from '../lib/AuthContext'
+import './Documents.css'
 
 const CAT_STYLE: Record<string, { bg: string; fg: string }> = {
   contract:    { bg: '#E4EDFC', fg: '#2A6FDB' },
@@ -257,7 +258,7 @@ export default function Documents() {
         </div>
 
         {/* Content */}
-        <div style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: selected ? '1fr 380px' : '1fr' }}>
+        <div className={selected ? 'docs-two-pane with-selected' : 'docs-two-pane'} style={{ flex: 1, minHeight: 0 }}>
           <div style={{ overflow: 'auto', padding: '14px 24px 22px' }}>
             <DocGrid rows={visible} loading={loading} selected={selected} setSelected={setSelected} canWrite={canWrite} del={del} onView={setViewing} />
           </div>
@@ -379,7 +380,7 @@ function DocGrid({ rows, loading, selected, setSelected, canWrite, del, onView }
 }) {
   return (
     <div style={{ background: '#fff', border: '1px solid #E5E7F0', borderRadius: 14, overflow: 'hidden' }}>
-      <div style={{ ...grid, padding: '11px 18px', borderBottom: '1px solid #E5E7F0', fontSize: 10.5, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: '#8888A0' }}>
+      <div className="docs-grid" style={{ padding: '11px 18px', borderBottom: '1px solid #E5E7F0', fontSize: 10.5, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: '#8888A0' }}>
         <div>Name</div><div>Category</div><div>Company</div><div>Services</div><div>v</div><div>Size</div><div>Uploaded</div><div />
       </div>
       {loading && <div style={{ padding: 24, textAlign: 'center', color: '#8888A0', fontSize: 13 }}>Loading…</div>}
@@ -395,7 +396,7 @@ function DocGrid({ rows, loading, selected, setSelected, canWrite, del, onView }
         }
         const canOpenViewer = d.kind === 'file' && !!cv
         return (
-          <div key={d.id} onClick={() => setSelected(d)} style={{ ...grid, padding: '12px 18px', borderBottom: '1px solid #F2F3F9', alignItems: 'center', cursor: 'pointer', background: selected?.id === d.id ? '#F7F8FC' : 'transparent' }}>
+          <div key={d.id} className="docs-grid" onClick={() => setSelected(d)} style={{ padding: '12px 18px', borderBottom: '1px solid #F2F3F9', alignItems: 'center', cursor: 'pointer', background: selected?.id === d.id ? '#F7F8FC' : 'transparent' }}>
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0 }}>
               <svg viewBox="0 0 24 24" width="18" height="18" style={{ flex: 'none' }}><path d="M6.5 3h8l4 4v14h-12z M14 3v5h4.5" fill="none" stroke="#5C5C74" strokeWidth={1.7} strokeLinejoin="round" /></svg>
               <div style={{ minWidth: 0 }}>
@@ -768,7 +769,7 @@ function ServiceChipPicker({ selected, onChange, available, disabled }: { select
   )
 }
 
-const grid: CSSProperties = { display: 'grid', gridTemplateColumns: '2fr 110px 1.1fr 130px 50px 80px 90px 100px', gap: 10 }
+// grid moved to Documents.css .docs-grid for responsive column drops
 const primaryBtn: CSSProperties = { background: '#2A6FDB', color: '#fff', borderRadius: 9, padding: '8px 16px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }
 const outlineBtn: CSSProperties = { border: '1px solid #E5E7F0', background: '#fff', color: '#3B3B52', borderRadius: 9, padding: '8px 14px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }
 const miniBtn: CSSProperties = { border: '1px solid #E5E7F0', background: '#fff', borderRadius: 8, fontSize: 11.5, fontWeight: 600, padding: '4px 10px', cursor: 'pointer', color: '#3B3B52', textDecoration: 'none', display: 'inline-block' }

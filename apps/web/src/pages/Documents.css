@@ -1,0 +1,45 @@
+/* Documents grid — 8 cols: Name · Category · Company · Services · v · Size · Uploaded · Actions */
+.docs-grid {
+  display: grid;
+  grid-template-columns: 2fr 110px 1.1fr 130px 50px 80px 90px 100px;
+  gap: 10px;
+}
+
+/* Tablet landscape: drop Services + Uploaded date (informational) */
+@media (max-width: 1279px) {
+  .docs-grid {
+    grid-template-columns: 2.2fr 100px 1fr 44px 80px 100px;
+  }
+  .docs-grid > :nth-child(4),  /* Services */
+  .docs-grid > :nth-child(7) { /* Uploaded */
+    display: none !important;
+  }
+}
+
+/* Tablet portrait: also drop Category + Size, keep Name/Company/version/actions */
+@media (max-width: 1023px) {
+  .docs-grid {
+    grid-template-columns: 2.4fr 1fr 44px 100px;
+  }
+  .docs-grid > :nth-child(2),  /* Category */
+  .docs-grid > :nth-child(6) { /* Size */
+    display: none !important;
+  }
+}
+
+/* Two-pane wrapper (list + selected-doc details 380px). On narrow tablet
+   stack them so the detail panel goes below the list instead of squeezing
+   the list into a narrow column. */
+.docs-two-pane {
+  display: grid;
+  grid-template-columns: 1fr;
+}
+.docs-two-pane.with-selected {
+  grid-template-columns: 1fr 380px;
+}
+@media (max-width: 1023px) {
+  .docs-two-pane.with-selected {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto;
+  }
+}

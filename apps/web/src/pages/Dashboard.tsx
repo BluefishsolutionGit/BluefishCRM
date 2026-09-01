@@ -3,6 +3,7 @@ import type { ByServiceDashboardDto, ExecutiveDashboardDto, PipelineDashboardDto
 import { SERVICE_LINES } from '@bluefish/shared'
 import { api, ApiError } from '../lib/api'
 import { useToast } from '../lib/ToastContext'
+import './Dashboard.css'
 
 const fmt = (n: number) => n >= 1_000_000 ? '฿' + (n / 1e6).toFixed(1) + 'M' : '฿' + Math.round(n / 1e3) + 'K'
 
@@ -155,7 +156,7 @@ export default function Dashboard() {
     kpiRow1: {
       title: 'Top KPIs',
       render: () => (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14 }}>
+        <div className="dash-kpi-row">
           <KpiCard label="Open pipeline" value={fmt(exec.openPipeline)} grad="linear-gradient(135deg,#3BB0F5,#1E63E9)" />
           <KpiCard label="Revenue MTD" value={fmt(exec.revenueMTD)} sub={`QTD ${fmt(exec.revenueQTD)}`} grad="linear-gradient(135deg,#2E6BE6,#1B2F8F)" />
           <KpiCard label="New leads (7d)" value={String(exec.newLeadsPeriod)} sub={`Conversion ${exec.leadConversionRate}%`} grad="linear-gradient(135deg,#FFB047,#F5641E)" />
@@ -166,7 +167,7 @@ export default function Dashboard() {
     kpiRow2: {
       title: 'Contracts & Ops',
       render: () => (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14 }}>
+        <div className="dash-kpi-row">
           <KpiCard label="Active contracts" value={String(exec.activeContracts)} grad="linear-gradient(135deg,#5B93E6,#2A6FDB)" />
           <KpiCard label="Expiring ≤ 60d" value={String(exec.expiringContracts)} grad="linear-gradient(135deg,#FFB047,#B4650A)" />
           <KpiCard label="Pending approvals" value={String(exec.pendingApprovals)} grad="linear-gradient(135deg,#8A5CF6,#5B2C9E)" />

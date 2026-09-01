@@ -1,0 +1,25 @@
+/* Quotations table — 7 cols: Quote# · Customer · Owner · Version · Status · Created · Total */
+.quotes-grid {
+  display: grid;
+  grid-template-columns: 150px 1.6fr 130px 80px 150px 130px 130px;
+  gap: 10px;
+}
+
+/* Tablet landscape / narrow laptop: drop Owner, Version, Created */
+@media (max-width: 1279px) {
+  .quotes-grid {
+    grid-template-columns: 130px 1.7fr 120px 130px;
+  }
+  .quotes-grid > :nth-child(3),  /* Owner */
+  .quotes-grid > :nth-child(4),  /* Version */
+  .quotes-grid > :nth-child(6) { /* Created */
+    display: none !important;
+  }
+}
+
+/* Tablet portrait / very narrow: also drop Status text — keep colored dot? For now just tighter grid */
+@media (max-width: 1023px) {
+  .quotes-grid {
+    grid-template-columns: 110px 1.8fr 90px 110px;
+  }
+}

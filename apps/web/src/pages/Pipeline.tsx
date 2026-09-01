@@ -6,6 +6,7 @@ import { av } from '../lib/styleUtils'
 import { useToast } from '../lib/ToastContext'
 import { useAuth } from '../lib/AuthContext'
 import OpportunityDetailModal, { MANAGER_HINT_STYLE } from '../components/OpportunityDetailModal'
+import './Pipeline.css'
 
 type View = 'kanban' | 'probability' | 'list' | 'forecast'
 
@@ -538,15 +539,16 @@ export default function Pipeline() {
           </div>
           <PipelineBar columns={visibleColumns} opps={filteredOpps} />
           <div style={{ background: '#fff', border: '1px solid #E5E7F0', borderRadius: 14, overflow: 'hidden' }}>
-            <div style={{ ...gridColsList, padding: '11px 18px', borderBottom: '1px solid #E5E7F0', fontSize: 10.5, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#8888A0' }}>
+            <div className="pipeline-list-grid" style={{ padding: '11px 18px', borderBottom: '1px solid #E5E7F0', fontSize: 10.5, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#8888A0' }}>
               <div>Opportunity</div><div>Service</div><div>Owner</div><div>Stage</div><div style={{ textAlign: 'right' }}>Amount</div><div>Probability</div><div>Close</div>
             </div>
             {filteredOpps.map((o) => (
               <div
                 key={o.id}
+                className="pipeline-list-grid"
                 onClick={() => setSelectedOpp(o)}
                 style={{
-                  ...gridColsList, padding: '12px 18px',
+                  padding: '12px 18px',
                   borderBottom: '1px solid #F2F3F9', alignItems: 'center', cursor: 'pointer',
                   ...(o.stage === 'Lost' ? LOST_ROW_STYLE : null),
                 }}
@@ -968,7 +970,7 @@ function ColorSwatchPicker({ color, onChange }: { color: string; onChange: (c: s
 function viewTab(active: boolean): CSSProperties {
   return { borderRadius: 7, fontSize: 12, fontWeight: 600, padding: '5px 13px', cursor: 'pointer', background: active ? '#2E1A6B' : 'transparent', color: active ? '#fff' : '#5C5C74' }
 }
-const gridColsList: CSSProperties = { display: 'grid', gridTemplateColumns: '2.4fr 100px 130px 130px 130px 110px 130px', gap: 10 }
+// List-view grid now lives in Pipeline.css .pipeline-list-grid (responsive)
 
 // Applied to Lost opportunity cards (Kanban + By %) and list rows so a rep
 // scanning the pipeline can immediately tell a deal is dead. Muted bg, muted

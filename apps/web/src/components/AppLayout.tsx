@@ -5,6 +5,7 @@ import { api } from '../lib/api'
 import { icons } from '../lib/icons'
 import { ToastProvider } from '../lib/ToastContext'
 import { useAuth } from '../lib/AuthContext'
+import './AppLayout.css'
 
 interface NavDef {
   path: string
@@ -120,7 +121,7 @@ export default function AppLayout() {
               </div>
             </div>
 
-            <div style={{ fontSize: 12.5, color: '#CDBFF9', paddingLeft: 22, borderLeft: '1px solid #3E2E86', marginLeft: 8 }}>
+            <div className="app-crumb" style={{ fontSize: 12.5, color: '#CDBFF9', paddingLeft: 22, borderLeft: '1px solid #3E2E86', marginLeft: 8 }}>
               Sales <span style={{ color: '#A99FD0' }}>/</span>{' '}
               <span style={{ color: '#fff', fontWeight: 600 }}>{crumb}</span>
             </div>
@@ -183,7 +184,7 @@ export default function AppLayout() {
                 <div style={{ width: 30, height: 30, borderRadius: '50%', background: '#2A6FDB', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>
                   {initials}
                 </div>
-                <div style={{ minWidth: 0, maxWidth: 150 }}>
+                <div className="app-user-name" title={displayName} style={{ minWidth: 0, maxWidth: 150 }}>
                   <div style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{displayName}</div>
                   <div style={{ fontSize: 10.5, color: '#A99FD0' }}>{displayRole}</div>
                 </div>
@@ -210,6 +211,7 @@ export default function AppLayout() {
 
           {/* ROW 2 — Primary nav */}
           <div
+            className="app-top-nav"
             style={{
               height: 48,
               minHeight: 48,

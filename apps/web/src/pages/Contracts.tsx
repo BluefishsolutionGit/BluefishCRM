@@ -16,6 +16,7 @@ function useVisibleServiceLines(): ServiceLine[] {
   return SERVICE_LINES.filter((s) => owned.has(s))
 }
 import { api, ApiError } from '../lib/api'
+import './Contracts.css'
 import { icons } from '../lib/icons'
 import { useToast } from '../lib/ToastContext'
 import { useAuth } from '../lib/AuthContext'
@@ -240,7 +241,7 @@ function DashboardTab({ statusFilters, serviceFilters, search, onOpenContract }:
 
   return (
     <>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 16 }}>
+      <div className="contract-kpi-row">
         {kpis.map((k) => (
           <div key={k.l} style={{ borderRadius: 14, padding: '15px 17px', background: k.g, color: '#fff' }}>
             <div style={{ fontSize: 12, fontWeight: 600, opacity: 0.95 }}>{k.l}</div>
@@ -342,7 +343,7 @@ function RepositoryTab({ statusFilters, serviceFilters, search, selectedId, onSe
     const s = STATUS_STYLE[c.status]
     const r = RISK_STYLE[c.risk]
     return (
-      <div key={c.id} onClick={() => onSelect(c.id)} style={{ ...repoGrid, padding: '13px 18px', borderBottom: '1px solid #F2F3F9', alignItems: 'center', cursor: 'pointer', background: selectedId === c.id ? '#F7F8FC' : 'transparent' }}>
+      <div key={c.id} className="contract-repo-grid" onClick={() => onSelect(c.id)} style={{ padding: '13px 18px', borderBottom: '1px solid #F2F3F9', alignItems: 'center', cursor: 'pointer', background: selectedId === c.id ? '#F7F8FC' : 'transparent' }}>
         <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, fontWeight: 500 }}>{c.no}</div>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.customerName}</div>
@@ -392,9 +393,9 @@ function RepositoryTab({ statusFilters, serviceFilters, search, selectedId, onSe
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: selected ? '1fr 460px' : '1fr', gap: 14, alignItems: 'start' }}>
+      <div className={selected ? 'contract-two-pane with-selected' : 'contract-two-pane'}>
         <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
-          <div style={{ ...repoGrid, padding: '11px 18px', borderBottom: '1px solid #E5E7F0', fontSize: 10.5, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#8888A0' }}>
+          <div className="contract-repo-grid" style={{ padding: '11px 18px', borderBottom: '1px solid #E5E7F0', fontSize: 10.5, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#8888A0' }}>
             <div>Contract #</div><div>Party</div><div>Type</div><div style={{ textAlign: 'right' }}>Value</div><div>Status</div><div style={{ textAlign: 'right' }}>Risk</div>
           </div>
 
@@ -1868,7 +1869,7 @@ const primaryBtn: CSSProperties = { background: '#2A6FDB', color: '#fff', border
 const outlineBtn: CSSProperties = { border: '1px solid #E5E7F0', background: '#fff', color: '#3B3B52', borderRadius: 9, padding: '8px 14px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'inline-block' }
 const miniBtn: CSSProperties = { border: '1px solid #E5E7F0', background: '#fff', borderRadius: 8, fontSize: 11, fontWeight: 600, padding: '4px 10px', cursor: 'pointer', color: '#3B3B52' }
 const navBtn: CSSProperties = { width: 28, height: 28, border: '1px solid #E5E7F0', background: '#fff', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8888A0', fontSize: 14, cursor: 'pointer' }
-const repoGrid: CSSProperties = { display: 'grid', gridTemplateColumns: '135px 1.5fr 150px 100px 130px 90px', gap: 10 }
+// repoGrid moved to Contracts.css .contract-repo-grid for responsive column drops
 const oblGrid: CSSProperties = { display: 'grid', gridTemplateColumns: '110px 1.6fr 130px 130px 130px 110px 130px', gap: 10 }
 const backdrop: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(30,26,48,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 20 }
 const dialog: CSSProperties = { background: '#fff', width: '100%', borderRadius: 14, boxShadow: '0 30px 80px -30px rgba(30,26,48,.4)' }

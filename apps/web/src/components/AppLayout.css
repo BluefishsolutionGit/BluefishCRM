@@ -1,0 +1,32 @@
+/* AppLayout responsive polish — the shell itself is now width-flexible,
+   but a few chrome details hog space on tablet. Trim them below 1024. */
+
+/* Breadcrumb between brand and search — informational but not critical. */
+@media (max-width: 1023px) {
+  .app-crumb { display: none !important; }
+}
+
+/* User menu: keep the avatar, drop the name + role text on tablet. Click
+   still opens the menu; hover shows the name via `title`. */
+@media (max-width: 1023px) {
+  .app-user-name { display: none !important; }
+}
+
+/* Primary nav row already has overflowX:auto so pills scroll horizontally.
+   On tablet the total pill width blows past the viewport; add a fade at
+   the right edge so users see there's more to scroll to. */
+.app-top-nav {
+  position: relative;
+}
+.app-top-nav::after {
+  content: '';
+  position: sticky;
+  right: 0;
+  top: 0;
+  width: 24px;
+  height: 100%;
+  background: linear-gradient(to left, #fff, rgba(255,255,255,0));
+  pointer-events: none;
+  flex: none;
+  align-self: stretch;
+}

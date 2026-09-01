@@ -1,0 +1,53 @@
+/* Contract repository table — 6 cols: # · Party · Type · Value · Status · Risk */
+.contract-repo-grid {
+  display: grid;
+  grid-template-columns: 135px 1.5fr 150px 100px 130px 90px;
+  gap: 10px;
+}
+@media (max-width: 1279px) {
+  .contract-repo-grid {
+    grid-template-columns: 115px 1.5fr 100px 110px 70px;
+  }
+  .contract-repo-grid > :nth-child(3) { display: none !important; } /* Type */
+}
+@media (max-width: 1023px) {
+  .contract-repo-grid {
+    grid-template-columns: 100px 1.8fr 90px 60px;
+  }
+  .contract-repo-grid > :nth-child(4) { display: none !important; } /* Value */
+}
+
+/* KPI cards top of page — 4 cards side by side is cramped below ~1280 */
+.contract-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+@media (max-width: 1279px) {
+  .contract-kpi-row {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 640px) {
+  .contract-kpi-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Two-pane: list + selected-detail 460px sidebar. Below tablet-portrait
+   the sidebar drops beneath the list so the list gets full width. */
+.contract-two-pane {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+  align-items: start;
+}
+.contract-two-pane.with-selected {
+  grid-template-columns: 1fr 460px;
+}
+@media (max-width: 1023px) {
+  .contract-two-pane.with-selected {
+    grid-template-columns: 1fr;
+  }
+}
