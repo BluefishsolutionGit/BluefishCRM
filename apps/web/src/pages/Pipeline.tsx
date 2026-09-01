@@ -317,8 +317,7 @@ export default function Pipeline() {
               <OwnerFilter value={ownerFilter} owners={ownerOptions} onChange={setOwnerFilter} />
             )}
           </div>
-          <PipelineBar columns={visibleColumns} opps={filteredOpps} />
-          <div style={{ display: 'flex', gap: 18, marginBottom: 14, fontSize: 12.5, color: '#5C5C74', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 18, marginTop: 10, marginBottom: 12, fontSize: 12.5, color: '#5C5C74', alignItems: 'center' }}>
             <div>Total open <b style={{ color: '#1E1E30', fontFamily: "'Space Grotesk'" }}>{fmt(pipeTotal)}</b></div>
             <div>{filteredOpps.length} of {opps.length} deals</div>
             <div style={{ flex: 1 }} />
@@ -331,8 +330,14 @@ export default function Pipeline() {
             <div style={{ fontSize: 11.5, color: '#8888A0' }}>{canMove ? 'Drag cards between stages' : 'Read-only'}</div>
           </div>
           {loading && <div style={{ color: '#8888A0', padding: 24 }}>Loading…</div>}
-          <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 13, overflow: 'auto', paddingBottom: 20 }}>
-            {columnsWithDeals.map((col) => (
+          {/* Bar + columns share ONE horizontal scroller so their widths line up
+              perfectly — bar's stage labels sit exactly above their columns even
+              when Archived (Lost) is toggled in/out. */}
+          <div style={{ flex: 1, minHeight: 0, overflowX: 'auto', overflowY: 'hidden' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, height: '100%', minWidth: 'max-content' }}>
+              <PipelineBar columns={visibleColumns} opps={filteredOpps} mode="columns" />
+              <div style={{ display: 'flex', gap: 13, flex: 1, minHeight: 0, paddingBottom: 20 }}>
+                {columnsWithDeals.map((col) => (
               <div
                 key={col.name}
                 onDragOver={(e) => e.preventDefault()}
@@ -345,7 +350,7 @@ export default function Pipeline() {
                   }
                 }}
                 style={{
-                  width: 296, minWidth: 296,
+                  width: KANBAN_COL_WIDTH, minWidth: KANBAN_COL_WIDTH,
                   background: col.isArchived ? '#F1F1F7' : '#EAEAF4',
                   borderRadius: 14, padding: 12,
                   display: 'flex', flexDirection: 'column', gap: 10,
@@ -398,6 +403,8 @@ export default function Pipeline() {
                 ))}
               </div>
             ))}
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -984,7 +991,20 @@ function arrowBtn(disabled: boolean): CSSProperties {
 
 /* ─────────────── Pipeline Bar (chevron summary) ─────────────── */
 
-function PipelineBar({ columns, opps }: { columns: PipelineColumn[]; opps: OpportunityDto[] }) {
+// Kanban column geometry — bar sits above these columns and must share the
+// same per-item width + gap so labels align even when Archived is toggled.
+const KANBAN_COL_WIDTH = 296
+const KANBAN_COL_GAP = 13
+
+function PipelineBar({
+  columns, opps, mode = 'stretch',
+}: {
+  columns: PipelineColumn[]
+  opps: OpportunityDto[]
+  // 'stretch' = each stage fills equal share (for List view, etc.)
+  // 'columns' = fixed 296px per item, matches Kanban column widths for perfect vertical alignment
+  mode?: 'stretch' | 'columns'
+}) {
   const items = useMemo(() => columns.map((c) => {
     const deals = opps.filter((o) => o.stage === c.name)
     return { name: c.name, color: c.color, count: deals.length, total: deals.reduce((a, o) => a + o.value, 0), isArchived: c.isArchived }
@@ -992,33 +1012,44 @@ function PipelineBar({ columns, opps }: { columns: PipelineColumn[]; opps: Oppor
 
   if (items.length === 0) return null
 
-  const CHEV = 14  // chevron point width in px
+  const CHEV = 12
+  const gap = mode === 'columns' ? KANBAN_COL_GAP : 0
   return (
-    <div style={{ display: 'flex', height: 48, marginBottom: 14, minWidth: 0 }}>
+    <div style={{ display: 'flex', gap, height: 44, flex: 'none', marginBottom: mode === 'stretch' ? 14 : 0 }}>
       {items.map((it, i) => {
         const isFirst = i === 0
         const isLast = i === items.length - 1
         const active = it.count > 0
         const bg = active ? it.color : '#E5E7F0'
         const fg = active ? '#fff' : '#5C5C74'
-        // Right-pointing chevron on all except last; left notch on all except first.
-        const clip = isFirst && isLast
-          ? undefined
-          : isFirst
-            ? `polygon(0 0, calc(100% - ${CHEV}px) 0, 100% 50%, calc(100% - ${CHEV}px) 100%, 0 100%)`
-            : isLast
-              ? `polygon(0 0, 100% 0, 100% 100%, 0 100%, ${CHEV}px 50%)`
-              : `polygon(0 0, calc(100% - ${CHEV}px) 0, 100% 50%, calc(100% - ${CHEV}px) 100%, 0 100%, ${CHEV}px 50%)`
+
+        // Two shapes:
+        //   - 'columns' mode: gapped, simple right arrow (no left notch, no overlap)
+        //   - 'stretch' mode: interlocking chevrons like a breadcrumb
+        const clip = mode === 'columns'
+          ? (isLast ? undefined : `polygon(0 0, calc(100% - ${CHEV}px) 0, 100% 50%, calc(100% - ${CHEV}px) 100%, 0 100%)`)
+          : (isFirst && isLast
+              ? undefined
+              : isFirst
+                ? `polygon(0 0, calc(100% - ${CHEV}px) 0, 100% 50%, calc(100% - ${CHEV}px) 100%, 0 100%)`
+                : isLast
+                  ? `polygon(0 0, 100% 0, 100% 100%, 0 100%, ${CHEV}px 50%)`
+                  : `polygon(0 0, calc(100% - ${CHEV}px) 0, 100% 50%, calc(100% - ${CHEV}px) 100%, 0 100%, ${CHEV}px 50%)`)
+
+        const perItemStyle: CSSProperties = mode === 'columns'
+          ? { width: KANBAN_COL_WIDTH, minWidth: KANBAN_COL_WIDTH }
+          : { flex: 1, minWidth: 0, marginLeft: isFirst ? 0 : -CHEV }
+
         return (
           <div
             key={it.name}
             title={`${it.name} — ${it.count} deal${it.count === 1 ? '' : 's'} · ${fmt(it.total)}`}
             style={{
-              flex: 1, minWidth: 0,
+              ...perItemStyle,
               background: bg, color: fg,
               clipPath: clip,
-              marginLeft: isFirst ? 0 : -CHEV,
-              paddingLeft: isFirst ? 14 : CHEV + 10,
+              borderRadius: mode === 'columns' && isLast ? 8 : 0,
+              paddingLeft: mode === 'stretch' && !isFirst ? CHEV + 10 : 14,
               paddingRight: isLast ? 14 : CHEV + 10,
               display: 'flex', alignItems: 'center', gap: 10,
               opacity: it.isArchived ? 0.7 : 1,
