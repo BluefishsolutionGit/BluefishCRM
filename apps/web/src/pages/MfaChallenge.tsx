@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { ApiError } from '../lib/api'
+import { preferredLandingRoute } from '../lib/landingRoute'
 import { authFormCard, authInput, authPrimaryBtn, authPage } from './authStyles'
 
 interface State { mfaToken?: string; email?: string }
@@ -29,7 +30,7 @@ export default function MfaChallenge() {
     setBusy(true); setError(null)
     try {
       await verifyMfa(state.mfaToken!, code)
-      navigate('/dashboard')
+      navigate(preferredLandingRoute())
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'MFA verification failed')
     } finally { setBusy(false) }

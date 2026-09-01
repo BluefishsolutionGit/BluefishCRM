@@ -41,6 +41,14 @@ import ResetPassword from './pages/ResetPassword'
 import MfaChallenge from './pages/MfaChallenge'
 import './index.css'
 import { drainAll } from './lib/offlineQueue'
+import { useResponsiveRedirect } from './lib/useResponsiveRedirect'
+
+/** Sibling of <Routes> that redirects between desktop / mobile shells
+ *  based on viewport width. See useResponsiveRedirect for rules. */
+function ResponsiveGate() {
+  useResponsiveRedirect()
+  return null
+}
 
 // Register service worker (offline shell + push + Background Sync)
 if ('serviceWorker' in navigator) {
@@ -56,6 +64,7 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <AuthProvider>
       <BrowserRouter>
+        <ResponsiveGate />
         <Routes>
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="/login" element={<Login />} />

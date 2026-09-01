@@ -10,3 +10,10 @@ apps/api/storage/
 apps/web/.env.local
 crm-documentation-files/
 CRM documentation files-handoff.zip
+
+# TAK sales pipeline import data — real customer/staff PII, keep out of git
+docs/BFS_user.csv
+docs/TAK_pipeline_forImport.xlsx
+docs/tak_companies_for_lookup.txt
+docs/tak_pipeline_import.sql
+requirements/BFS_user.csv

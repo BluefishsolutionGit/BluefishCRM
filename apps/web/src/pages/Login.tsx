@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { API_BASE, ApiError } from '../lib/api'
 import { getBiometricHint, loginWithBiometric, isWebAuthnSupported, clearBiometricHint } from '../lib/webauthnClient'
+import { preferredLandingRoute } from '../lib/landingRoute'
 import './Login.css'
 
 const RING1_ANGLES = [0, 26, 52, 77, 103, 129, 154, 180, 206, 231, 257, 283, 309, 334]
@@ -44,7 +45,7 @@ export default function Login() {
     if (res.ok) {
       // Refresh auth context so ProtectedRoute lets us in
       await refreshUser().catch(() => {})
-      const goto = params.get('next') || '/dashboard'
+      const goto = params.get('next') || preferredLandingRoute()
       navigate(goto)
     } else {
       // If the hint is stale (credential removed on server), forget it
@@ -68,7 +69,7 @@ export default function Login() {
     if (window.location.hash.startsWith('#token=')) {
       const token = window.location.hash.slice('#token='.length)
       window.history.replaceState(null, '', '/login')
-      handleSsoOutcome(token).then(() => navigate('/dashboard')).catch(() => setError('SSO login failed'))
+      handleSsoOutcome(token).then(() => navigate(preferredLandingRoute())).catch(() => setError('SSO login failed'))
     }
     fetch(`${API_BASE}/auth/sso/microsoft/status`)
       .then((r) => r.ok ? r.json() : { configured: false })
@@ -106,7 +107,7 @@ export default function Login() {
         navigate('/login/mfa', { state: { mfaToken: outcome.mfaToken, email } })
         return
       }
-      navigate('/dashboard')
+      navigate(preferredLandingRoute())
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Login failed — is the API running?')
     } finally {
