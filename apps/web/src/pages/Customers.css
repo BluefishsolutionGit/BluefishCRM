@@ -1,0 +1,36 @@
+/* Customers table grid — 9 columns on desktop, shrinks progressively.
+   Cells map to nth-child(N):
+     1 Code · 2 Company · 3 Industry · 4 Service tags · 5 Status
+     6 Owner · 7 Last activity · 8 Open value · 9 Kebab menu
+   Only phones (<768) get the /m redirect, so we tune this for 768–1279. */
+
+.customers-grid {
+  display: grid;
+  grid-template-columns: 96px 2fr 1fr 175px 104px 130px 1.3fr 90px 36px;
+  gap: 10px;
+}
+
+/* Tablet landscape (~1024–1279): drop Service tags + Last activity. Owner
+   column drops the name and shows only the avatar to save 80px of width. */
+@media (max-width: 1279px) {
+  .customers-grid {
+    grid-template-columns: 84px 2fr 1fr 100px 60px 90px 36px;
+  }
+  .customers-grid > :nth-child(4),   /* Service tags cell (TagCell sets inline display:flex — need !important to beat it) */
+  .customers-grid > :nth-child(7) {  /* Last activity cell */
+    display: none !important;
+  }
+  /* Compact owner: hide the trailing name, keep the avatar */
+  .customers-grid .owner-name { display: none; }
+}
+
+/* Narrow tablet (768–1023): also drop Industry. Company keeps growing so
+   the name still reads well. */
+@media (max-width: 1023px) {
+  .customers-grid {
+    grid-template-columns: 76px 2.4fr 84px 52px 82px 32px;
+  }
+  .customers-grid > :nth-child(3) {  /* Industry cell */
+    display: none !important;
+  }
+}

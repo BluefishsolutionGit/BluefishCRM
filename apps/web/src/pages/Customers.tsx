@@ -8,6 +8,7 @@ import { useToast } from '../lib/ToastContext'
 import { useAuth } from '../lib/AuthContext'
 import CustomerFormModal from '../components/CustomerFormModal'
 import ImportCustomersModal from '../components/ImportCustomersModal'
+import './Customers.css'
 
 const OWNER_COLORS = ['#2A6FDB', '#1F5AC2', '#B4650A', '#6C55E0', '#0E9C7E']
 function colorFor(name: string): string {
@@ -103,7 +104,7 @@ export default function Customers() {
       )}
 
       <div style={{ background: '#fff', border: '1px solid #E5E7F0', borderRadius: 14, overflow: 'visible' }}>
-        <div style={{ ...gridCols, padding: '11px 18px', borderBottom: '1px solid #E5E7F0', fontSize: 10.5, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: '#8888A0' }}>
+        <div className="customers-grid" style={{ padding: '11px 18px', borderBottom: '1px solid #E5E7F0', fontSize: 10.5, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: '#8888A0' }}>
           <div>Code</div><div>Company</div><div>Industry</div><div>Service tags</div><div>Status</div><div>Owner</div><div>Last activity</div><div style={{ textAlign: 'right' }}>Open value</div><div />
         </div>
         {loading && <div style={{ padding: 24, textAlign: 'center', color: '#8888A0', fontSize: 13 }}>Loading…</div>}
@@ -111,7 +112,7 @@ export default function Customers() {
           <div style={{ padding: 24, textAlign: 'center', color: '#8888A0', fontSize: 13 }}>No customers match this search.</div>
         )}
         {customers.map((c) => (
-          <div key={c.id} style={{ ...gridCols, padding: '12px 18px', borderBottom: '1px solid #F2F3F9', alignItems: 'center', position: 'relative' }}>
+          <div key={c.id} className="customers-grid" style={{ padding: '12px 18px', borderBottom: '1px solid #F2F3F9', alignItems: 'center', position: 'relative' }}>
             <div onClick={() => navigate(`/customers/${c.id}`)} style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, color: '#5C5C74', cursor: 'pointer' }}>{c.code}</div>
             <div onClick={() => navigate(`/customers/${c.id}`)} style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, cursor: 'pointer' }}>
               <div style={{ width: 32, height: 32, borderRadius: 9, background: '#EAEAF4', color: '#3B3B52', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
@@ -135,8 +136,8 @@ export default function Customers() {
             <TagCell tags={c.tags} onClick={() => navigate(`/customers/${c.id}`)} />
             <div><span style={statusStyle(c.status)}>{c.status}</span></div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-              <div style={av(22, colorFor(c.ownerName))}>{ownerInitials(c.ownerName)}</div>
-              <span style={{ fontSize: 12, color: '#3B3B52' }}>{c.ownerName}</span>
+              <div style={av(22, colorFor(c.ownerName))} title={c.ownerName}>{ownerInitials(c.ownerName)}</div>
+              <span className="owner-name" style={{ fontSize: 12, color: '#3B3B52' }}>{c.ownerName}</span>
             </div>
             <div style={{ fontSize: 12, color: '#5C5C74' }}>{c.lastActivity}</div>
             <div style={{ textAlign: 'right', fontFamily: "'Space Grotesk'", fontSize: 13, fontWeight: 600 }}>{c.openValue ? fmt(c.openValue) : '—'}</div>
@@ -201,11 +202,6 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r},${g},${b},${alpha})`
 }
 
-const gridCols: CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: '96px 2fr 1fr 175px 104px 130px 1.3fr 90px 36px',
-  gap: 10,
-}
 const outlineBtn: CSSProperties = { border: '1px solid #E5E7F0', background: '#fff', borderRadius: 9, padding: '8px 14px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', color: '#3B3B52' }
 const primaryBtn: CSSProperties = { background: '#2A6FDB', color: '#fff', borderRadius: 9, padding: '8px 16px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }
 const kebab: CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, borderRadius: 6, color: '#8888A0', fontSize: 18, cursor: 'pointer' }
