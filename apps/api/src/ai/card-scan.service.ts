@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import Anthropic from '@anthropic-ai/sdk'
 import type { ScanCardResultDto } from '@bluefish/shared'
+import { TesseractOcrService } from './tesseract-ocr.service'
 
 const EXTRACT_PROMPT = `You are extracting structured contact info from a business-card image.
 
@@ -42,7 +43,7 @@ export class CardScanService {
   private readonly logger = new Logger(CardScanService.name)
   private client: Anthropic | null = null
 
-  constructor(private cfg: ConfigService) {
+  constructor(private cfg: ConfigService, private tesseract: TesseractOcrService) {
     const key = cfg.get<string>('ANTHROPIC_API_KEY')
     if (key) this.client = new Anthropic({ apiKey: key })
   }
@@ -61,7 +62,18 @@ export class CardScanService {
   }
 
   async extract(buffer: Buffer, mimeType: string): Promise<ScanCardResultDto> {
-    if (!this.client) return this.mock()
+    // No Anthropic key → fall back to Tesseract self-hosted OCR + regex parser.
+    // Same DTO shape so callers don't care which path filled it in.
+    if (!this.client) {
+      try {
+        const text = await this.tesseract.recognize(buffer)
+        if (!text) return this.mock()
+        return { ...EMPTY, ...parseCardText(text), raw: text.slice(0, 4000) }
+      } catch (err) {
+        this.logger.warn(`Tesseract fallback failed: ${(err as Error).message}`)
+        return this.mock()
+      }
+    }
 
     const model = this.cfg.get<string>('AI_VISION_MODEL') ?? this.cfg.get<string>('AI_DEFAULT_MODEL') ?? 'claude-haiku-4-5-20251001'
     const b64 = buffer.toString('base64')
@@ -159,4 +171,107 @@ function normalizeMediaType(input: string): 'image/jpeg' | 'image/png' | 'image/
   if (t.includes('gif')) return 'image/gif'
   if (t.includes('webp')) return 'image/webp'
   return 'image/jpeg'
+}
+
+/**
+ * Regex heuristics for Tesseract-derived text. Not perfect — misses stylized
+ * cards, but catches the common fields on a plain-print card:
+ *   - Email: standard RFC pattern
+ *   - Website: http(s):// or bare www.
+ *   - Thai tax ID: 13-digit run, optionally spaced/hyphenated
+ *   - Phone: heuristic on runs of digits + separators; mobile detected by
+ *     Thai mobile prefix (06/08/09) or +66[689]
+ *   - Address: prefer the longest multi-line block after the person + role
+ *   - Name / position / company: educated guessing by line position and
+ *     capitalization — least reliable, expected to require review.
+ */
+function parseCardText(raw: string): Partial<ScanCardResultDto> {
+  const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
+  const out: Partial<ScanCardResultDto> = {}
+
+  // Email
+  const emailMatch = raw.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/)
+  if (emailMatch) out.email = emailMatch[0].toLowerCase()
+
+  // Website — accept even when it echoes the email domain; the review sheet
+  // lets the rep drop one if it's redundant.
+  const webMatch = raw.match(/(https?:\/\/[^\s]+|(?:www\.)[^\s]+)/i)
+  if (webMatch) out.website = webMatch[0].replace(/[.,;)]+$/, '')
+
+  // Thai tax ID — 13 digits, may have hyphens/spaces
+  const taxCandidate = raw.match(/(\d[\s-]?){13}/)
+  if (taxCandidate) {
+    const digits = taxCandidate[0].replace(/\D/g, '')
+    if (digits.length === 13) out.taxId = digits
+  }
+
+  // Phones — pull all runs of digits with common phone separators (min 8 digits)
+  const phoneMatches = raw.match(/(?:\+?\d[\s\d\-().]{7,}\d)/g) ?? []
+  const seenPhones = new Set<string>()
+  const mobiles: string[] = []
+  const landlines: string[] = []
+  for (const m of phoneMatches) {
+    const digits = m.replace(/\D/g, '')
+    if (digits.length < 8 || digits.length > 15) continue
+    if (out.taxId && digits === out.taxId) continue
+    if (seenPhones.has(digits)) continue
+    seenPhones.add(digits)
+    // Thai mobile: starts 06, 08, 09 (10 digits) or +66-[689]
+    const isMobile = /^0[689]\d{8}$/.test(digits) || /^66[689]\d{8}$/.test(digits)
+    if (isMobile) mobiles.push(m.trim())
+    else landlines.push(m.trim())
+  }
+  if (mobiles.length > 0) out.mobile = mobiles[0]
+  if (landlines.length > 0) out.telephone = landlines[0]
+
+  // Company — look for lines with "Co., Ltd", "จำกัด", "Public Company"
+  const companyLine = lines.find((l) =>
+    /(Co\.?,?\s*Ltd|จำกัด|บริษัท|Public Company|Group|Corporation|มหาชน)/i.test(l),
+  )
+  if (companyLine) out.companyName = companyLine
+
+  // Position keywords
+  const posLine = lines.find((l) =>
+    /(Manager|Director|Officer|Engineer|Head|Chief|Executive|Sales|Marketing|VP|CEO|CTO|CFO|COO|ผู้จัดการ|ผู้อำนวยการ|กรรมการ)/i.test(l),
+  )
+  if (posLine) out.position = posLine
+
+  // Contact name — pick the first line that:
+  //   - Isn't the company / position / email / phone
+  //   - Has at least 2 tokens or Thai characters
+  const usedLines = new Set([companyLine, posLine])
+  const nameLine = lines.find((l) => {
+    if (usedLines.has(l)) return false
+    if (out.email && l.toLowerCase().includes(out.email)) return false
+    if (/\d{6,}/.test(l)) return false
+    if (l.length < 3 || l.length > 60) return false
+    return /^[A-Z][a-zA-Z].*[a-zA-Z]$/.test(l) || /[ก-๙]/.test(l)
+  })
+  if (nameLine) {
+    out.contactName = nameLine
+    const parts = nameLine.replace(/^คุณ\s*/, '').split(/\s+/)
+    if (parts.length >= 2) {
+      out.firstName = parts[0]
+      out.lastName = parts.slice(1).join(' ')
+    } else {
+      out.firstName = nameLine
+    }
+  }
+
+  // Address — join lines that look like address parts; skip tax-ID lines
+  // and lines already claimed by email / phone / website.
+  const alreadyClaimed = new Set<string>([out.email, out.website, out.mobile, out.telephone].filter(Boolean) as string[])
+  const addressCandidates = lines.filter((l) => {
+    if (out.taxId && l.includes(out.taxId)) return false
+    if ([...alreadyClaimed].some((c) => l.includes(c))) return false
+    return /(Road|Rd\.|Street|St\.|Soi|Bangkok|Amphoe|Tambon|ถนน|แขวง|เขต|กรุงเทพ|จังหวัด|\d{5})/i.test(l)
+  })
+  if (addressCandidates.length > 0) {
+    out.address = addressCandidates.join(' ').replace(/\s+/g, ' ').trim()
+    // Best-effort city extraction
+    const cityMatch = out.address?.match(/(Bangkok|Chiang Mai|Phuket|Nonthaburi|Pathum Thani|Samut Prakan|Chonburi|กรุงเทพ|เชียงใหม่|ภูเก็ต|นนทบุรี|ปทุมธานี|สมุทรปราการ|ชลบุรี)/i)
+    if (cityMatch) out.city = cityMatch[0]
+  }
+
+  return out
 }
