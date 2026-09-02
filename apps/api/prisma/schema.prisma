@@ -206,6 +206,7 @@ model Opportunity {
   wonReason    String?
   managerHint         String?
   managerHintPriority String?   // 'info' | 'watch' | 'urgent' — how the coach line should read
+  managerHintById     String?   // who set / last updated the hint — surfaces "จากคุณ X" on the owner's mobile Home
   notes        String?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt

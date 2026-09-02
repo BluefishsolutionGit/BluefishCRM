@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
-import type { ActivityDto, ExecutiveDashboardDto, ForecastDto, UserDto } from '@bluefish/shared'
+import type { ActivityDto, ByServiceDashboardDto, ExecutiveDashboardDto, ForecastDto, OpportunityDto, UserDto } from '@bluefish/shared'
 import { SERVICE_LINES } from '@bluefish/shared'
 import { api } from '../lib/api'
 import { useAuth } from '../lib/AuthContext'
@@ -21,7 +21,9 @@ export default function MobileHome() {
   const [exec, setExec] = useState<ExecutiveDashboardDto | null>(null)
   const [serviceExec, setServiceExec] = useState<ExecutiveDashboardDto | null>(null)
   const [forecast, setForecast] = useState<ForecastDto | null>(null)
+  const [byService, setByService] = useState<ByServiceDashboardDto | null>(null)
   const [today, setToday] = useState<ActivityDto[]>([])
+  const [managerHints, setManagerHints] = useState<OpportunityDto[]>([])
   const [salesUsers, setSalesUsers] = useState<UserDto[]>([])
   const [pickerOpen, setPickerOpen] = useState(false)
   const [bioAvailable, setBioAvailable] = useState(false)
@@ -52,6 +54,8 @@ export default function MobileHome() {
   useEffect(() => {
     api.forecast().then(setForecast).catch(() => {})
     api.execDashboard().then(setExec).catch(() => {})
+    // Per-service target/won for the mini progress bars in the Overall card.
+    api.byServiceDashboard().then(setByService).catch(() => setByService(null))
     if (isWebAuthnSupported()) {
       void isPlatformAuthenticatorAvailable().then(setBioAvailable)
     }
@@ -62,6 +66,20 @@ export default function MobileHome() {
         .catch(() => setSalesUsers([]))
     }
   }, [user, canSeeAll])
+
+  // Manager suggestions: opportunities the current user owns that have a hint
+  // written by someone else. Refresh when the user changes (e.g. rep switch).
+  useEffect(() => {
+    if (!user?.id) return
+    api.opportunities({ ownerId: user.id })
+      .then((rows) => setManagerHints(
+        rows
+          .filter((o) => o.managerHint && (o.managerHint.trim().length > 0 || o.managerHintPriority))
+          // Newest suggestion first — updatedAt bumps whenever the hint is (re)written.
+          .sort((a, b) => (new Date(b.updatedAt).getTime()) - (new Date(a.updatedAt).getTime()))
+      ))
+      .catch(() => setManagerHints([]))
+  }, [user?.id])
 
   // TODAY list follows whichever rep is being viewed in 'me' scope — so a
   // manager peeking at a specific rep sees that rep's day, not their own.
@@ -157,17 +175,17 @@ export default function MobileHome() {
   }, [canSeeAll, activeRepId, user?.id, salesUsers])
 
   const scopeChips = useMemo(() => {
-    const out: Array<{ id: Scope; label: string; svc?: string; mine?: boolean; openPicker?: boolean }> = []
+    // "Only me" moved to the top date row as its own control — the horizontal
+    // scroll strip now only carries Overall + service chips so it fits within
+    // the viewport on small phones without truncation.
+    const out: Array<{ id: Scope; label: string; svc?: string; mine?: boolean }> = []
     if (canSeeAll) out.push({ id: 'all', label: 'Overall' })
     const mySet = new Set(myServices)
     for (const s of SERVICE_LINES) {
       out.push({ id: 'service', label: s, svc: s, mine: mySet.has(s) })
     }
-    // Managers/admins get a picker; sales reps get a plain "Only me" that
-    // clamps to their own id.
-    out.push({ id: 'me', label: repChipLabel, openPicker: canSeeAll })
     return out
-  }, [canSeeAll, myServices, repChipLabel])
+  }, [canSeeAll, myServices])
 
   const isChipActive = (chip: { id: Scope; svc?: string }) => {
     if (chip.id !== scope) return false
@@ -191,13 +209,32 @@ export default function MobileHome() {
     ? 'linear-gradient(135deg,#0E7B7B,#2AB1A8)'
     : 'linear-gradient(135deg,#2A6FDB,#4A88F0)'
 
+  const meActive = scope === 'me'
+
   return (
     <div style={{ padding: '16px 18px 24px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ fontSize: 12, color: '#5C5C74' }}>
-        {new Date().toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' })} · {today.length} activit{today.length === 1 ? 'y' : 'ies'} today
+      {/* Date row + inline "Only me" pill — keeps it on-screen instead of
+          getting pushed off the right edge of the scope chip scroller. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ fontSize: 12, color: '#5C5C74', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {new Date().toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' })} · {today.length} activit{today.length === 1 ? 'y' : 'ies'} today
+        </div>
+        <div
+          onClick={() => handleRepChipClick(canSeeAll)}
+          style={{
+            flex: 'none', cursor: 'pointer',
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            background: meActive ? '#2E1A6B' : '#fff',
+            color: meActive ? '#fff' : '#5C5C74',
+            border: `1px solid ${meActive ? 'transparent' : '#E5E7F0'}`,
+            borderRadius: 999, padding: '4px 10px', fontSize: 11, fontWeight: 700,
+          }}
+        >
+          {repChipLabel}
+        </div>
       </div>
 
-      {/* ── Scope selector — Overall / per-service / "Only me" ── */}
+      {/* ── Scope selector — Overall + per-service (Only me lives above) ── */}
       {scopeChips.length > 1 && (
         <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2, marginRight: -16, paddingRight: 16 }}>
           {scopeChips.map((chip) => {
@@ -206,7 +243,6 @@ export default function MobileHome() {
               <div
                 key={`${chip.id}:${chip.svc ?? ''}`}
                 onClick={() => {
-                  if (chip.id === 'me') { handleRepChipClick(chip.openPicker); return }
                   if (chip.id === 'service' && chip.svc) setActiveService(chip.svc)
                   setScope(chip.id)
                 }}
@@ -249,10 +285,12 @@ export default function MobileHome() {
             <div style={{ fontSize: 10.5, opacity: 0.8 }}>{scoped.subtitle}</div>
           </div>
 
-          {/* Attainment gauge */}
-          <div style={{ marginTop: 10 }}>
+          {/* Attainment gauge — compressed slightly (font 22→20, mt 10→8, bar
+              6→5px) so 4 per-service rows fit below without ballooning the
+              card height. */}
+          <div style={{ marginTop: 8 }}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-              <div style={{ fontFamily: "'Space Grotesk'", fontSize: 22, fontWeight: 800 }}>{fmt(scoped.closed)}</div>
+              <div style={{ fontFamily: "'Space Grotesk'", fontSize: 20, fontWeight: 800 }}>{fmt(scoped.closed)}</div>
               <div style={{ fontSize: 11, opacity: 0.85 }}>{scope === 'service' ? 'MTD' : 'closed'}</div>
               <div style={{ flex: 1 }} />
               {scoped.target > 0 && (
@@ -265,7 +303,7 @@ export default function MobileHome() {
               )}
             </div>
             {scoped.target > 0 && (
-              <div style={{ marginTop: 6, background: 'rgba(255,255,255,.18)', borderRadius: 4, height: 6, overflow: 'hidden' }}>
+              <div style={{ marginTop: 5, background: 'rgba(255,255,255,.18)', borderRadius: 4, height: 5, overflow: 'hidden' }}>
                 <div style={{
                   width: `${Math.min(100, Math.max(0, scoped.attainmentPct))}%`,
                   height: '100%',
@@ -276,8 +314,18 @@ export default function MobileHome() {
             )}
           </div>
 
+          {/* Per-service mini progress lines — only when the user is looking at
+              Overall. Each row is ~13px tall to keep card footprint compact. */}
+          {scope === 'all' && byService && (
+            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {byService.stats.map((s) => (
+                <ServiceProgressRow key={s.service} label={s.service} won={s.won} target={s.target} pct={s.pctOfTarget} />
+              ))}
+            </div>
+          )}
+
           {/* Inline stats row */}
-          <div style={{ display: 'flex', gap: 12, marginTop: 12 }}>
+          <div style={{ display: 'flex', gap: 12, marginTop: 10 }}>
             <MiniStat label="Pipeline" value={fmt(scoped.pipeline)} />
             {scoped.weighted > 0 && <MiniStat label="Weighted" value={fmt(scoped.weighted)} />}
             <MiniStat label="Tasks" value={String(today.length)} />
@@ -317,6 +365,44 @@ export default function MobileHome() {
           </div>
           <div onClick={enableBiometric} style={{ background: '#4A3AB8', color: '#fff', fontSize: 11.5, fontWeight: 800, padding: '6px 12px', borderRadius: 999, cursor: 'pointer', opacity: bioBusy ? 0.6 : 1 }}>{bioBusy ? '…' : 'Enable'}</div>
           <div onClick={dismissBio} style={{ color: '#8888A0', fontSize: 14, padding: '2px 4px', cursor: 'pointer' }}>✕</div>
+        </div>
+      )}
+
+      {managerHints.length > 0 && (
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#8888A0', letterSpacing: '.06em', marginBottom: 8 }}>MANAGER SUGGESTIONS</div>
+          {managerHints.map((o) => {
+            const priority = o.managerHintPriority ?? 'info'
+            // Same palette as the desktop pipeline card so it reads as the same
+            // callout in both places — urgent = red, watch = amber, info = blue.
+            const priorityColor = priority === 'urgent' ? '#C0392B' : priority === 'watch' ? '#B4650A' : '#2A6FDB'
+            return (
+              <div
+                key={o.id}
+                onClick={() => navigate(`/m/opportunities/${o.id}`)}
+                style={{ ...card, padding: '10px 12px', marginBottom: 8, cursor: 'pointer', borderLeft: `3px solid ${priorityColor}` }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {o.title}
+                    </div>
+                    <div style={{ fontSize: 11, color: '#5C5C74', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      From {o.managerHintByName ?? 'manager'} · {o.customerName}
+                    </div>
+                  </div>
+                  <div style={{
+                    fontSize: 9.5, fontWeight: 800, color: priorityColor,
+                    background: priorityColor + '1A', padding: '3px 8px', borderRadius: 999,
+                    textTransform: 'uppercase', letterSpacing: '.06em',
+                  }}>{priority}</div>
+                </div>
+                {o.managerHint && (
+                  <div style={{ fontSize: 11.5, color: '#3B3B52', marginTop: 6, lineHeight: 1.4 }}>{o.managerHint}</div>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
 
@@ -471,6 +557,32 @@ function RepRow({ name, hint, selected, accent, numbers, onClick }: {
 function typeColor(t: string): string {
   const map: Record<string, string> = { meeting: '#2A6FDB', call: '#1F5AC2', visit: '#B4650A', demo: '#6C55E0', task: '#0E9C7E', follow_up: '#7C3AED', email: '#8888A0' }
   return map[t] ?? '#8888A0'
+}
+
+/**
+ * Compact per-service progress row rendered inside the Overall card.
+ * Renders on a single 13-14px tall line: service label · won · % · slim bar.
+ * Uses the same color scale as the main attainment gauge so 100%+ pops green,
+ * 60-99% yellow, below 60% pale.
+ */
+function ServiceProgressRow({ label, won, target, pct }: { label: string; won: number; target: number; pct: number }) {
+  const barColor = pct >= 100 ? '#22C9A3' : pct >= 60 ? '#F7D14A' : 'rgba(255,255,255,.85)'
+  const cappedPct = Math.min(100, Math.max(0, pct))
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 10.5 }}>
+      <div style={{ width: 44, fontWeight: 800, letterSpacing: '.04em', opacity: 0.95 }}>{label}</div>
+      <div style={{ flex: 1, background: 'rgba(255,255,255,.14)', borderRadius: 3, height: 3.5, overflow: 'hidden' }}>
+        <div style={{
+          width: `${cappedPct}%`, height: '100%',
+          background: barColor, transition: 'width .3s',
+        }} />
+      </div>
+      <div style={{ fontFamily: "'Space Grotesk'", fontWeight: 800, minWidth: 44, textAlign: 'right' }}>{fmt(won)}</div>
+      <div style={{ opacity: 0.85, minWidth: 30, textAlign: 'right' }}>
+        {target > 0 ? `${pct}%` : '—'}
+      </div>
+    </div>
+  )
 }
 
 function MiniStat({ label, value }: { label: string; value: string }) {

@@ -368,6 +368,10 @@ export interface OpportunityDto {
   wonReason: string | null
   managerHint: string | null
   managerHintPriority: ManagerHintPriority | null
+  /** User id of the manager who last wrote the hint. Null on legacy rows. */
+  managerHintById: string | null
+  /** Convenience — joined display name for `managerHintById`. */
+  managerHintByName: string | null
   notes: string | null
   lines: OpportunityLineDto[]
   createdAt: string
