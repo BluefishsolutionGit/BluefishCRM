@@ -24,6 +24,12 @@ class ReviewBody {
   @IsIn(['accept', 'reject']) decision!: 'accept' | 'reject'
   @IsOptional() @IsString() comment?: string
 }
+class ParseCardTextBody {
+  @IsString() @MinLength(3) text!: string
+}
+class ScanCardConfigBody {
+  @IsOptional() @IsString() anthropicApiKey?: string | null
+}
 
 const VALID_AGENTS: AiAgentKey[] = ['lead_hunter', 'sales_assistant', 'meeting_assistant', 'document_assistant', 'forecast_assistant']
 
@@ -127,12 +133,4 @@ export class AiController {
     await this.cardScan.setAnthropicKey(trimmed && trimmed.length > 0 ? trimmed : null, req.user?.sub ?? null)
     return this.cardScan.status()
   }
-}
-
-class ParseCardTextBody {
-  @IsString() @MinLength(3) text!: string
-}
-
-class ScanCardConfigBody {
-  @IsOptional() @IsString() anthropicApiKey?: string | null
 }
