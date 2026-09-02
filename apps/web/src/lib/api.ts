@@ -656,9 +656,15 @@ export const api = {
   deleteChannelIntegration: (channel: string) =>
     request<{ ok: true }>(`/integrations/channels/${encodeURIComponent(channel)}`, { method: 'DELETE' }),
 
-  scanCard: (file: File) => {
+  /**
+   * Scan a business card. Pass `front` alone for one-sided, or `front + back`
+   * when the card carries info on both sides. Backend runs vision on each and
+   * merges (picks the richer value per field, concatenates notes).
+   */
+  scanCard: (front: File, back?: File | null) => {
     const form = new FormData()
-    form.append('file', file)
+    form.append('files', front)
+    if (back) form.append('files', back)
     return request<import('@bluefish/shared').ScanCardResultDto>('/ai/scan-card', { method: 'POST', body: form })
   },
 

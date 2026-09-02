@@ -47,6 +47,19 @@ export class CardScanService {
     if (key) this.client = new Anthropic({ apiKey: key })
   }
 
+  /**
+   * Multi-side entry: vision each side, then merge into one record.
+   * Front usually has the primary fields; back often carries the Thai
+   * variant, extra phones, or the corporate reg number. Merge picks the
+   * richer value per field so both sides contribute.
+   */
+  async extractMulti(sides: Array<{ buffer: Buffer; mimeType: string }>): Promise<ScanCardResultDto> {
+    if (sides.length === 0) return { ...EMPTY, raw: null }
+    if (sides.length === 1) return this.extract(sides[0].buffer, sides[0].mimeType)
+    const results = await Promise.all(sides.map((s) => this.extract(s.buffer, s.mimeType)))
+    return mergeSides(results)
+  }
+
   async extract(buffer: Buffer, mimeType: string): Promise<ScanCardResultDto> {
     if (!this.client) return this.mock()
 
@@ -115,6 +128,29 @@ function safeJson(text: string): Partial<ScanCardResultDto> | null {
   try {
     return JSON.parse(text.slice(start, end + 1)) as Partial<ScanCardResultDto>
   } catch { return null }
+}
+
+/** Take the more informative value between sides for each field.
+ *  Notes are concatenated (front's notes + back's notes, deduped).
+ *  Raw is joined with a separator so the caller can debug both sides. */
+function mergeSides(results: ScanCardResultDto[]): ScanCardResultDto {
+  const merged: ScanCardResultDto = { ...EMPTY, raw: null }
+  const stringKeys = Object.keys(EMPTY) as Array<keyof typeof EMPTY>
+  for (const r of results) {
+    for (const k of stringKeys) {
+      const cur = merged[k]
+      const nxt = r[k]
+      if (!nxt) continue
+      if (!cur || String(nxt).length > String(cur).length) {
+        (merged as unknown as Record<string, string | null>)[k] = nxt
+      }
+    }
+  }
+  const notes = Array.from(new Set(results.map((r) => r.notes).filter(Boolean))) as string[]
+  if (notes.length > 0) merged.notes = notes.join(' · ')
+  const rawParts = results.map((r) => r.raw).filter(Boolean) as string[]
+  if (rawParts.length > 0) merged.raw = rawParts.map((p, i) => `-- side ${i + 1} --\n${p}`).join('\n\n')
+  return merged
 }
 
 function normalizeMediaType(input: string): 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp' {

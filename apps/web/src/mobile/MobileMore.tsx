@@ -8,6 +8,7 @@ import { enqueue as enqueueDraft } from '../lib/offlineQueue'
 import { LogActivitySheet } from './MobileDetails'
 import QrScannerSheet from './QrScannerSheet'
 import ScanCardReviewSheet from './ScanCardReviewSheet'
+import ScanCardCaptureSheet from './ScanCardCaptureSheet'
 import { useVoiceInput } from '../lib/useVoiceInput'
 
 export default function MobileMore() {
@@ -16,6 +17,7 @@ export default function MobileMore() {
   const [logOpen, setLogOpen] = useState<false | { description?: string }>(false)
   const [qrOpen, setQrOpen] = useState(false)
   const [cardResult, setCardResult] = useState<ScanCardResultDto | null>(null)
+  const [captureOpen, setCaptureOpen] = useState(false)
   const { user } = useAuth()
   const toast = useToast()
   const navigate = useNavigate()
@@ -68,24 +70,18 @@ export default function MobileMore() {
     voice.start()
   }
 
-  const scanCard = async () => {
-    const input = document.createElement('input')
-    input.type = 'file'
-    input.accept = 'image/*'
-    input.setAttribute('capture', 'environment')
-    input.onchange = async () => {
-      const file = input.files?.[0]
-      if (!file) return
-      setBusy('card')
-      try {
-        const result = await api.scanCard(file)
-        setCardResult(result)
-        toast('Card scanned — review and save')
-      } catch (e) {
-        toast(e instanceof ApiError ? e.message : 'Scan failed')
-      } finally { setBusy(null) }
-    }
-    input.click()
+  const scanCard = () => setCaptureOpen(true)
+
+  const runScan = async (front: File, back: File | null) => {
+    setBusy('card')
+    try {
+      const result = await api.scanCard(front, back)
+      setCaptureOpen(false)
+      setCardResult(result)
+      toast(back ? 'Both sides scanned — review and save' : 'Card scanned — review and save')
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : 'Scan failed')
+    } finally { setBusy(null) }
   }
 
   const handleQrResult = async (value: string, _fmt: string) => {
@@ -162,6 +158,13 @@ export default function MobileMore() {
         />
       )}
       {qrOpen && <QrScannerSheet onResult={handleQrResult} onClose={() => setQrOpen(false)} />}
+      {captureOpen && (
+        <ScanCardCaptureSheet
+          submitting={busy === 'card'}
+          onCancel={() => setCaptureOpen(false)}
+          onSubmit={(front, back) => void runScan(front, back)}
+        />
+      )}
       {cardResult && (
         <ScanCardReviewSheet
           result={cardResult}

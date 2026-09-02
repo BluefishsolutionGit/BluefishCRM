@@ -1,5 +1,5 @@
-import { BadRequestException, Body, Controller, Get, HttpCode, Param, Post, Query, Req, UnauthorizedException, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common'
-import { FileInterceptor } from '@nestjs/platform-express'
+import { BadRequestException, Body, Controller, Get, HttpCode, Param, Post, Query, Req, UnauthorizedException, UploadedFiles, UseGuards, UseInterceptors } from '@nestjs/common'
+import { FilesInterceptor } from '@nestjs/platform-express'
 import { IsBoolean, IsIn, IsOptional, IsString } from 'class-validator'
 import { JwtAuthGuard } from '../auth/jwt.guard'
 import { PermissionsGuard } from '../auth/permissions.guard'
@@ -85,11 +85,16 @@ export class AiController {
     return this.runs.costSummary()
   }
 
+  /**
+   * Accept 1 or 2 images (front + optional back). Client sends them as
+   * FormData under the field name `files` — multer collects into an array.
+   * Merged result flows back through the same ScanCardResultDto shape.
+   */
   @Post('scan-card')
   @RequirePermissions(PERMISSIONS.CUSTOMER_WRITE)
-  @UseInterceptors(FileInterceptor('file'))
-  async scanCard(@UploadedFile() file: Express.Multer.File | undefined): Promise<ScanCardResultDto> {
-    if (!file) throw new BadRequestException('No image uploaded')
-    return this.cardScan.extract(file.buffer, file.mimetype)
+  @UseInterceptors(FilesInterceptor('files', 2))
+  async scanCard(@UploadedFiles() files: Express.Multer.File[] | undefined): Promise<ScanCardResultDto> {
+    if (!files || files.length === 0) throw new BadRequestException('No image uploaded')
+    return this.cardScan.extractMulti(files.map((f) => ({ buffer: f.buffer, mimeType: f.mimetype })))
   }
 }
