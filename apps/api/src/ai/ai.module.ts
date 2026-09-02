@@ -9,9 +9,10 @@ import { AiController } from './ai.controller'
 import { LeadsModule } from '../leads/leads.module'
 import { ActivitiesModule } from '../activities/activities.module'
 import { OpportunitiesModule } from '../opportunities/opportunities.module'
+import { IntegrationsModule } from '../integrations/integrations.module'
 
 @Module({
-  imports: [LeadsModule, ActivitiesModule, OpportunitiesModule],
+  imports: [LeadsModule, ActivitiesModule, OpportunitiesModule, IntegrationsModule],
   providers: [LlmClient, AiRunsService, AgentOrchestrator, ReviewQueueService, CardScanService, TesseractOcrService],
   controllers: [AiController],
 })

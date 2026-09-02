@@ -1,35 +1,39 @@
 /**
- * Two-side business card capture — Front is required, Back is optional.
+ * Business card capture — three modes:
  *
- * Why the sheet not just a bare `<input capture>`:
- *   - The old flow (direct `input.click()`) worked for one photo only and
- *     tapped the OS camera; on iOS Safari that's a modal you can't reopen
- *     to add a second side.
- *   - Cards often carry the Thai company registration + extra phones on
- *     the back; a rep who only shoots the front loses that data.
- *   - A dedicated sheet gives the user a clear front/back tray, a
- *     retake affordance, and a single Scan button that submits both.
+ *   1. Photo (front + optional back)
+ *      Uses the OS camera via <input capture=environment>. Vision AI
+ *      or Tesseract on the server extracts fields.
  *
- * Camera trigger uses `<input type="file" accept="image/*" capture="environment">` —
- * safest cross-browser choice; on iOS/Android it opens the rear camera app.
- * We avoid `getUserMedia` because that pulls in an in-app viewfinder plus
- * permissions ask, worse UX for a field rep.
+ *   2. Paste text
+ *      For users who already OCR'd the card with Google Lens, iOS Live
+ *      Text, Samsung Bixby, etc. — they copy the text and paste it here.
+ *      Server runs the regex-based field extractor only (no vision AI),
+ *      giving Google-grade OCR quality on Thai cards for free.
+ *
+ * The mode tabs sit at the top of the sheet; only the active mode's UI
+ * shows below. Submit button is context-aware.
  */
 
 import { useRef, useState, type ChangeEvent, type CSSProperties, type Dispatch, type SetStateAction } from 'react'
 import { Sheet } from './MobileDetails'
 
+type Mode = 'photo' | 'text'
+
 interface Props {
   onCancel: () => void
-  onSubmit: (front: File, back: File | null) => void
+  onSubmitPhoto: (front: File, back: File | null) => void
+  onSubmitText: (text: string) => void
   submitting: boolean
 }
 
-export default function ScanCardCaptureSheet({ onCancel, onSubmit, submitting }: Props) {
+export default function ScanCardCaptureSheet({ onCancel, onSubmitPhoto, onSubmitText, submitting }: Props) {
+  const [mode, setMode] = useState<Mode>('photo')
   const [front, setFront] = useState<File | null>(null)
   const [back, setBack] = useState<File | null>(null)
   const [frontUrl, setFrontUrl] = useState<string | null>(null)
   const [backUrl, setBackUrl] = useState<string | null>(null)
+  const [text, setText] = useState('')
   const frontInputRef = useRef<HTMLInputElement | null>(null)
   const backInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -42,51 +46,120 @@ export default function ScanCardCaptureSheet({ onCancel, onSubmit, submitting }:
     }
 
   const submit = () => {
-    if (!front || submitting) return
-    onSubmit(front, back)
+    if (submitting) return
+    if (mode === 'photo') {
+      if (!front) return
+      onSubmitPhoto(front, back)
+    } else {
+      const t = text.trim()
+      if (t.length < 3) return
+      onSubmitText(t)
+    }
   }
+
+  const submitLabel = mode === 'photo'
+    ? (submitting ? 'Scanning…' : back ? 'Scan both sides' : 'Scan front only')
+    : (submitting ? 'Parsing…' : 'Parse text')
+
+  const canSubmit = mode === 'photo' ? !!front : text.trim().length >= 3
 
   return (
     <Sheet onClose={onCancel} title="Scan business card">
-      <div style={{ fontSize: 12.5, color: '#5C5C74', marginBottom: 14, lineHeight: 1.5 }}>
-        Front is required. Add the back too if the card has info there —
-        the AI will merge both sides.
+      {/* Mode tabs */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 14, background: '#F1F1F7', borderRadius: 10, padding: 4 }}>
+        <ModeTab active={mode === 'photo'} onClick={() => setMode('photo')} icon="📷" label="Photo" />
+        <ModeTab active={mode === 'text'}  onClick={() => setMode('text')}  icon="📋" label="Paste text" />
       </div>
 
-      <input ref={frontInputRef} type="file" accept="image/*" capture="environment"
-        onChange={pick(setFront, setFrontUrl)} style={{ display: 'none' }} />
-      <input ref={backInputRef} type="file" accept="image/*" capture="environment"
-        onChange={pick(setBack, setBackUrl)} style={{ display: 'none' }} />
+      {mode === 'photo' ? (
+        <>
+          <div style={{ fontSize: 12.5, color: '#5C5C74', marginBottom: 14, lineHeight: 1.5 }}>
+            Front is required. Add the back too if the card has info there — the AI will merge both sides.
+          </div>
 
-      <Slot
-        label="Front"
-        required
-        previewUrl={frontUrl}
-        onCapture={() => frontInputRef.current?.click()}
-        onClear={() => { setFront(null); if (frontUrl) URL.revokeObjectURL(frontUrl); setFrontUrl(null) }}
-      />
+          <input ref={frontInputRef} type="file" accept="image/*" capture="environment"
+            onChange={pick(setFront, setFrontUrl)} style={{ display: 'none' }} />
+          <input ref={backInputRef} type="file" accept="image/*" capture="environment"
+            onChange={pick(setBack, setBackUrl)} style={{ display: 'none' }} />
 
-      <Slot
-        label="Back"
-        hint="Optional — capture only if the card has content on both sides"
-        previewUrl={backUrl}
-        disabled={!front}
-        onCapture={() => backInputRef.current?.click()}
-        onClear={() => { setBack(null); if (backUrl) URL.revokeObjectURL(backUrl); setBackUrl(null) }}
-      />
+          <Slot
+            label="Front"
+            required
+            previewUrl={frontUrl}
+            onCapture={() => frontInputRef.current?.click()}
+            onClear={() => { setFront(null); if (frontUrl) URL.revokeObjectURL(frontUrl); setFrontUrl(null) }}
+          />
+
+          <Slot
+            label="Back"
+            hint="Optional — capture only if the card has content on both sides"
+            previewUrl={backUrl}
+            disabled={!front}
+            onCapture={() => backInputRef.current?.click()}
+            onClear={() => { setBack(null); if (backUrl) URL.revokeObjectURL(backUrl); setBackUrl(null) }}
+          />
+        </>
+      ) : (
+        <>
+          <div style={{ fontSize: 12.5, color: '#5C5C74', marginBottom: 12, lineHeight: 1.5 }}>
+            Open Google Lens (or your phone's Live Text) on the card,
+            select the text, copy it, then paste below. Fields will be
+            extracted automatically — no image upload needed.
+          </div>
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder={`Somchai Chareonkul\nHead of IT Operations\nSiam Solutions Co., Ltd.\n...`}
+            rows={9}
+            style={{
+              width: '100%', boxSizing: 'border-box',
+              border: '1.5px solid #D0D0DF', borderRadius: 10,
+              padding: 12, fontSize: 13.5, fontFamily: 'inherit',
+              outline: 'none', resize: 'vertical', lineHeight: 1.5,
+              marginBottom: 8,
+            }}
+          />
+          {text.trim().length > 0 && (
+            <div style={{ fontSize: 11, color: '#8888A0', marginBottom: 4 }}>
+              {text.trim().split(/\s+/).length} words · {text.split('\n').filter(Boolean).length} lines
+            </div>
+          )}
+        </>
+      )}
 
       <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
         <button type="button" onClick={onCancel} style={ghostBtn}>Cancel</button>
         <button
           type="button"
           onClick={submit}
-          disabled={!front || submitting}
-          style={{ ...primaryBtn, opacity: !front || submitting ? 0.5 : 1, flex: 1 }}
+          disabled={!canSubmit || submitting}
+          style={{ ...primaryBtn, opacity: !canSubmit || submitting ? 0.5 : 1, flex: 1 }}
         >
-          {submitting ? 'Scanning…' : back ? 'Scan both sides' : 'Scan front only'}
+          {submitLabel}
         </button>
       </div>
     </Sheet>
+  )
+}
+
+function ModeTab({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: string; label: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        flex: 1, padding: '8px 12px', borderRadius: 8,
+        border: 'none', cursor: 'pointer',
+        background: active ? '#fff' : 'transparent',
+        color: active ? '#2A6FDB' : '#5C5C74',
+        fontWeight: active ? 800 : 600,
+        fontSize: 12.5,
+        boxShadow: active ? '0 2px 6px rgba(14,31,25,.08)' : 'none',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+      }}
+    >
+      <span>{icon}</span>{label}
+    </button>
   )
 }
 

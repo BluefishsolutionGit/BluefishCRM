@@ -84,6 +84,18 @@ export default function MobileMore() {
     } finally { setBusy(null) }
   }
 
+  const runParseText = async (text: string) => {
+    setBusy('card')
+    try {
+      const result = await api.parseCardText(text)
+      setCaptureOpen(false)
+      setCardResult(result)
+      toast('Text parsed — review and save')
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : 'Parse failed')
+    } finally { setBusy(null) }
+  }
+
   const handleQrResult = async (value: string, _fmt: string) => {
     setQrOpen(false)
     const trimmed = value.trim()
@@ -162,7 +174,8 @@ export default function MobileMore() {
         <ScanCardCaptureSheet
           submitting={busy === 'card'}
           onCancel={() => setCaptureOpen(false)}
-          onSubmit={(front, back) => void runScan(front, back)}
+          onSubmitPhoto={(front, back) => void runScan(front, back)}
+          onSubmitText={(text) => void runParseText(text)}
         />
       )}
       {cardResult && (

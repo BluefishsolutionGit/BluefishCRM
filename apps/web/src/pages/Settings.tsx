@@ -99,6 +99,7 @@ export default function Settings() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 16, alignItems: 'start' }}>
             <CalendarSyncCard onToast={toast} />
             {canManageUsers && <SalesTargetsCard onToast={toast} />}
+            {canManageUsers && <OcrProviderCard onToast={toast} />}
           </div>
           {canManageUsers && <InboxChannelsSection onToast={toast} />}
         </div>
@@ -1126,6 +1127,137 @@ function hexToRgbaLocal(hex: string, alpha: number): string {
 const primaryBtnSm: CSSProperties = { background: '#2A6FDB', color: '#fff', border: 'none', borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }
 const ghostBtnSm: CSSProperties = { background: '#fff', color: '#5C5C74', border: '1px solid #E5E7F0', borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }
 const dangerBtnSm: CSSProperties = { background: '#fff', color: '#C0392B', border: '1px solid #F5B7B1', borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }
+
+/* ═══════════════════ OCR provider card ═══════════════════ */
+
+type ScanCardStatus = {
+  activeProvider: 'anthropic' | 'tesseract' | 'mock'
+  anthropicKeyPresent: boolean
+  anthropicKeySource: 'db' | 'env' | null
+  tesseractReady: boolean
+}
+
+function OcrProviderCard({ onToast }: { onToast: (m: string) => void }) {
+  const [status, setStatus] = useState<ScanCardStatus | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [keyInput, setKeyInput] = useState('')
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try { setStatus(await api.getScanCardConfig()) }
+    catch (e) { onToast(e instanceof ApiError ? e.message : 'Failed to load OCR config') }
+    finally { setLoading(false) }
+  }, [onToast])
+
+  useEffect(() => { void load() }, [load])
+
+  const save = async () => {
+    if (saving) return
+    const trimmed = keyInput.trim()
+    if (!trimmed) { onToast('Enter a key or use Clear'); return }
+    setSaving(true)
+    try {
+      setStatus(await api.updateScanCardConfig(trimmed))
+      setKeyInput('')
+      onToast('Anthropic key saved')
+    } catch (e) {
+      onToast(e instanceof ApiError ? e.message : 'Save failed')
+    } finally { setSaving(false) }
+  }
+
+  const clear = async () => {
+    if (saving) return
+    if (!window.confirm('Clear the stored Anthropic key? The env value (if any) will be used instead.')) return
+    setSaving(true)
+    try {
+      setStatus(await api.updateScanCardConfig(null))
+      setKeyInput('')
+      onToast('Anthropic key cleared')
+    } catch (e) {
+      onToast(e instanceof ApiError ? e.message : 'Clear failed')
+    } finally { setSaving(false) }
+  }
+
+  const providerLabel = (p: ScanCardStatus['activeProvider']) =>
+    p === 'anthropic' ? 'Anthropic Claude (vision)' : p === 'tesseract' ? 'Tesseract (self-hosted)' : 'Mock (demo only)'
+  const providerColor = (p: ScanCardStatus['activeProvider']) =>
+    p === 'anthropic' ? '#0E9C7E' : p === 'tesseract' ? '#2A6FDB' : '#B4650A'
+
+  return (
+    <div style={card}>
+      <div style={cardTitle}>Business-card OCR</div>
+      <div style={{ padding: '4px 20px 6px', color: '#5C5C74', fontSize: 12.5 }}>
+        The scan-card feature tries providers in order: Anthropic (best accuracy) → Tesseract
+        (free, self-hosted, always available) → mock. Set an Anthropic key here to enable
+        vision-quality OCR without touching <code style={codeInlineStyle}>.env</code>.
+      </div>
+
+      {loading && <div style={{ padding: 16, color: '#8888A0', fontSize: 12.5 }}>Loading…</div>}
+      {!loading && status && (
+        <div style={{ padding: '4px 20px 18px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5 }}>
+            <span style={{ color: '#8888A0' }}>Active:</span>
+            <span style={{
+              background: hexToRgbaLocal(providerColor(status.activeProvider), 0.12),
+              color: providerColor(status.activeProvider),
+              padding: '3px 10px', borderRadius: 999, fontWeight: 700, fontSize: 11.5,
+            }}>{providerLabel(status.activeProvider)}</span>
+          </div>
+
+          <div style={{ display: 'grid', gap: 6, fontSize: 12.5, color: '#3B3B52' }}>
+            <div>
+              <span style={{ color: '#8888A0' }}>Anthropic key:</span>{' '}
+              {status.anthropicKeyPresent ? (
+                <span style={{ color: '#0E9C7E', fontWeight: 600 }}>
+                  set ({status.anthropicKeySource === 'db' ? 'stored in DB' : 'from .env'})
+                </span>
+              ) : (
+                <span style={{ color: '#B4650A', fontWeight: 600 }}>not set</span>
+              )}
+            </div>
+            <div>
+              <span style={{ color: '#8888A0' }}>Tesseract:</span>{' '}
+              <span style={{ color: status.tesseractReady ? '#0E9C7E' : '#C0392B', fontWeight: 600 }}>
+                {status.tesseractReady ? 'ready (eng + tha)' : 'unavailable'}
+              </span>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <label style={{ fontSize: 11.5, color: '#5C5C74', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+              Set Anthropic API key
+            </label>
+            <input
+              type="password"
+              autoComplete="new-password"
+              placeholder="sk-ant-…"
+              value={keyInput}
+              onChange={(e) => setKeyInput(e.target.value)}
+              style={{ ...inputStyle, fontFamily: 'ui-monospace, monospace' }}
+              disabled={saving}
+            />
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button type="button" onClick={save} disabled={saving || !keyInput.trim()} style={{ ...primaryBtn, opacity: saving || !keyInput.trim() ? 0.5 : 1 }}>
+                {saving ? 'Saving…' : 'Save key'}
+              </button>
+              {status.anthropicKeySource === 'db' && (
+                <button type="button" onClick={clear} disabled={saving} style={dangerBtn}>
+                  Clear stored key
+                </button>
+              )}
+            </div>
+            <div style={{ fontSize: 11.5, color: '#8888A0' }}>
+              Stored AES-256-GCM encrypted. Never displayed back — the field stays blank on load.
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+const codeInlineStyle: CSSProperties = { background: '#F2F3F9', padding: '1px 5px', borderRadius: 4, fontSize: 12 }
 
 /* ═══════════════════════ styles ═══════════════════════ */
 

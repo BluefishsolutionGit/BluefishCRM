@@ -179,6 +179,16 @@ model Product {
   quotationLines   QuotationLine[]
 }
 
+/// Generic single-row-per-key store for runtime configuration that admins
+/// need to change without editing .env + restarting the API. Values are
+/// AES-GCM encrypted at rest with INTEGRATION_ENC_KEY. Reader must decrypt.
+model SystemConfig {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+}
+
 model Opportunity {
   id           String    @id @default(cuid())
   title        String

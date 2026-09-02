@@ -1,5 +1,6 @@
-import { BadRequestException, Body, Controller, Get, HttpCode, Param, Post, Query, Req, UnauthorizedException, UploadedFiles, UseGuards, UseInterceptors } from '@nestjs/common'
+import { BadRequestException, Body, Controller, Get, HttpCode, Param, Post, Put, Query, Req, UnauthorizedException, UploadedFiles, UseGuards, UseInterceptors } from '@nestjs/common'
 import { AnyFilesInterceptor } from '@nestjs/platform-express'
+import { MinLength } from 'class-validator'
 import { IsBoolean, IsIn, IsOptional, IsString } from 'class-validator'
 import { JwtAuthGuard } from '../auth/jwt.guard'
 import { PermissionsGuard } from '../auth/permissions.guard'
@@ -99,4 +100,39 @@ export class AiController {
     const sides = files.slice(0, 2).map((f) => ({ buffer: f.buffer, mimeType: f.mimetype }))
     return this.cardScan.extractMulti(sides)
   }
+
+  /**
+   * Parse OCR text that the user got from an external tool (Google Lens,
+   * iOS Live Text, Samsung Bixby, etc). Runs the same field extractor as
+   * the Tesseract fallback path — no vision AI needed, no per-scan cost,
+   * and the user gets Google-grade OCR quality on Thai cards for free.
+   */
+  @Post('parse-card-text')
+  @RequirePermissions(PERMISSIONS.CUSTOMER_WRITE)
+  async parseCardText(@Body() body: ParseCardTextBody): Promise<ScanCardResultDto> {
+    return this.cardScan.parseText(body.text)
+  }
+
+  @Get('scan-card/config')
+  @RequirePermissions(PERMISSIONS.USER_MANAGE)
+  async scanCardConfig() {
+    return this.cardScan.status()
+  }
+
+  @Put('scan-card/config')
+  @RequirePermissions(PERMISSIONS.USER_MANAGE)
+  async updateScanCardConfig(@Body() body: ScanCardConfigBody, @Req() req: JwtRequest) {
+    // Empty string / null → clear the DB override so env value wins again.
+    const trimmed = body.anthropicApiKey?.trim()
+    await this.cardScan.setAnthropicKey(trimmed && trimmed.length > 0 ? trimmed : null, req.user?.sub ?? null)
+    return this.cardScan.status()
+  }
+}
+
+class ParseCardTextBody {
+  @IsString() @MinLength(3) text!: string
+}
+
+class ScanCardConfigBody {
+  @IsOptional() @IsString() anthropicApiKey?: string | null
 }

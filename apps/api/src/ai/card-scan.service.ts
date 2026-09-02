@@ -3,6 +3,11 @@ import { ConfigService } from '@nestjs/config'
 import Anthropic from '@anthropic-ai/sdk'
 import type { ScanCardResultDto } from '@bluefish/shared'
 import { TesseractOcrService } from './tesseract-ocr.service'
+import { SystemConfigService } from '../integrations/system-config.service'
+
+/** Config key used in the SystemConfig store for the Anthropic API key.
+ *  DB value takes precedence over ANTHROPIC_API_KEY env — see rebuildClient. */
+export const CFG_ANTHROPIC_KEY = 'ocr.anthropic_api_key'
 
 const EXTRACT_PROMPT = `You are extracting structured contact info from a business-card image.
 
@@ -43,9 +48,71 @@ export class CardScanService {
   private readonly logger = new Logger(CardScanService.name)
   private client: Anthropic | null = null
 
-  constructor(private cfg: ConfigService, private tesseract: TesseractOcrService) {
+  constructor(
+    private cfg: ConfigService,
+    private tesseract: TesseractOcrService,
+    private systemConfig: SystemConfigService,
+  ) {
+    // On boot, initialize from env. rebuildClient() re-checks DB before each
+    // vision call so an admin's `set anthropic key` in the UI takes effect
+    // without a restart.
     const key = cfg.get<string>('ANTHROPIC_API_KEY')
     if (key) this.client = new Anthropic({ apiKey: key })
+  }
+
+  /** Refresh the Anthropic client from DB → env fallback. Called before
+   *  each vision call so admins can flip providers via the UI. */
+  private async rebuildClient(): Promise<Anthropic | null> {
+    const dbKey = await this.systemConfig.get(CFG_ANTHROPIC_KEY)
+    const key = dbKey ?? this.cfg.get<string>('ANTHROPIC_API_KEY') ?? null
+    if (!key) { this.client = null; return null }
+    // Cache to avoid re-instantiating on every scan
+    this.client = new Anthropic({ apiKey: key })
+    return this.client
+  }
+
+  /** Persist a new Anthropic API key (or clear it). Passing null removes
+   *  the DB override so the ANTHROPIC_API_KEY env var takes over again. */
+  async setAnthropicKey(value: string | null, updatedBy: string | null): Promise<void> {
+    await this.systemConfig.set(CFG_ANTHROPIC_KEY, value, updatedBy)
+    // Force a refresh on next scan; extract() calls rebuildClient() anyway
+    // but if the caller runs status() next we want it consistent immediately.
+    this.client = null
+  }
+
+  /**
+   * Which provider will run for the next scan, plus a masked view of the
+   * Anthropic key if configured — used by the Settings UI to render status.
+   */
+  async status(): Promise<{
+    activeProvider: 'anthropic' | 'tesseract' | 'mock'
+    anthropicKeyPresent: boolean
+    anthropicKeySource: 'db' | 'env' | null
+    tesseractReady: boolean
+  }> {
+    const dbKey = await this.systemConfig.get(CFG_ANTHROPIC_KEY)
+    const envKey = this.cfg.get<string>('ANTHROPIC_API_KEY') ?? null
+    const anthropicKeyPresent = !!(dbKey ?? envKey)
+    const source = dbKey ? 'db' : envKey ? 'env' : null
+    const activeProvider = anthropicKeyPresent ? 'anthropic' : 'tesseract'
+    return {
+      activeProvider,
+      anthropicKeyPresent,
+      anthropicKeySource: source,
+      tesseractReady: true,
+    }
+  }
+
+  /**
+   * Take pre-OCR'd text (e.g. from Google Lens / iOS Live Text) and run
+   * the same field extractor we use for the Tesseract fallback path. Lets
+   * users lean on their phone's built-in OCR, which is typically better
+   * on Thai than Tesseract, without paying for a vision API.
+   */
+  parseText(text: string): ScanCardResultDto {
+    const cleaned = (text ?? '').trim()
+    if (!cleaned) return { ...EMPTY, raw: null }
+    return { ...EMPTY, ...parseCardText(cleaned), raw: cleaned.slice(0, 4000) }
   }
 
   /**
@@ -62,9 +129,11 @@ export class CardScanService {
   }
 
   async extract(buffer: Buffer, mimeType: string): Promise<ScanCardResultDto> {
-    // No Anthropic key → fall back to Tesseract self-hosted OCR + regex parser.
-    // Same DTO shape so callers don't care which path filled it in.
-    if (!this.client) {
+    // Refresh Anthropic client from config (DB > env). If neither yields a
+    // key, fall through to Tesseract.
+    const client = await this.rebuildClient()
+
+    if (!client) {
       try {
         const text = await this.tesseract.recognize(buffer)
         if (!text) return this.mock()
@@ -80,7 +149,7 @@ export class CardScanService {
     const mediaType = normalizeMediaType(mimeType)
 
     try {
-      const response = await this.client.messages.create({
+      const response = await client.messages.create({
         model,
         max_tokens: 700,
         temperature: 0.1,

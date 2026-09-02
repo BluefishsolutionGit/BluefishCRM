@@ -667,6 +667,32 @@ export const api = {
     if (back) form.append('files', back)
     return request<import('@bluefish/shared').ScanCardResultDto>('/ai/scan-card', { method: 'POST', body: form })
   },
+  /** Parse pre-OCR'd text (from Google Lens / iOS Live Text / clipboard). */
+  parseCardText: (text: string) =>
+    request<import('@bluefish/shared').ScanCardResultDto>('/ai/parse-card-text', {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    }),
+
+  getScanCardConfig: () =>
+    request<{
+      activeProvider: 'anthropic' | 'tesseract' | 'mock'
+      anthropicKeyPresent: boolean
+      anthropicKeySource: 'db' | 'env' | null
+      tesseractReady: boolean
+    }>('/ai/scan-card/config'),
+
+  /** Pass empty string / null to clear the DB override (env value wins again). */
+  updateScanCardConfig: (anthropicApiKey: string | null) =>
+    request<{
+      activeProvider: 'anthropic' | 'tesseract' | 'mock'
+      anthropicKeyPresent: boolean
+      anthropicKeySource: 'db' | 'env' | null
+      tesseractReady: boolean
+    }>('/ai/scan-card/config', {
+      method: 'PUT',
+      body: JSON.stringify({ anthropicApiKey }),
+    }),
 
   auditLogs: (filter: { entity?: string; entityId?: string; userId?: string; limit?: number } = {}) => {
     const params = new URLSearchParams()

@@ -6,14 +6,15 @@ import { EsignService } from './esign.service'
 import { CalendarSyncService } from './calendar-sync.service'
 import { CalendarSyncCron } from './calendar-sync.cron'
 import { ChannelIntegrationsService } from './channel-integrations.service'
+import { SystemConfigService } from './system-config.service'
 import { IntegrationsController } from './integrations.controller'
 import { EsignController } from './esign.controller'
 import { CalendarSyncController } from './calendar-sync.controller'
 import { ChannelIntegrationsController } from './channel-integrations.controller'
 
 @Module({
-  providers: [ApiKeysService, WebhooksService, PushService, EsignService, CalendarSyncService, CalendarSyncCron, ChannelIntegrationsService],
+  providers: [ApiKeysService, WebhooksService, PushService, EsignService, CalendarSyncService, CalendarSyncCron, ChannelIntegrationsService, SystemConfigService],
   controllers: [IntegrationsController, EsignController, CalendarSyncController, ChannelIntegrationsController],
-  exports: [ApiKeysService, WebhooksService, PushService, EsignService, CalendarSyncService, ChannelIntegrationsService],
+  exports: [ApiKeysService, WebhooksService, PushService, EsignService, CalendarSyncService, ChannelIntegrationsService, SystemConfigService],
 })
 export class IntegrationsModule {}
