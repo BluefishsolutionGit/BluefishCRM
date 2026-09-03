@@ -328,6 +328,12 @@ function KanbanCards({ filtered, grouped, activeStage, setActiveStage, scrollerR
 function DealCard({ o, onOpen, big }: { o: OpportunityDto; onOpen: () => void; big?: boolean }) {
   const probColor = o.probability >= 60 ? '#0E9C7E' : o.probability >= 30 ? '#B4650A' : '#8888A0'
   const stageColor = STAGE_COLOR[o.stage]
+  const hintText = o.managerHint?.trim() ?? ''
+  const hasHint = hintText.length > 0 || !!o.managerHintPriority
+  const priority = o.managerHintPriority ?? 'info'
+  // Same palette as the desktop pipeline card + mobile Home suggestions
+  // list so a manager hint reads consistently everywhere.
+  const hintColor = priority === 'urgent' ? '#C0392B' : priority === 'watch' ? '#B4650A' : '#2A6FDB'
   return (
     <div
       onClick={onOpen}
@@ -340,7 +346,21 @@ function DealCard({ o, onOpen, big }: { o: OpportunityDto; onOpen: () => void; b
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: big ? 13.5 : 13, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.title}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {hasHint && (
+              <span
+                title={`Manager suggestion: ${priority}`}
+                style={{
+                  fontSize: 8.5, fontWeight: 800, color: hintColor,
+                  background: hintColor + '1A', border: `1px solid ${hintColor}40`,
+                  borderRadius: 999, padding: '1px 6px',
+                  textTransform: 'uppercase', letterSpacing: '.05em',
+                  flex: 'none',
+                }}
+              >{priority}</span>
+            )}
+            <div style={{ fontSize: big ? 13.5 : 13, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.title}</div>
+          </div>
           <div style={{ fontSize: 11, color: '#8888A0', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.customerName ?? '—'}</div>
         </div>
         <div style={{ fontFamily: "'Space Grotesk'", fontSize: big ? 14 : 12.5, fontWeight: 800, color: stageColor, flex: 'none' }}>{fmt(o.value)}</div>
@@ -356,6 +376,16 @@ function DealCard({ o, onOpen, big }: { o: OpportunityDto; onOpen: () => void; b
           </div>
         )}
       </div>
+      {hintText && (
+        <div style={{
+          fontSize: 10.5, color: hintColor, fontWeight: 600, marginTop: 6,
+          paddingTop: 6, borderTop: `1px dashed ${hintColor}40`,
+          display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+          overflow: 'hidden', lineHeight: 1.35,
+        }}>
+          💬 {hintText}
+        </div>
+      )}
       {o.closeDate && (
         <div style={{ fontSize: 10.5, color: '#8888A0', marginTop: 5 }}>
           Close by {new Date(o.closeDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' })}
