@@ -17,7 +17,7 @@ export default function Leads() {
   const [assignPickerFor, setAssignPickerFor] = useState<LeadDto | null>(null)
   const [salesUsers, setSalesUsers] = useState<UserDto[]>([])
   const [showConverted, setShowConverted] = useState(false)
-  const [menuFor, setMenuFor] = useState<string | null>(null)
+  const [menu, setMenu] = useState<{ leadId: string; top: number; right: number } | null>(null)
   const toast = useToast()
   const navigate = useNavigate()
   const { hasPermission } = useAuth()
@@ -78,11 +78,16 @@ export default function Leads() {
 
   // Close the kebab dropdown whenever the user clicks anywhere else on the page.
   useEffect(() => {
-    if (!menuFor) return
-    const close = () => setMenuFor(null)
+    if (!menu) return
+    const close = () => setMenu(null)
     window.addEventListener('click', close)
-    return () => window.removeEventListener('click', close)
-  }, [menuFor])
+    // Also close on scroll so the popover doesn't float over the wrong row.
+    window.addEventListener('scroll', close, true)
+    return () => {
+      window.removeEventListener('click', close)
+      window.removeEventListener('scroll', close, true)
+    }
+  }, [menu])
 
   const convert = async (l: LeadDto) => {
     if (!window.confirm(`Convert "${l.companyName}" into an opportunity?`)) return
@@ -205,36 +210,49 @@ export default function Leads() {
               <div style={{ fontFamily: "'Space Grotesk'", fontSize: 13, fontWeight: 600, color: textCol }}>{l.estValue ? `฿${(l.estValue / 1e6).toFixed(1)}M` : '—'}</div>
               <div style={{ display: 'flex', justifyContent: 'flex-end' }} onClick={stop}>
                 {canWrite && (
-                  <div style={{ position: 'relative' }}>
-                    <div
-                      onClick={(e) => { e.stopPropagation(); setMenuFor(menuFor === l.id ? null : l.id) }}
-                      style={{
-                        width: 30, height: 30, borderRadius: 8,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        fontSize: 16, color: '#5C5C74', cursor: 'pointer',
-                        background: menuFor === l.id ? '#F2F3F9' : 'transparent',
-                        letterSpacing: '2px',
-                      }}
-                      aria-label="Row actions"
-                    >⋯</div>
-                    {menuFor === l.id && (
-                      <ActionMenu
-                        lead={l}
-                        onClose={() => setMenuFor(null)}
-                        onAssign={() => setAssignPickerFor(l)}
-                        onUnassign={() => unassign(l)}
-                        onEdit={() => openEdit(l)}
-                        onConvert={() => convert(l)}
-                        onDelete={() => del(l)}
-                      />
-                    )}
-                  </div>
+                  <div
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      if (menu?.leadId === l.id) { setMenu(null); return }
+                      // Anchor the popover to viewport coords so overflow:hidden
+                      // on any ancestor (like the list frame's rounded-corner
+                      // clip) can't hide it. Position below the button, right-aligned.
+                      const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                      setMenu({ leadId: l.id, top: r.bottom + 4, right: window.innerWidth - r.right })
+                    }}
+                    style={{
+                      width: 30, height: 30, borderRadius: 8,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 16, color: '#5C5C74', cursor: 'pointer',
+                      background: menu?.leadId === l.id ? '#F2F3F9' : 'transparent',
+                      letterSpacing: '2px',
+                    }}
+                    aria-label="Row actions"
+                  >⋯</div>
                 )}
               </div>
             </div>
           )
         })}
       </div>
+
+      {menu && (() => {
+        const l = leads.find((x) => x.id === menu.leadId)
+        if (!l) return null
+        return (
+          <ActionMenu
+            lead={l}
+            top={menu.top}
+            right={menu.right}
+            onClose={() => setMenu(null)}
+            onAssign={() => setAssignPickerFor(l)}
+            onUnassign={() => unassign(l)}
+            onEdit={() => openEdit(l)}
+            onConvert={() => convert(l)}
+            onDelete={() => del(l)}
+          />
+        )
+      })()}
 
       <LeadFormModal open={modalOpen} initial={editing} onClose={() => setModalOpen(false)} onSaved={onSaved} />
       {scoreInfoOpen && <ScoreInfoModal onClose={() => setScoreInfoOpen(false)} />}
@@ -260,8 +278,10 @@ export default function Leads() {
  * positioned popover under the ⋯ button; auto-closes on outside click via
  * the parent's window listener.
  */
-function ActionMenu({ lead, onClose, onAssign, onUnassign, onEdit, onConvert, onDelete }: {
+function ActionMenu({ lead, top, right, onClose, onAssign, onUnassign, onEdit, onConvert, onDelete }: {
   lead: LeadDto
+  top: number
+  right: number
   onClose: () => void
   onAssign: () => void
   onUnassign: () => void
@@ -275,7 +295,10 @@ function ActionMenu({ lead, onClose, onAssign, onUnassign, onEdit, onConvert, on
     <div
       onClick={(e) => e.stopPropagation()}
       style={{
-        position: 'absolute', top: 34, right: 0, zIndex: 20,
+        // Fixed positioning so no ancestor overflow can clip the popover —
+        // the list's rounded-corner frame has overflow:hidden which was
+        // hiding the previous absolute-positioned menu.
+        position: 'fixed', top, right, zIndex: 300,
         background: '#fff', border: '1px solid #E5E7F0', borderRadius: 10,
         boxShadow: '0 10px 28px -12px rgba(30,20,80,.25)',
         minWidth: 180, padding: 4,
