@@ -34,6 +34,7 @@ const DEFAULT_ITEMS: Array<Omit<WidgetLayoutEntry, 'column'>> = [
   { id: 'kpiRow1',          visible: true },   // Open pipeline / Revenue MTD / New leads / Deals won
   { id: 'kpiRow2',          visible: true },
   { id: 'topDeals',         visible: true },
+  { id: 'salesActivities',  visible: true },
   { id: 'activityBreakdown', visible: true },
   { id: 'salesTeam',        visible: true },
   { id: 'pipelineByStage',  visible: true },
@@ -233,6 +234,82 @@ export default function Dashboard() {
           </div>
         </div>
       ),
+    },
+    salesActivities: {
+      title: 'Sales activities performance',
+      render: () => {
+        // Rank reps by activity count so top performers surface first.
+        const ranked = [...sales.reps].sort((a, b) => b.activitiesLastWeek - a.activitiesLastWeek)
+        const maxActs = Math.max(1, ...ranked.map((r) => r.activitiesLastWeek))
+        const teamTotal = ranked.reduce((s, r) => s + r.activitiesLastWeek, 0)
+        const activeReps = ranked.filter((r) => r.activitiesLastWeek > 0).length
+        const avgPerRep = ranked.length > 0 ? Math.round((teamTotal / ranked.length) * 10) / 10 : 0
+        // Below-target threshold: half the team average, or 5, whichever is
+        // higher. Rep with 0 activities and non-zero team average always shows
+        // as under-target so a manager notices dormant sellers.
+        const underTargetAt = Math.max(5, Math.round(avgPerRep / 2))
+
+        // Colour palette per activity type — reuses the mobile Home palette
+        // so the same type reads the same colour across the app.
+        const TYPE_COLOR: Record<string, string> = {
+          meeting: '#2A6FDB', call: '#1F5AC2', visit: '#B4650A',
+          demo: '#6C55E0', task: '#0E9C7E', follow_up: '#7C3AED', email: '#8888A0',
+        }
+
+        return (
+          <div style={card}>
+            <div style={cardTitle}>Sales activities performance</div>
+            <div style={{ padding: '4px 18px 12px', fontSize: 12, color: '#5C5C74' }}>
+              Last 7 days · <b>{teamTotal}</b> total · <b>{activeReps}</b>/{ranked.length} reps active · avg <b>{avgPerRep}</b>/rep
+            </div>
+
+            {/* Per-rep bars */}
+            <div style={{ padding: '4px 18px 10px' }}>
+              {ranked.map((r) => {
+                const w = (r.activitiesLastWeek / maxActs) * 100
+                const under = r.activitiesLastWeek < underTargetAt
+                // Amber when under target, blue otherwise. Keeps the fine-
+                // grained per-rep view legible without a legend.
+                const barColor = r.activitiesLastWeek === 0 ? '#E5E7F0' : under ? '#B4650A' : '#2A6FDB'
+                return (
+                  <div key={r.ownerId} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', fontSize: 12.5 }}>
+                    <div style={{ width: 130, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.ownerName}>{r.ownerName}</div>
+                    <div style={{ flex: 1, height: 12, background: '#F2F3F9', borderRadius: 4, overflow: 'hidden' }}>
+                      <div style={{ width: `${w}%`, height: '100%', background: barColor, transition: 'width .3s' }} />
+                    </div>
+                    <div style={{ width: 44, textAlign: 'right', fontFamily: "'Space Grotesk'", fontWeight: 700, color: r.activitiesLastWeek === 0 ? '#B4B4C4' : '#1E1E30' }}>
+                      {r.activitiesLastWeek}
+                    </div>
+                  </div>
+                )
+              })}
+              {ranked.length === 0 && <div style={{ padding: 12, textAlign: 'center', color: '#8888A0', fontSize: 13 }}>No sales reps.</div>}
+            </div>
+
+            {/* By-type footer chips — shared org-wide breakdown so the widget
+                answers both "who is active" and "what kind of activity". */}
+            {exec.activityBreakdown.length > 0 && (
+              <div style={{ padding: '10px 18px 14px', borderTop: '1px solid #F2F3F9', display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {exec.activityBreakdown.map((a) => {
+                  const c = TYPE_COLOR[a.type] ?? '#5C5C74'
+                  return (
+                    <span key={a.type} style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 5,
+                      background: c + '15', color: c, border: `1px solid ${c}40`,
+                      borderRadius: 999, padding: '3px 10px', fontSize: 11, fontWeight: 700,
+                      textTransform: 'capitalize',
+                    }}>
+                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: c }} />
+                      {a.type.replace('_', ' ')}
+                      <span style={{ color: '#3B3B52', marginLeft: 2 }}>· {a.count}</span>
+                    </span>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )
+      },
     },
     salesTeam: {
       title: `Sales team performance · quota attainment ${sales.quotaAttainment}%`,
