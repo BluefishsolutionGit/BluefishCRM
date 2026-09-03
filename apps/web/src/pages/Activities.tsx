@@ -194,8 +194,8 @@ export default function Activities() {
         {view !== 'monthList' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {sel ? (
-              <div style={card}>
-                <div style={sectionLabel}>Selected activity</div>
+              <div style={{ ...card, background: '#EEF3FC', borderColor: '#B7D0F0' }}>
+                <div style={{ ...sectionLabel, color: '#2A6FDB' }}>Selected activity</div>
                 <div style={{ fontSize: 14, fontWeight: 700, marginTop: 8 }}>{sel.title}</div>
                 <div style={{ fontSize: 12, color: '#5C5C74', marginTop: 3 }}>
                   {new Date(sel.scheduledAt).toLocaleString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })} · {sel.ownerName}
