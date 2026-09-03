@@ -578,7 +578,7 @@ function ByServiceBars({ period, monthly }: { period: string; monthly: ByService
   const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
   return (
-    <div style={card}>
+    <div style={{ ...card, maxWidth: 640 }}>
       <div style={cardTitle}>Won revenue by service — {period} (monthly)</div>
       <div style={{ padding: '18px 22px 8px', overflowX: 'auto' }}>
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: chartHeight, minWidth: 640 }}>
