@@ -780,7 +780,7 @@ function ByServiceTargets({ stats }: { stats: ByServiceDashboardDto['stats'] }) 
         <div style={{ padding: '16px 22px 18px', display: 'flex', flexDirection: 'column', gap: 12 }}>
           <TargetBar
             label="Overall"
-            color="#1E1E30"
+            color="#1B2F8F"
             won={overallWon}
             target={overallTarget}
             pct={overallPct}
@@ -806,7 +806,7 @@ function ByServiceTargets({ stats }: { stats: ByServiceDashboardDto['stats'] }) 
             <Donut
               size={140}
               label="Overall"
-              color="#1E1E30"
+              color="#1B2F8F"
               won={overallWon}
               target={overallTarget}
               pct={overallPct}
