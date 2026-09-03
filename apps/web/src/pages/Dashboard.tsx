@@ -46,12 +46,12 @@ const DEFAULT_ITEMS: Array<Omit<WidgetLayoutEntry, 'column'>> = [
  *  cards (640px) pair up, KPI rows force their own line. */
 const FULL_WIDTH_WIDGETS = new Set(['byServiceTarget', 'byServiceRevenue', 'kpiRow1', 'kpiRow2'])
 
-/** Per-widget flex basis on the top row. Cards with a 640px cap take
- *  `0 1 640px` so two fit on a wide screen; anything else takes the
- *  full row width. */
+/** Per-widget flex basis on the top row. Revenue-by-service is the wider
+ *  card of the pair (12 monthly bars need room to breathe); target is
+ *  narrower since 5 donuts / 5 rows read fine at 640. */
 const TOP_ROW_FLEX_BASIS: Record<string, string> = {
   byServiceTarget: '0 1 640px',
-  byServiceRevenue: '0 1 640px',
+  byServiceRevenue: '0 1 900px',
 }
 
 const DEFAULT_LAYOUT: DashboardLayout = {
@@ -590,39 +590,39 @@ function ByServiceBars({ period, monthly }: { period: string; monthly: ByService
     1,
     ...monthly.flatMap((m) => SERVICE_LINES.map((s) => m.byService[s] ?? 0)),
   )
-  const chartHeight = 180
+  const chartHeight = 240
   const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
   return (
-    <div style={{ ...card, maxWidth: 640 }}>
+    <div style={{ ...card, maxWidth: 900 }}>
       <div style={cardTitle}>Won revenue by service — {period} (monthly)</div>
-      <div style={{ padding: '18px 16px 8px' }}>
-        {/* No overflow-x scroll — 12 months compress to fit the 640px card.
-            Bars shrink to 6px so 4 services × 6 + gaps ≈ 24px, plus label
-            column ≈ 40px each fits within ~600px content area. */}
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: chartHeight }}>
+      <div style={{ padding: '20px 20px 10px' }}>
+        {/* Card is wider now (900) so bars can breathe — 10px each, gap 2.
+            4 services × 10 + 3 * 2 gap = 46px bar cluster; 12 months × 60px
+            column ≈ 720px + inner gaps, fits ~860px content area. */}
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: chartHeight }}>
           {monthly.map((m, i) => {
             const monthTotal = SERVICE_LINES.reduce((a, s) => a + (m.byService[s] ?? 0), 0)
             return (
-              <div key={m.month} style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                <div style={{ display: 'flex', alignItems: 'flex-end', height: chartHeight - 26, gap: 1 }}>
+              <div key={m.month} style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5 }}>
+                <div style={{ display: 'flex', alignItems: 'flex-end', height: chartHeight - 32, gap: 2 }}>
                   {SERVICE_LINES.map((service) => {
                     const value = m.byService[service] ?? 0
-                    const h = value > 0 ? Math.max(2, (value / max) * (chartHeight - 40)) : 0
+                    const h = value > 0 ? Math.max(3, (value / max) * (chartHeight - 50)) : 0
                     const color = SERVICE_COLOR[service] ?? '#5C5C74'
                     return (
                       <div key={service}
                         title={`${monthNames[i]} · ${service}: ${fmt(value)}`}
                         style={{
-                          width: 6, height: h,
+                          width: 10, height: h,
                           background: value > 0 ? color : 'transparent',
-                          borderRadius: '2px 2px 0 0',
+                          borderRadius: '3px 3px 0 0',
                         }} />
                     )
                   })}
                 </div>
-                <div style={{ fontSize: 10, color: '#8082A5', fontFamily: "'IBM Plex Mono', monospace" }}>{monthNames[i]}</div>
-                <div style={{ fontSize: 9, color: monthTotal > 0 ? '#3B3B52' : '#B4B4C4', fontFamily: "'IBM Plex Mono', monospace" }}>
+                <div style={{ fontSize: 11, color: '#8082A5', fontFamily: "'IBM Plex Mono', monospace" }}>{monthNames[i]}</div>
+                <div style={{ fontSize: 10, color: monthTotal > 0 ? '#3B3B52' : '#B4B4C4', fontFamily: "'IBM Plex Mono', monospace" }}>
                   {monthTotal > 0 ? fmt(monthTotal) : '—'}
                 </div>
               </div>
