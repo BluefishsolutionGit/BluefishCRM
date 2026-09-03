@@ -596,13 +596,16 @@ function ByServiceBars({ period, monthly }: { period: string; monthly: ByService
   return (
     <div style={{ ...card, maxWidth: 640 }}>
       <div style={cardTitle}>Won revenue by service — {period} (monthly)</div>
-      <div style={{ padding: '18px 22px 8px', overflowX: 'auto' }}>
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: chartHeight, minWidth: 640 }}>
+      <div style={{ padding: '18px 16px 8px' }}>
+        {/* No overflow-x scroll — 12 months compress to fit the 640px card.
+            Bars shrink to 6px so 4 services × 6 + gaps ≈ 24px, plus label
+            column ≈ 40px each fits within ~600px content area. */}
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: chartHeight }}>
           {monthly.map((m, i) => {
             const monthTotal = SERVICE_LINES.reduce((a, s) => a + (m.byService[s] ?? 0), 0)
             return (
-              <div key={m.month} style={{ flex: 1, minWidth: 40, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                <div style={{ display: 'flex', alignItems: 'flex-end', height: chartHeight - 26, gap: 1.5 }}>
+              <div key={m.month} style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                <div style={{ display: 'flex', alignItems: 'flex-end', height: chartHeight - 26, gap: 1 }}>
                   {SERVICE_LINES.map((service) => {
                     const value = m.byService[service] ?? 0
                     const h = value > 0 ? Math.max(2, (value / max) * (chartHeight - 40)) : 0
@@ -611,7 +614,7 @@ function ByServiceBars({ period, monthly }: { period: string; monthly: ByService
                       <div key={service}
                         title={`${monthNames[i]} · ${service}: ${fmt(value)}`}
                         style={{
-                          width: 8, height: h,
+                          width: 6, height: h,
                           background: value > 0 ? color : 'transparent',
                           borderRadius: '2px 2px 0 0',
                         }} />
@@ -619,7 +622,7 @@ function ByServiceBars({ period, monthly }: { period: string; monthly: ByService
                   })}
                 </div>
                 <div style={{ fontSize: 10, color: '#8082A5', fontFamily: "'IBM Plex Mono', monospace" }}>{monthNames[i]}</div>
-                <div style={{ fontSize: 9.5, color: monthTotal > 0 ? '#3B3B52' : '#B4B4C4', fontFamily: "'IBM Plex Mono', monospace" }}>
+                <div style={{ fontSize: 9, color: monthTotal > 0 ? '#3B3B52' : '#B4B4C4', fontFamily: "'IBM Plex Mono', monospace" }}>
                   {monthTotal > 0 ? fmt(monthTotal) : '—'}
                 </div>
               </div>
@@ -714,21 +717,56 @@ function ByServiceTargets({ stats }: { stats: ByServiceDashboardDto['stats'] }) 
           ))}
         </div>
       ) : (
-        <div style={{ padding: '18px 22px 20px', display: 'grid', gridTemplateColumns: `repeat(${stats.length}, 1fr)`, gap: 12 }}>
-          {stats.map((s) => <Donut key={s.service} stat={s} />)}
+        <div style={{ padding: '16px 20px 20px', display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'stretch' }}>
+          {/* Overall donut in its own row, drawn larger so it reads as the
+              "hero" number. Services follow below in a 4-across strip. */}
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            <Donut
+              size={140}
+              label="Overall"
+              color="#1E1E30"
+              won={overallWon}
+              target={overallTarget}
+              pct={overallPct}
+            />
+          </div>
+          <div style={{ height: 1, background: '#F2F3F9' }} />
+          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${stats.length}, 1fr)`, gap: 8 }}>
+            {stats.map((s) => (
+              <Donut
+                key={s.service}
+                size={96}
+                label={s.service}
+                color={SERVICE_COLOR[s.service] ?? '#5C5C74'}
+                won={s.won}
+                target={s.target}
+                pct={s.pctOfTarget}
+              />
+            ))}
+          </div>
         </div>
       )}
     </div>
   )
 }
 
-function Donut({ stat }: { stat: ByServiceDashboardDto['stats'][number] }) {
-  const color = SERVICE_COLOR[stat.service] ?? '#5C5C74'
-  const size = 110, stroke = 12, r = (size - stroke) / 2, c = 2 * Math.PI * r
-  const frac = stat.target > 0 ? Math.min(1, stat.won / stat.target) : 0
+function Donut({ label, color, won, target, pct, size }: {
+  label: string
+  color: string
+  won: number
+  target: number
+  pct: number
+  size: number
+}) {
+  const stroke = size >= 130 ? 14 : 11
+  const r = (size - stroke) / 2, c = 2 * Math.PI * r
+  const frac = target > 0 ? Math.min(1, won / target) : 0
   const dash = c * frac
   const gap = c - dash
-  const noTarget = stat.target === 0
+  const noTarget = target === 0
+  // Font sizes scale a little with the donut so the number sits well inside.
+  const bigFont = size >= 130 ? 28 : 17
+  const subFont = size >= 130 ? 11 : 9
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
       <div style={{ position: 'relative', width: size, height: size }}>
@@ -737,7 +775,7 @@ function Donut({ stat }: { stat: ByServiceDashboardDto['stats'][number] }) {
           {!noTarget && (
             <circle
               cx={size / 2} cy={size / 2} r={r} fill="none"
-              stroke={color} strokeWidth={stroke} strokeLinecap="round"
+              stroke={pct >= 100 ? '#0E9C7E' : color} strokeWidth={stroke} strokeLinecap="round"
               strokeDasharray={`${dash} ${gap}`}
             />
           )}
@@ -745,22 +783,22 @@ function Donut({ stat }: { stat: ByServiceDashboardDto['stats'][number] }) {
         <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
           {noTarget ? (
             <>
-              <div style={{ fontFamily: "'Space Grotesk'", fontSize: 13, fontWeight: 700, color: '#8082A5' }}>—</div>
-              <div style={{ fontSize: 9, color: '#8082A5', marginTop: 2 }}>no target</div>
+              <div style={{ fontFamily: "'Space Grotesk'", fontSize: bigFont - 4, fontWeight: 700, color: '#8082A5' }}>—</div>
+              <div style={{ fontSize: subFont, color: '#8082A5', marginTop: 2 }}>no target</div>
             </>
           ) : (
             <>
-              <div style={{ fontFamily: "'Space Grotesk'", fontSize: 19, fontWeight: 700, color: stat.pctOfTarget >= 100 ? '#0E6E4E' : color }}>
-                {stat.pctOfTarget}%
+              <div style={{ fontFamily: "'Space Grotesk'", fontSize: bigFont, fontWeight: 700, color: pct >= 100 ? '#0E6E4E' : color }}>
+                {pct}%
               </div>
-              <div style={{ fontSize: 9.5, color: '#5C5C74', marginTop: 2 }}>of target</div>
+              <div style={{ fontSize: subFont, color: '#5C5C74', marginTop: 2 }}>of target</div>
             </>
           )}
         </div>
       </div>
-      <div style={{ fontSize: 12, fontWeight: 700, color }}>{stat.service}</div>
-      <div style={{ fontSize: 10, color: '#5C5C74', fontFamily: "'IBM Plex Mono', monospace" }}>
-        {fmt(stat.won)}{stat.target > 0 ? ` / ${fmt(stat.target)}` : ''}
+      <div style={{ fontSize: size >= 130 ? 13.5 : 11.5, fontWeight: 800, color }}>{label}</div>
+      <div style={{ fontSize: size >= 130 ? 11 : 9.5, color: '#5C5C74', fontFamily: "'IBM Plex Mono', monospace" }}>
+        {fmt(won)}{target > 0 ? ` / ${fmt(target)}` : ''}
       </div>
     </div>
   )
