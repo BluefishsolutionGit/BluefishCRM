@@ -12,11 +12,13 @@ const SERVICE_COLOR: Record<string, string> = { Box: '#2A6FDB', '3S': '#0E9C7E',
 
 /* ─────────────── Widget layout persistence ─────────────── */
 
+// v4 = YTD target + Won-revenue-by-service paired side-by-side in the top
+//      row; KPI rows stay full width below.
 // v3 = YTD target promoted to first, full-width; KPI rows shrunk and moved
 //      below so revenue-vs-target reads as the hero row.
 // v2 = multi-column layout (columns count + per-item column assignment).
 // v1 was single-column only. Load code accepts v1/v2 and upgrades silently.
-const LAYOUT_KEY = 'bluefish.dashboard.layout.v3'
+const LAYOUT_KEY = 'bluefish.dashboard.layout.v4'
 const LEGACY_LAYOUT_KEY = 'bluefish.dashboard.layout.v1'
 
 type ColumnCount = 1 | 2 | 3
@@ -27,10 +29,10 @@ interface DashboardLayout { columns: ColumnCount; items: WidgetLayoutEntry[] }
 /** Ordered by desirability in a single-column stack — order also decides round-robin
  *  distribution into multi-column layouts (item 0 → col 0, item 1 → col 1, ...). */
 const DEFAULT_ITEMS: Array<Omit<WidgetLayoutEntry, 'column'>> = [
-  { id: 'byServiceTarget',  visible: true },   // hero row — YTD revenue vs target
+  { id: 'byServiceTarget',  visible: true },   // hero row — target ↔ revenue paired
+  { id: 'byServiceRevenue', visible: true },   // sits next to target
   { id: 'kpiRow1',          visible: true },   // Open pipeline / Revenue MTD / New leads / Deals won
   { id: 'kpiRow2',          visible: true },
-  { id: 'byServiceRevenue', visible: true },
   { id: 'topDeals',         visible: true },
   { id: 'activityBreakdown', visible: true },
   { id: 'salesTeam',        visible: true },
@@ -39,9 +41,18 @@ const DEFAULT_ITEMS: Array<Omit<WidgetLayoutEntry, 'column'>> = [
   { id: 'byIndustry',       visible: true },
 ]
 
-/** These widgets always span every column of the grid. Target and KPI rows
- *  are wide-strip layouts — they'd look cramped inside a 1/3 column. */
-const FULL_WIDTH_WIDGETS = new Set(['byServiceTarget', 'kpiRow1', 'kpiRow2'])
+/** Widgets rendered in the wrapping full-width row above the column grid.
+ *  Their layout on the row depends on TOP_ROW_FLEX_BASIS below — narrow
+ *  cards (640px) pair up, KPI rows force their own line. */
+const FULL_WIDTH_WIDGETS = new Set(['byServiceTarget', 'byServiceRevenue', 'kpiRow1', 'kpiRow2'])
+
+/** Per-widget flex basis on the top row. Cards with a 640px cap take
+ *  `0 1 640px` so two fit on a wide screen; anything else takes the
+ *  full row width. */
+const TOP_ROW_FLEX_BASIS: Record<string, string> = {
+  byServiceTarget: '0 1 640px',
+  byServiceRevenue: '0 1 640px',
+}
 
 const DEFAULT_LAYOUT: DashboardLayout = {
   columns: 1,
@@ -420,12 +431,17 @@ export default function Dashboard() {
         />
       )}
 
-      {/* Full-width row for KPI widgets that always span every column. Rendered
-          above the column grid so they read left-to-right even in multi-col mode. */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: layout.columns > 1 ? 14 : 0 }}>
+      {/* Top row above the column grid. Wraps horizontally so narrow paired
+          cards (target + revenue) can sit side-by-side; wide widgets (KPI
+          rows) force their own line via `flex: 1 1 100%`. */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'flex-start', marginBottom: layout.columns > 1 ? 14 : 0 }}>
         {layout.items
           .filter((it) => it.visible && FULL_WIDTH_WIDGETS.has(it.id) && widgets[it.id])
-          .map((it) => renderWidget(it))}
+          .map((it) => (
+            <div key={it.id} style={{ flex: TOP_ROW_FLEX_BASIS[it.id] ?? '1 1 100%', minWidth: 0 }}>
+              {renderWidget(it)}
+            </div>
+          ))}
       </div>
 
       <div style={{
