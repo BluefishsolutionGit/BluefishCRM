@@ -623,44 +623,128 @@ function ByServiceBars({ period, monthly }: { period: string; monthly: ByService
   )
 }
 
+type TargetChartKind = 'bar' | 'donut'
+const CHART_KIND_KEY = 'bluefish.dashboard.ytdTarget.chart'
+
 /**
- * Primary YTD target view — one horizontal bar per service plus a top
- * "Overall" bar summing every service. The revenue fill sits *inside*
- * the target track (rather than under a separate ring) so a rep can
- * eyeball "how much of ฿30M we've booked" at a glance, without doing
- * the "60% of 30M" math in their head.
+ * Primary YTD target view — Overall + per-service progress against target.
+ * User can flip between:
+ *   - "bar"    → horizontal bars with revenue filling the target track
+ *   - "donut"  → donut per service with % centered (the previous look)
+ * Selection persists in localStorage.
  *
- * Overall row is the sum across all services with a target set. Services
- * without a target render dimmed at 0% — the row still shows so managers
- * remember to backfill the target in Settings.
+ * Card is capped at ~50% width so it reads as a hero panel next to (not
+ * across) the rest of the layout — user asked for this size on 2026-09-03.
  */
 function ByServiceTargets({ stats }: { stats: ByServiceDashboardDto['stats'] }) {
   const overallWon = stats.reduce((s, r) => s + r.won, 0)
   const overallTarget = stats.reduce((s, r) => s + r.target, 0)
   const overallPct = overallTarget > 0 ? Math.round((overallWon / overallTarget) * 100) : 0
+
+  const [kind, setKind] = useState<TargetChartKind>(() => {
+    const saved = typeof localStorage !== 'undefined' ? localStorage.getItem(CHART_KIND_KEY) : null
+    return saved === 'donut' ? 'donut' : 'bar'
+  })
+  const pickKind = (next: TargetChartKind) => {
+    setKind(next)
+    try { localStorage.setItem(CHART_KIND_KEY, next) } catch { /* quota */ }
+  }
+
   return (
-    <div style={card}>
-      <div style={cardTitle}>YTD target · revenue vs target</div>
-      <div style={{ padding: '16px 22px 18px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <TargetBar
-          label="Overall"
-          color="#1E1E30"
-          won={overallWon}
-          target={overallTarget}
-          pct={overallPct}
-          primary
-        />
-        <div style={{ height: 1, background: '#F2F3F9' }} />
-        {stats.map((s) => (
+    <div style={{ ...card, maxWidth: 640 }}>
+      <div style={{ ...cardTitle, display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ flex: 1 }}>YTD target · revenue vs target</div>
+        <div style={{ display: 'inline-flex', border: '1px solid #E5E7F0', borderRadius: 8, padding: 2, background: '#F7F8FC' }}>
+          {(['bar', 'donut'] as const).map((k) => {
+            const on = kind === k
+            return (
+              <button
+                key={k}
+                type="button"
+                onClick={() => pickKind(k)}
+                style={{
+                  background: on ? '#fff' : 'transparent',
+                  color: on ? '#2A6FDB' : '#5C5C74',
+                  border: 'none', borderRadius: 6, padding: '4px 12px',
+                  fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                  boxShadow: on ? '0 1px 3px rgba(30,20,80,.12)' : 'none',
+                  textTransform: 'capitalize',
+                }}
+              >{k}</button>
+            )
+          })}
+        </div>
+      </div>
+      {kind === 'bar' ? (
+        <div style={{ padding: '16px 22px 18px', display: 'flex', flexDirection: 'column', gap: 12 }}>
           <TargetBar
-            key={s.service}
-            label={s.service}
-            color={SERVICE_COLOR[s.service] ?? '#5C5C74'}
-            won={s.won}
-            target={s.target}
-            pct={s.pctOfTarget}
+            label="Overall"
+            color="#1E1E30"
+            won={overallWon}
+            target={overallTarget}
+            pct={overallPct}
+            primary
           />
-        ))}
+          <div style={{ height: 1, background: '#F2F3F9' }} />
+          {stats.map((s) => (
+            <TargetBar
+              key={s.service}
+              label={s.service}
+              color={SERVICE_COLOR[s.service] ?? '#5C5C74'}
+              won={s.won}
+              target={s.target}
+              pct={s.pctOfTarget}
+            />
+          ))}
+        </div>
+      ) : (
+        <div style={{ padding: '18px 22px 20px', display: 'grid', gridTemplateColumns: `repeat(${stats.length}, 1fr)`, gap: 12 }}>
+          {stats.map((s) => <Donut key={s.service} stat={s} />)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Donut({ stat }: { stat: ByServiceDashboardDto['stats'][number] }) {
+  const color = SERVICE_COLOR[stat.service] ?? '#5C5C74'
+  const size = 110, stroke = 12, r = (size - stroke) / 2, c = 2 * Math.PI * r
+  const frac = stat.target > 0 ? Math.min(1, stat.won / stat.target) : 0
+  const dash = c * frac
+  const gap = c - dash
+  const noTarget = stat.target === 0
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+      <div style={{ position: 'relative', width: size, height: size }}>
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ transform: 'rotate(-90deg)' }}>
+          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#EEF0F7" strokeWidth={stroke} />
+          {!noTarget && (
+            <circle
+              cx={size / 2} cy={size / 2} r={r} fill="none"
+              stroke={color} strokeWidth={stroke} strokeLinecap="round"
+              strokeDasharray={`${dash} ${gap}`}
+            />
+          )}
+        </svg>
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+          {noTarget ? (
+            <>
+              <div style={{ fontFamily: "'Space Grotesk'", fontSize: 13, fontWeight: 700, color: '#8082A5' }}>—</div>
+              <div style={{ fontSize: 9, color: '#8082A5', marginTop: 2 }}>no target</div>
+            </>
+          ) : (
+            <>
+              <div style={{ fontFamily: "'Space Grotesk'", fontSize: 19, fontWeight: 700, color: stat.pctOfTarget >= 100 ? '#0E6E4E' : color }}>
+                {stat.pctOfTarget}%
+              </div>
+              <div style={{ fontSize: 9.5, color: '#5C5C74', marginTop: 2 }}>of target</div>
+            </>
+          )}
+        </div>
+      </div>
+      <div style={{ fontSize: 12, fontWeight: 700, color }}>{stat.service}</div>
+      <div style={{ fontSize: 10, color: '#5C5C74', fontFamily: "'IBM Plex Mono', monospace" }}>
+        {fmt(stat.won)}{stat.target > 0 ? ` / ${fmt(stat.target)}` : ''}
       </div>
     </div>
   )
