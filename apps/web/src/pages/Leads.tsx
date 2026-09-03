@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { LeadDto, UserDto } from '@bluefish/shared'
 import { SERVICE_LINES } from '@bluefish/shared'
@@ -16,6 +16,8 @@ export default function Leads() {
   const [editing, setEditing] = useState<LeadDto | null>(null)
   const [assignPickerFor, setAssignPickerFor] = useState<LeadDto | null>(null)
   const [salesUsers, setSalesUsers] = useState<UserDto[]>([])
+  const [showConverted, setShowConverted] = useState(false)
+  const [menuFor, setMenuFor] = useState<string | null>(null)
   const toast = useToast()
   const navigate = useNavigate()
   const { hasPermission } = useAuth()
@@ -68,6 +70,20 @@ export default function Leads() {
   /** Stop row-level navigation whenever an action button inside the row is clicked. */
   const stop = (e: ReactMouseEvent) => e.stopPropagation()
 
+  const convertedCount = useMemo(() => leads.filter((l) => l.status === 'Converted').length, [leads])
+  const visibleLeads = useMemo(
+    () => showConverted ? leads : leads.filter((l) => l.status !== 'Converted'),
+    [leads, showConverted],
+  )
+
+  // Close the kebab dropdown whenever the user clicks anywhere else on the page.
+  useEffect(() => {
+    if (!menuFor) return
+    const close = () => setMenuFor(null)
+    window.addEventListener('click', close)
+    return () => window.removeEventListener('click', close)
+  }, [menuFor])
+
   const convert = async (l: LeadDto) => {
     if (!window.confirm(`Convert "${l.companyName}" into an opportunity?`)) return
     try {
@@ -106,7 +122,22 @@ export default function Leads() {
     <div style={{ height: '100%', overflow: 'auto', padding: '24px 28px', animation: 'fadeUp .3s ease' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
         <div style={{ fontFamily: "'Space Grotesk'", fontSize: 21, fontWeight: 600 }}>Leads</div>
-        <div style={{ background: '#F2F3F9', borderRadius: 8, fontSize: 12, fontWeight: 600, color: '#5C5C74', padding: '4px 10px' }}>{leads.length} total</div>
+        <div style={{ background: '#F2F3F9', borderRadius: 8, fontSize: 12, fontWeight: 600, color: '#5C5C74', padding: '4px 10px' }}>
+          {visibleLeads.length} shown{convertedCount > 0 && ` · ${convertedCount} converted`}
+        </div>
+        {convertedCount > 0 && (
+          <div
+            onClick={() => setShowConverted((v) => !v)}
+            style={{
+              ...ghostBtn,
+              background: showConverted ? '#EEF3FC' : '#fff',
+              color: showConverted ? '#2A6FDB' : '#5C5C74',
+              borderColor: showConverted ? '#B7D0F0' : '#E5E7F0',
+            }}
+          >
+            {showConverted ? '✓ Show converted' : `Show converted (${convertedCount})`}
+          </div>
+        )}
         <div style={{ flex: 1 }} />
         <a href={api.leadsImportTemplateUrl()} target="_blank" rel="noopener noreferrer" style={ghostBtn}>Template</a>
         <a href={api.leadsExportUrl()} style={ghostBtn}>Export ↓</a>
@@ -117,15 +148,6 @@ export default function Leads() {
             <div onClick={openNew} style={primaryBtn}>+ Add lead</div>
           </>
         )}
-      </div>
-
-      <div style={{ borderRadius: 13, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 13, marginBottom: 14, color: '#EAE7F7', background: '#1A236B' }}>
-        <svg viewBox="0 0 24 24" width="19" height="19">
-          <path d="M12 3.5l1.9 5.4 5.4 1.9-5.4 1.9L12 18.1l-1.9-5.4-5.4-1.9 5.4-1.9z" fill="#A995F5" />
-        </svg>
-        <div style={{ flex: 1, fontSize: 13, lineHeight: 1.5 }}>
-          <b style={{ color: '#CDBFF9' }}>Auto scoring</b> + round-robin assignment · {leads.filter((l) => l.ownerId).length} of {leads.length} assigned · duplicate check active
-        </div>
       </div>
 
       {error && <div style={{ background: '#FDECEA', color: '#C0392B', border: '1px solid #F5B7B1', borderRadius: 10, padding: '10px 14px', fontSize: 13, marginBottom: 14 }}>{error}</div>}
@@ -140,41 +162,74 @@ export default function Leads() {
           <div>Owner</div><div>Status</div><div>Est. value</div><div style={{ textAlign: 'right' }}>Actions</div>
         </div>
         {loading && <div style={{ padding: 24, textAlign: 'center', color: '#8888A0', fontSize: 13 }}>Loading…</div>}
-        {!loading && leads.length === 0 && !error && <div style={{ padding: 24, textAlign: 'center', color: '#8888A0', fontSize: 13 }}>No leads yet.</div>}
-        {leads.map((l) => {
-          const scoreCol = l.score >= 80 ? '#2A6FDB' : l.score >= 65 ? '#B4650A' : '#8888A0'
-          const stStyle = l.status === 'Converted' ? pill('#E4EDFC', '#2A6FDB')
+        {!loading && visibleLeads.length === 0 && !error && (
+          <div style={{ padding: 24, textAlign: 'center', color: '#8888A0', fontSize: 13 }}>
+            {convertedCount > 0 && !showConverted ? 'No active leads. Toggle "Show converted" to see the archive.' : 'No leads yet.'}
+          </div>
+        )}
+        {visibleLeads.map((l) => {
+          const converted = l.status === 'Converted'
+          const scoreCol = converted ? '#B4B4C4' : l.score >= 80 ? '#2A6FDB' : l.score >= 65 ? '#B4650A' : '#8888A0'
+          const stStyle = converted ? pill('#F2F3F9', '#8888A0')
             : l.status === 'AI Sourced' ? pill('#F4F1FD', '#4A3AB8')
             : l.status === 'Lost' ? pill('#FDECEA', '#C0392B')
             : pill('#F2F3F9', '#5C5C74')
+          // Converted rows read as archived: muted background, gray text.
+          const rowBg = converted ? '#FAFAFC' : '#fff'
+          const textCol = converted ? '#8888A0' : '#3B3B52'
+          const titleCol = converted ? '#8888A0' : '#1E1E30'
           return (
             <div
               key={l.id}
               onClick={() => navigate(`/leads/${l.id}`)}
-              style={{ ...gridCols, padding: '12px 18px', borderBottom: '1px solid #F2F3F9', alignItems: 'center', cursor: 'pointer' }}
+              style={{
+                ...gridCols, padding: '12px 18px', borderBottom: '1px solid #F2F3F9',
+                alignItems: 'center', cursor: 'pointer', background: rowBg,
+                position: 'relative',
+              }}
             >
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{l.companyName}</div>
-                <div style={{ fontSize: 11.5, fontWeight: 400, color: '#5C5C74', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{l.name}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: titleCol, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{l.companyName}</div>
+                <div style={{ fontSize: 11.5, fontWeight: 400, color: converted ? '#B4B4C4' : '#5C5C74', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{l.name}</div>
               </div>
-              <div><ServicePill service={l.serviceOrProduct} /></div>
-              <div><span style={srcStyle(l.source)}>{l.source}</span></div>
+              <div style={{ opacity: converted ? 0.55 : 1 }}><ServicePill service={l.serviceOrProduct} /></div>
+              <div style={{ opacity: converted ? 0.55 : 1 }}><span style={srcStyle(l.source)}>{l.source}</span></div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontFamily: "'Space Grotesk'", fontWeight: 700, fontSize: 13, color: scoreCol }}>{l.score}</span>
                 <div style={{ flex: 1, height: 4, background: '#F2F3F9', borderRadius: 2, maxWidth: 60 }}>
                   <div style={{ width: `${l.score}%`, height: '100%', background: scoreCol, borderRadius: 2 }} />
                 </div>
               </div>
-              <div style={{ fontSize: 12.5, color: '#3B3B52' }}>{l.ownerName ?? '— unassigned —'}</div>
+              <div style={{ fontSize: 12.5, color: textCol }}>{l.ownerName ?? '— unassigned —'}</div>
               <div><span style={stStyle}>{l.status}</span></div>
-              <div style={{ fontFamily: "'Space Grotesk'", fontSize: 13, fontWeight: 600 }}>{l.estValue ? `฿${(l.estValue / 1e6).toFixed(1)}M` : '—'}</div>
-              <div style={{ display: 'flex', gap: 7, justifyContent: 'flex-end', flexWrap: 'wrap' }} onClick={stop}>
-                {canWrite && !l.ownerId && <div onClick={() => setAssignPickerFor(l)} style={smallBtn}>Assign</div>}
-                {canWrite && l.ownerId && <div onClick={() => setAssignPickerFor(l)} style={smallBtn}>Reassign</div>}
-                {canWrite && l.ownerId && <div onClick={() => unassign(l)} style={smallBtn}>Unassign</div>}
-                {canWrite && l.status !== 'Converted' && <div onClick={() => openEdit(l)} style={smallBtn}>Edit</div>}
-                {canWrite && l.status !== 'Converted' && <div onClick={() => convert(l)} style={{ ...smallBtn, background: '#2A6FDB', color: '#fff', borderColor: '#2A6FDB' }}>Convert</div>}
-                {canWrite && <div onClick={() => del(l)} style={{ ...smallBtn, color: '#C0392B' }}>Delete</div>}
+              <div style={{ fontFamily: "'Space Grotesk'", fontSize: 13, fontWeight: 600, color: textCol }}>{l.estValue ? `฿${(l.estValue / 1e6).toFixed(1)}M` : '—'}</div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }} onClick={stop}>
+                {canWrite && (
+                  <div style={{ position: 'relative' }}>
+                    <div
+                      onClick={(e) => { e.stopPropagation(); setMenuFor(menuFor === l.id ? null : l.id) }}
+                      style={{
+                        width: 30, height: 30, borderRadius: 8,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 16, color: '#5C5C74', cursor: 'pointer',
+                        background: menuFor === l.id ? '#F2F3F9' : 'transparent',
+                        letterSpacing: '2px',
+                      }}
+                      aria-label="Row actions"
+                    >⋯</div>
+                    {menuFor === l.id && (
+                      <ActionMenu
+                        lead={l}
+                        onClose={() => setMenuFor(null)}
+                        onAssign={() => setAssignPickerFor(l)}
+                        onUnassign={() => unassign(l)}
+                        onEdit={() => openEdit(l)}
+                        onConvert={() => convert(l)}
+                        onDelete={() => del(l)}
+                      />
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           )
@@ -197,6 +252,48 @@ export default function Leads() {
       )}
     </div>
   )
+}
+
+/**
+ * Row-level action dropdown — replaces the strip of 5+ inline buttons that
+ * used to eat the entire right side of the row. Rendered as an absolutely-
+ * positioned popover under the ⋯ button; auto-closes on outside click via
+ * the parent's window listener.
+ */
+function ActionMenu({ lead, onClose, onAssign, onUnassign, onEdit, onConvert, onDelete }: {
+  lead: LeadDto
+  onClose: () => void
+  onAssign: () => void
+  onUnassign: () => void
+  onEdit: () => void
+  onConvert: () => void
+  onDelete: () => void
+}) {
+  const converted = lead.status === 'Converted'
+  const pick = (fn: () => void) => (e: ReactMouseEvent) => { e.stopPropagation(); onClose(); fn() }
+  return (
+    <div
+      onClick={(e) => e.stopPropagation()}
+      style={{
+        position: 'absolute', top: 34, right: 0, zIndex: 20,
+        background: '#fff', border: '1px solid #E5E7F0', borderRadius: 10,
+        boxShadow: '0 10px 28px -12px rgba(30,20,80,.25)',
+        minWidth: 180, padding: 4,
+      }}
+    >
+      <div onClick={pick(onAssign)} style={menuItem}>{lead.ownerId ? 'Reassign' : 'Assign'}</div>
+      {lead.ownerId && <div onClick={pick(onUnassign)} style={menuItem}>Unassign</div>}
+      {!converted && <div onClick={pick(onEdit)} style={menuItem}>Edit</div>}
+      {!converted && <div onClick={pick(onConvert)} style={{ ...menuItem, color: '#2A6FDB', fontWeight: 700 }}>Convert to opportunity</div>}
+      <div style={{ height: 1, background: '#F2F3F9', margin: '4px 0' }} />
+      <div onClick={pick(onDelete)} style={{ ...menuItem, color: '#C0392B' }}>Delete</div>
+    </div>
+  )
+}
+
+const menuItem: CSSProperties = {
+  padding: '8px 12px', fontSize: 12.5, fontWeight: 600, color: '#3B3B52',
+  cursor: 'pointer', borderRadius: 6, whiteSpace: 'nowrap',
 }
 
 /**
@@ -338,7 +435,7 @@ function ScoreRow({ label, value }: { label: string; value: string }) {
   )
 }
 
-const gridCols: CSSProperties = { display: 'grid', gridTemplateColumns: '1.9fr 100px 130px 150px 130px 110px 90px 260px', gap: 10 }
+const gridCols: CSSProperties = { display: 'grid', gridTemplateColumns: '1.9fr 100px 130px 150px 130px 110px 90px 60px', gap: 10 }
 
 const SERVICE_COLOR: Record<string, string> = { Box: '#2A6FDB', '3S': '#0E9C7E', '3D': '#B4650A', 'AI&RPA': '#6C55E0' }
 function hexToRgba(hex: string, alpha: number): string {
@@ -359,4 +456,3 @@ function ServicePill({ service }: { service: string | null }) {
 }
 const primaryBtn: CSSProperties = { background: '#2A6FDB', color: '#fff', borderRadius: 9, padding: '8px 16px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', border: 'none' }
 const ghostBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid #E5E7F0', background: '#fff', borderRadius: 9, padding: '7px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: '#3B3B52', textDecoration: 'none' }
-const smallBtn: CSSProperties = { border: '1px solid #E5E7F0', background: '#fff', borderRadius: 8, fontSize: 11.5, fontWeight: 600, padding: '5px 11px', cursor: 'pointer' }
