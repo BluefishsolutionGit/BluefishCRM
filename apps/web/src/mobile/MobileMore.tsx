@@ -23,31 +23,34 @@ export default function MobileMore() {
   const toast = useToast()
   const navigate = useNavigate()
 
-  const openCheckin = () => setCheckinCustomerOpen(true)
+  const openCheckin = () => {
+    if (!user?.id) { toast('Sign in first'); return }
+    setCheckinCustomerOpen(true)
+  }
 
   /**
-   * Acquire GPS + log a "visit" activity. If a customer is picked, the
-   * activity is linked to them and titled "Check-in: <Customer>" so the
-   * activities feed reads intent, not raw coordinates. When skipped, we
-   * fall back to the previous coord-only behavior for the ad-hoc case.
+   * Acquire GPS + log a "visit" activity against the chosen customer.
+   * Customer selection is mandatory — the picker sheet does not offer a
+   * skip anymore. Owner is always the current mobile user, and the
+   * activity title reads "Check-in: <Customer>" so the activities feed
+   * says which visit happened, not raw coordinates.
    */
-  const runCheckin = async (customer: CustomerDto | null) => {
+  const runCheckin = async (customer: CustomerDto) => {
     setCheckinCustomerOpen(false)
+    if (!user?.id) { toast('Sign in first'); return }
     if (!('geolocation' in navigator)) { toast('GPS not available'); return }
     setBusy('gps')
     try {
       const pos = await new Promise<GeolocationPosition>((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 8000 }))
       const { latitude, longitude } = pos.coords
       const scheduledAt = new Date().toISOString()
-      const title = customer
-        ? `Check-in: ${customer.name}`
-        : `GPS check-in @ ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`
+      const title = `Check-in: ${customer.name}`
       const payload: CreateActivityDto = {
         type: 'visit',
         title,
         scheduledAt,
-        ownerId: user?.id ?? '',
-        customerId: customer?.id,
+        ownerId: user.id,
+        customerId: customer.id,
         description: `Location: ${latitude}, ${longitude}\nAccuracy: ${Math.round(pos.coords.accuracy ?? 0)}m`,
       }
       if (!navigator.onLine) {
@@ -55,7 +58,7 @@ export default function MobileMore() {
         toast(`Offline — queued check-in (${draft.id.slice(6, 12)})`)
       } else {
         await api.createActivity(payload)
-        toast(customer ? `Checked in at ${customer.name}` : 'GPS check-in logged')
+        toast(`Checked in at ${customer.name}`)
       }
       setLastCheckin(scheduledAt)
     } catch (e) {
@@ -202,7 +205,7 @@ export default function MobileMore() {
       {checkinCustomerOpen && (
         <CheckinCustomerSheet
           onClose={() => setCheckinCustomerOpen(false)}
-          onPick={(c) => { void runCheckin(c) }}
+          onPick={(c) => void runCheckin(c)}
         />
       )}
     </div>
@@ -211,12 +214,12 @@ export default function MobileMore() {
 
 /**
  * Bottom-sheet customer picker for GPS check-in. Debounced search hits
- * /customers?q=; user can also tap "Skip — no customer" to log an ad-hoc
- * check-in without a customer link (falls through to the legacy title).
+ * /customers?q=. Customer selection is required — the check-in only
+ * fires once the user taps a customer row.
  */
 function CheckinCustomerSheet({ onClose, onPick }: {
   onClose: () => void
-  onPick: (customer: CustomerDto | null) => void
+  onPick: (customer: CustomerDto) => void
 }) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<CustomerDto[]>([])
@@ -263,17 +266,6 @@ function CheckinCustomerSheet({ onClose, onPick }: {
         />
 
         <div style={{ flex: 1, overflowY: 'auto' }}>
-          <div
-            onClick={() => onPick(null)}
-            style={{
-              padding: '10px 12px', borderRadius: 10, cursor: 'pointer',
-              border: '1px dashed #D0D0DF', color: '#5C5C74',
-              fontSize: 12.5, fontWeight: 600, textAlign: 'center',
-              marginBottom: 8,
-            }}
-          >
-            Skip — check in without a customer
-          </div>
           {loading && <div style={{ padding: 20, textAlign: 'center', color: '#8888A0', fontSize: 12.5 }}>Loading…</div>}
           {!loading && results.length === 0 && (
             <div style={{ padding: 20, textAlign: 'center', color: '#8888A0', fontSize: 12.5 }}>
