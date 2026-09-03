@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
-import type { CreateActivityDto, ScanCardResultDto } from '@bluefish/shared'
+import type { CreateActivityDto, CustomerDto, ScanCardResultDto } from '@bluefish/shared'
 import { api, ApiError } from '../lib/api'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/ToastContext'
@@ -18,30 +18,44 @@ export default function MobileMore() {
   const [qrOpen, setQrOpen] = useState(false)
   const [cardResult, setCardResult] = useState<ScanCardResultDto | null>(null)
   const [captureOpen, setCaptureOpen] = useState(false)
+  const [checkinCustomerOpen, setCheckinCustomerOpen] = useState(false)
   const { user } = useAuth()
   const toast = useToast()
   const navigate = useNavigate()
 
-  const gpsCheckin = async () => {
+  const openCheckin = () => setCheckinCustomerOpen(true)
+
+  /**
+   * Acquire GPS + log a "visit" activity. If a customer is picked, the
+   * activity is linked to them and titled "Check-in: <Customer>" so the
+   * activities feed reads intent, not raw coordinates. When skipped, we
+   * fall back to the previous coord-only behavior for the ad-hoc case.
+   */
+  const runCheckin = async (customer: CustomerDto | null) => {
+    setCheckinCustomerOpen(false)
     if (!('geolocation' in navigator)) { toast('GPS not available'); return }
     setBusy('gps')
     try {
       const pos = await new Promise<GeolocationPosition>((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 8000 }))
       const { latitude, longitude } = pos.coords
       const scheduledAt = new Date().toISOString()
+      const title = customer
+        ? `Check-in: ${customer.name}`
+        : `GPS check-in @ ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`
       const payload: CreateActivityDto = {
         type: 'visit',
-        title: `GPS check-in @ ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`,
+        title,
         scheduledAt,
         ownerId: user?.id ?? '',
+        customerId: customer?.id,
         description: `Location: ${latitude}, ${longitude}\nAccuracy: ${Math.round(pos.coords.accuracy ?? 0)}m`,
       }
       if (!navigator.onLine) {
-        const draft = await enqueueDraft({ kind: 'activity', label: `GPS check-in`, payload })
+        const draft = await enqueueDraft({ kind: 'activity', label: title, payload })
         toast(`Offline — queued check-in (${draft.id.slice(6, 12)})`)
       } else {
         await api.createActivity(payload)
-        toast('GPS check-in logged')
+        toast(customer ? `Checked in at ${customer.name}` : 'GPS check-in logged')
       }
       setLastCheckin(scheduledAt)
     } catch (e) {
@@ -135,7 +149,7 @@ export default function MobileMore() {
           <BigTile icon="⬜" label="Scan QR" hint="Deep-link or search"
             gradient="linear-gradient(135deg,#6C55E0,#9781F5)" onClick={() => setQrOpen(true)} />
           <BigTile busy={busy === 'gps'} icon="📍" label="GPS check-in" hint="Log a visit"
-            gradient="linear-gradient(135deg,#0E9C7E,#22C9A3)" onClick={gpsCheckin} />
+            gradient="linear-gradient(135deg,#0E9C7E,#22C9A3)" onClick={openCheckin} />
           <BigTile busy={busy === 'voice'} icon="🎙" label="Voice note" hint="Speak → activity"
             gradient="linear-gradient(135deg,#B4650A,#E68A2E)" onClick={voiceNote} />
         </div>
@@ -185,6 +199,111 @@ export default function MobileMore() {
           onDone={(customerId) => { setCardResult(null); navigate(`/m/customers/${customerId}`) }}
         />
       )}
+      {checkinCustomerOpen && (
+        <CheckinCustomerSheet
+          onClose={() => setCheckinCustomerOpen(false)}
+          onPick={(c) => { void runCheckin(c) }}
+        />
+      )}
+    </div>
+  )
+}
+
+/**
+ * Bottom-sheet customer picker for GPS check-in. Debounced search hits
+ * /customers?q=; user can also tap "Skip — no customer" to log an ad-hoc
+ * check-in without a customer link (falls through to the legacy title).
+ */
+function CheckinCustomerSheet({ onClose, onPick }: {
+  onClose: () => void
+  onPick: (customer: CustomerDto | null) => void
+}) {
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<CustomerDto[]>([])
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    const handle = setTimeout(() => {
+      api.customers(query || undefined)
+        .then((rows) => { if (!cancelled) { setResults(rows.slice(0, 40)); setLoading(false) } })
+        .catch(() => { if (!cancelled) { setResults([]); setLoading(false) } })
+    }, 200)
+    return () => { cancelled = true; clearTimeout(handle) }
+  }, [query])
+
+  return (
+    <div onClick={onClose} style={{
+      position: 'fixed', inset: 0, background: 'rgba(20,20,45,.55)', zIndex: 90,
+      display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+    }}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        width: '100%', maxWidth: 480, background: '#fff',
+        borderRadius: '18px 18px 0 0', padding: '10px 16px 16px',
+        maxHeight: '85vh', display: 'flex', flexDirection: 'column',
+      }}>
+        <div style={{ width: 40, height: 4, background: '#D0D0DF', borderRadius: 2, margin: '4px auto 10px' }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          <div style={{ fontSize: 15, fontWeight: 800, flex: 1 }}>Check in at customer</div>
+          <div onClick={onClose} style={{ color: '#8888A0', fontSize: 18, cursor: 'pointer', padding: '2px 6px' }}>✕</div>
+        </div>
+
+        <input
+          type="text"
+          autoFocus
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search customer name…"
+          style={{
+            border: '1px solid #E5E7F0', borderRadius: 10,
+            padding: '10px 12px', fontSize: 14, outline: 'none',
+            marginBottom: 8,
+          }}
+        />
+
+        <div style={{ flex: 1, overflowY: 'auto' }}>
+          <div
+            onClick={() => onPick(null)}
+            style={{
+              padding: '10px 12px', borderRadius: 10, cursor: 'pointer',
+              border: '1px dashed #D0D0DF', color: '#5C5C74',
+              fontSize: 12.5, fontWeight: 600, textAlign: 'center',
+              marginBottom: 8,
+            }}
+          >
+            Skip — check in without a customer
+          </div>
+          {loading && <div style={{ padding: 20, textAlign: 'center', color: '#8888A0', fontSize: 12.5 }}>Loading…</div>}
+          {!loading && results.length === 0 && (
+            <div style={{ padding: 20, textAlign: 'center', color: '#8888A0', fontSize: 12.5 }}>
+              {query ? 'No matches.' : 'Type a name to search.'}
+            </div>
+          )}
+          {!loading && results.map((c) => (
+            <div
+              key={c.id}
+              onClick={() => onPick(c)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '10px 12px', borderRadius: 10, cursor: 'pointer',
+                border: '1px solid #E5E7F0', marginBottom: 6, background: '#fff',
+              }}
+            >
+              <div style={{
+                width: 34, height: 34, borderRadius: '50%',
+                background: '#EEF3FC', color: '#2A6FDB', border: '1px solid #D6E2F7',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 12, fontWeight: 800, flex: 'none',
+              }}>{c.name.split(' ').slice(0, 2).map((s) => s[0]).join('').toUpperCase()}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name}</div>
+                {c.industry && <div style={{ fontSize: 11, color: '#8888A0' }}>{c.industry}</div>}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   )
 }
