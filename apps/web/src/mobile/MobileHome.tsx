@@ -74,7 +74,10 @@ export default function MobileHome() {
     api.opportunities({ ownerId: user.id })
       .then((rows) => setManagerHints(
         rows
-          .filter((o) => o.managerHint && (o.managerHint.trim().length > 0 || o.managerHintPriority))
+          // Show any deal where a manager has left either a hint text OR
+          // just a priority flag. The previous `hint && (...)` short-
+          // circuited on null hint even when the priority was set.
+          .filter((o) => ((o.managerHint?.trim().length ?? 0) > 0) || !!o.managerHintPriority)
           // Newest suggestion first — updatedAt bumps whenever the hint is (re)written.
           .sort((a, b) => (new Date(b.updatedAt).getTime()) - (new Date(a.updatedAt).getTime()))
       ))

@@ -22,6 +22,7 @@
 
 import { useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { isPhoneUserAgent } from './landingRoute'
 
 type PathMapper = [RegExp, (match: RegExpMatchArray) => string]
 
@@ -74,14 +75,17 @@ export function useResponsiveRedirect(): void {
     const width = window.innerWidth
     const touchPrimary = typeof window.matchMedia === 'function'
       && window.matchMedia('(pointer: coarse)').matches
+    const phoneUa = isPhoneUserAgent(navigator.userAgent ?? '')
 
-    // Phone: touch-primary AND narrow. A dev shrinking their desktop browser
-    // to 400px shouldn't get punted to /m — they don't have a phone in hand.
-    // DevTools mobile emulation flips pointer to coarse, so it still works.
-    // Anything ≥ 1024 (desktop OR tablet in landscape) uses the desktop shell.
-    // 768–1023 range (tablet portrait / narrow browser) is left alone.
+    // Phone classification uses three signals:
+    //   - UA is a phone-class browser (iPhone / Android Mobile / etc.), OR
+    //   - touch-primary AND narrow viewport (< 768).
+    // The UA check catches phones in landscape (>= 768) that the width-only
+    // rule was missing. DevTools mobile emulation still works because pointer
+    // flips to coarse even though the UA stays desktop.
+    // Anything else at ≥ 1024 (desktop or tablet in landscape) → desktop shell.
     let rules: PathMapper[] | null = null
-    if (touchPrimary && width < PHONE_BREAKPOINT) rules = DESKTOP_TO_MOBILE
+    if (phoneUa || (touchPrimary && width < PHONE_BREAKPOINT)) rules = DESKTOP_TO_MOBILE
     else if (width >= DESKTOP_BREAKPOINT) rules = MOBILE_TO_DESKTOP
 
     if (!rules) return

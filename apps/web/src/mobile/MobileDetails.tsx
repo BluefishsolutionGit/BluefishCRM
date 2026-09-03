@@ -469,6 +469,31 @@ export function MobileOpportunityDetail() {
         )}
       </div>
 
+      {(((o.managerHint?.trim().length ?? 0) > 0) || !!o.managerHintPriority) && (() => {
+        // Same priority palette as the desktop pipeline card and the mobile
+        // Home suggestions list — urgent = red, watch = amber, info = blue.
+        const priority = o.managerHintPriority ?? 'info'
+        const c = priority === 'urgent' ? '#C0392B' : priority === 'watch' ? '#B4650A' : '#2A6FDB'
+        return (
+          <div style={{ ...card, borderLeft: `3px solid ${c}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <div style={{ ...sectionLabel, color: c, flex: 1 }}>Manager suggestion</div>
+              <div style={{
+                fontSize: 9.5, fontWeight: 800, color: c,
+                background: c + '1A', padding: '3px 8px', borderRadius: 999,
+                textTransform: 'uppercase', letterSpacing: '.06em',
+              }}>{priority}</div>
+            </div>
+            {o.managerHint && (
+              <div style={{ fontSize: 13, color: '#3B3B52', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{o.managerHint}</div>
+            )}
+            <div style={{ fontSize: 11, color: '#8888A0', marginTop: 6 }}>
+              From {o.managerHintByName ?? 'manager'}
+            </div>
+          </div>
+        )
+      })()}
+
       <div style={card}>
         <div style={sectionLabel}>Move to stage</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
