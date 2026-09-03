@@ -12,9 +12,11 @@ const SERVICE_COLOR: Record<string, string> = { Box: '#2A6FDB', '3S': '#0E9C7E',
 
 /* ─────────────── Widget layout persistence ─────────────── */
 
+// v3 = YTD target promoted to first, full-width; KPI rows shrunk and moved
+//      below so revenue-vs-target reads as the hero row.
 // v2 = multi-column layout (columns count + per-item column assignment).
-// v1 was single-column only. Load code accepts both and upgrades silently.
-const LAYOUT_KEY = 'bluefish.dashboard.layout.v2'
+// v1 was single-column only. Load code accepts v1/v2 and upgrades silently.
+const LAYOUT_KEY = 'bluefish.dashboard.layout.v3'
 const LEGACY_LAYOUT_KEY = 'bluefish.dashboard.layout.v1'
 
 type ColumnCount = 1 | 2 | 3
@@ -25,9 +27,9 @@ interface DashboardLayout { columns: ColumnCount; items: WidgetLayoutEntry[] }
 /** Ordered by desirability in a single-column stack — order also decides round-robin
  *  distribution into multi-column layouts (item 0 → col 0, item 1 → col 1, ...). */
 const DEFAULT_ITEMS: Array<Omit<WidgetLayoutEntry, 'column'>> = [
-  { id: 'kpiRow1',          visible: true },
+  { id: 'byServiceTarget',  visible: true },   // hero row — YTD revenue vs target
+  { id: 'kpiRow1',          visible: true },   // Open pipeline / Revenue MTD / New leads / Deals won
   { id: 'kpiRow2',          visible: true },
-  { id: 'byServiceTarget',  visible: true },
   { id: 'byServiceRevenue', visible: true },
   { id: 'topDeals',         visible: true },
   { id: 'activityBreakdown', visible: true },
@@ -37,9 +39,9 @@ const DEFAULT_ITEMS: Array<Omit<WidgetLayoutEntry, 'column'>> = [
   { id: 'byIndustry',       visible: true },
 ]
 
-/** KPI card rows never look right squeezed into a narrow column — force them
- *  full-width regardless of the column count the user picked. */
-const FULL_WIDTH_WIDGETS = new Set(['kpiRow1', 'kpiRow2'])
+/** These widgets always span every column of the grid. Target and KPI rows
+ *  are wide-strip layouts — they'd look cramped inside a 1/3 column. */
+const FULL_WIDTH_WIDGETS = new Set(['byServiceTarget', 'kpiRow1', 'kpiRow2'])
 
 const DEFAULT_LAYOUT: DashboardLayout = {
   columns: 1,
@@ -621,57 +623,96 @@ function ByServiceBars({ period, monthly }: { period: string; monthly: ByService
   )
 }
 
+/**
+ * Primary YTD target view — one horizontal bar per service plus a top
+ * "Overall" bar summing every service. The revenue fill sits *inside*
+ * the target track (rather than under a separate ring) so a rep can
+ * eyeball "how much of ฿30M we've booked" at a glance, without doing
+ * the "60% of 30M" math in their head.
+ *
+ * Overall row is the sum across all services with a target set. Services
+ * without a target render dimmed at 0% — the row still shows so managers
+ * remember to backfill the target in Settings.
+ */
 function ByServiceTargets({ stats }: { stats: ByServiceDashboardDto['stats'] }) {
+  const overallWon = stats.reduce((s, r) => s + r.won, 0)
+  const overallTarget = stats.reduce((s, r) => s + r.target, 0)
+  const overallPct = overallTarget > 0 ? Math.round((overallWon / overallTarget) * 100) : 0
   return (
     <div style={card}>
-      <div style={cardTitle}>Target attainment by service</div>
-      <div style={{ padding: '20px 22px', display: 'grid', gridTemplateColumns: `repeat(${stats.length}, 1fr)`, gap: 16 }}>
-        {stats.map((s) => <Donut key={s.service} stat={s} />)}
+      <div style={cardTitle}>YTD target · revenue vs target</div>
+      <div style={{ padding: '16px 22px 18px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <TargetBar
+          label="Overall"
+          color="#1E1E30"
+          won={overallWon}
+          target={overallTarget}
+          pct={overallPct}
+          primary
+        />
+        <div style={{ height: 1, background: '#F2F3F9' }} />
+        {stats.map((s) => (
+          <TargetBar
+            key={s.service}
+            label={s.service}
+            color={SERVICE_COLOR[s.service] ?? '#5C5C74'}
+            won={s.won}
+            target={s.target}
+            pct={s.pctOfTarget}
+          />
+        ))}
       </div>
     </div>
   )
 }
 
-function Donut({ stat }: { stat: ByServiceDashboardDto['stats'][number] }) {
-  const color = SERVICE_COLOR[stat.service] ?? '#5C5C74'
-  const size = 130, stroke = 14, r = (size - stroke) / 2, c = 2 * Math.PI * r
-  // Fill fraction is capped at 100% visually (over-hits render as a full ring + label).
-  const frac = stat.target > 0 ? Math.min(1, stat.won / stat.target) : 0
-  const dash = c * frac
-  const gap = c - dash
-  const noTarget = stat.target === 0
+/** One row = label + [ track [fill = won] ] + numbers. Full width. */
+function TargetBar({ label, color, won, target, pct, primary }: {
+  label: string
+  color: string
+  won: number
+  target: number
+  pct: number
+  primary?: boolean
+}) {
+  const noTarget = target === 0
+  const fillPct = Math.min(100, Math.max(0, pct))
+  // Green when hitting/exceeding target, service colour otherwise — matches
+  // the tone the mobile Home target rows and the pipeline gauge use.
+  const fillColor = noTarget ? '#D0D0DF' : pct >= 100 ? '#0E9C7E' : color
+  const barHeight = primary ? 24 : 18
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-      <div style={{ position: 'relative', width: size, height: size }}>
-        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ transform: 'rotate(-90deg)' }}>
-          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#EEF0F7" strokeWidth={stroke} />
-          {!noTarget && (
-            <circle
-              cx={size / 2} cy={size / 2} r={r} fill="none"
-              stroke={color} strokeWidth={stroke} strokeLinecap="round"
-              strokeDasharray={`${dash} ${gap}`}
-            />
-          )}
-        </svg>
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-          {noTarget ? (
-            <>
-              <div style={{ fontFamily: "'Space Grotesk'", fontSize: 14, fontWeight: 700, color: '#8082A5' }}>—</div>
-              <div style={{ fontSize: 9.5, color: '#8082A5', marginTop: 2 }}>no target</div>
-            </>
-          ) : (
-            <>
-              <div style={{ fontFamily: "'Space Grotesk'", fontSize: 22, fontWeight: 700, color: stat.pctOfTarget >= 100 ? '#0E6E4E' : color }}>
-                {stat.pctOfTarget}%
-              </div>
-              <div style={{ fontSize: 10, color: '#5C5C74', marginTop: 2 }}>of target</div>
-            </>
-          )}
+    <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr 200px', gap: 14, alignItems: 'center' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ width: 8, height: 8, borderRadius: 2, background: color, flex: 'none' }} />
+        <div style={{ fontSize: primary ? 13.5 : 12.5, fontWeight: primary ? 800 : 700, color: '#1E1E30' }}>{label}</div>
+      </div>
+      <div style={{
+        position: 'relative',
+        height: barHeight, borderRadius: 6, overflow: 'hidden',
+        background: '#F2F3F9', border: '1px solid #E5E7F0',
+      }}>
+        {!noTarget && (
+          <div style={{
+            width: `${fillPct}%`, height: '100%', background: fillColor,
+            transition: 'width .4s ease',
+          }} />
+        )}
+        {/* Percent label centered on the bar — flips to inside/outside
+            depending on how far the fill has traveled. */}
+        <div style={{
+          position: 'absolute', inset: 0, display: 'flex', alignItems: 'center',
+          paddingLeft: 10, fontSize: primary ? 12 : 11, fontWeight: 800,
+          color: fillPct >= 55 ? '#fff' : '#3B3B52',
+          textShadow: fillPct >= 55 ? '0 1px 1px rgba(0,0,0,.15)' : 'none',
+          pointerEvents: 'none',
+        }}>
+          {noTarget ? 'No target set' : `${pct}%`}
         </div>
       </div>
-      <div style={{ fontSize: 12.5, fontWeight: 700, color }}>{stat.service}</div>
-      <div style={{ fontSize: 10.5, color: '#5C5C74', fontFamily: "'IBM Plex Mono', monospace" }}>
-        {fmt(stat.won)}{stat.target > 0 ? ` / ${fmt(stat.target)}` : ''}
+      <div style={{ textAlign: 'right', fontFamily: "'IBM Plex Mono', monospace", fontSize: primary ? 13 : 12, color: '#3B3B52' }}>
+        <b style={{ color: fillColor === '#0E9C7E' ? '#0E6E4E' : '#1E1E30' }}>{fmt(won)}</b>
+        {!noTarget && <span style={{ color: '#8888A0' }}> / {fmt(target)}</span>}
       </div>
     </div>
   )
@@ -680,11 +721,13 @@ function Donut({ stat }: { stat: ByServiceDashboardDto['stats'][number] }) {
 /* ─────────────── Shared bits ─────────────── */
 
 function KpiCard({ label, value, sub, grad }: { label: string; value: string; sub?: string; grad: string }) {
+  // Shrunk from padding 17/19 + value 32 to 12/15 + value 22 so the KPI row
+  // reads as a secondary strip — the YTD target row above is now the hero.
   return (
-    <div style={{ position: 'relative', borderRadius: 14, padding: '17px 19px', background: grad, color: '#fff', overflow: 'hidden' }}>
-      <div style={{ fontSize: 13.5, fontWeight: 600, opacity: 0.96 }}>{label}</div>
-      <div style={{ fontFamily: "'Space Grotesk'", fontSize: 32, fontWeight: 700, marginTop: 10, lineHeight: 1 }}>{value}</div>
-      {sub && <div style={{ fontSize: 11.5, opacity: 0.85, marginTop: 5 }}>{sub}</div>}
+    <div style={{ position: 'relative', borderRadius: 12, padding: '12px 15px', background: grad, color: '#fff', overflow: 'hidden' }}>
+      <div style={{ fontSize: 11.5, fontWeight: 600, opacity: 0.96 }}>{label}</div>
+      <div style={{ fontFamily: "'Space Grotesk'", fontSize: 22, fontWeight: 700, marginTop: 6, lineHeight: 1 }}>{value}</div>
+      {sub && <div style={{ fontSize: 10.5, opacity: 0.85, marginTop: 4 }}>{sub}</div>}
     </div>
   )
 }
