@@ -376,7 +376,13 @@ export function MobileOpportunityDetail() {
   const [draftCloseDate, setDraftCloseDate] = useState('')
   const [draftNotes, setDraftNotes] = useState('')
   const [busy, setBusy] = useState(false)
+  const [hintOpen, setHintOpen] = useState(false)
+  const { user } = useAuth()
   const toast = useToast()
+
+  // Same gate the desktop OpportunityDetailModal uses — only admin/manager
+  // can leave a coaching line on a rep's deal.
+  const canEditManagerHint = user?.role === 'admin' || user?.role === 'sales_manager'
 
   const reload = useCallback(async () => {
     if (!id) return
@@ -469,7 +475,7 @@ export function MobileOpportunityDetail() {
         )}
       </div>
 
-      {(((o.managerHint?.trim().length ?? 0) > 0) || !!o.managerHintPriority) && (() => {
+      {(((o.managerHint?.trim().length ?? 0) > 0) || !!o.managerHintPriority) ? (() => {
         // Same priority palette as the desktop pipeline card and the mobile
         // Home suggestions list — urgent = red, watch = amber, info = blue.
         const priority = o.managerHintPriority ?? 'info'
@@ -483,6 +489,12 @@ export function MobileOpportunityDetail() {
                 background: c + '1A', padding: '3px 8px', borderRadius: 999,
                 textTransform: 'uppercase', letterSpacing: '.06em',
               }}>{priority}</div>
+              {canEditManagerHint && (
+                <div onClick={() => setHintOpen(true)} style={{
+                  fontSize: 11, color: c, fontWeight: 700, cursor: 'pointer',
+                  padding: '3px 8px', borderRadius: 6, border: `1px solid ${c}40`,
+                }}>Edit</div>
+              )}
             </div>
             {o.managerHint && (
               <div style={{ fontSize: 13, color: '#3B3B52', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{o.managerHint}</div>
@@ -492,7 +504,19 @@ export function MobileOpportunityDetail() {
             </div>
           </div>
         )
-      })()}
+      })() : (canEditManagerHint && (
+        <div
+          onClick={() => setHintOpen(true)}
+          style={{
+            ...card, borderLeft: '3px dashed #B7D0F0',
+            display: 'flex', alignItems: 'center', gap: 8,
+            color: '#2A6FDB', fontWeight: 700, fontSize: 13, cursor: 'pointer',
+          }}
+        >
+          <span style={{ fontSize: 16 }}>💬</span>
+          <span>+ Add manager suggestion</span>
+        </div>
+      ))}
 
       <div style={card}>
         <div style={sectionLabel}>Move to stage</div>
@@ -547,7 +571,115 @@ export function MobileOpportunityDetail() {
           </div>
         </Sheet>
       )}
+      {hintOpen && (
+        <ManagerHintSheet
+          opp={o}
+          onClose={() => setHintOpen(false)}
+          onSaved={(updated) => { setO(updated); setHintOpen(false) }}
+          onToast={toast}
+        />
+      )}
     </div>
+  )
+}
+
+/**
+ * Bottom-sheet editor for the manager suggestion. Priority picker + free-text
+ * hint. Saving hits PATCH /opportunities/:id with both fields; deleting
+ * clears both to null so the backend also nulls out managerHintById (see
+ * OpportunitiesService.update).
+ */
+function ManagerHintSheet({ opp, onClose, onSaved, onToast }: {
+  opp: OpportunityDto
+  onClose: () => void
+  onSaved: (updated: OpportunityDto) => void
+  onToast: (m: string) => void
+}) {
+  const [text, setText] = useState(opp.managerHint ?? '')
+  const [priority, setPriority] = useState<'info' | 'watch' | 'urgent'>(opp.managerHintPriority ?? 'info')
+  const [saving, setSaving] = useState(false)
+
+  const save = async () => {
+    if (saving) return
+    setSaving(true)
+    try {
+      const trimmed = text.trim()
+      const updated = await api.updateOpportunity(opp.id, {
+        managerHint: trimmed || undefined,
+        managerHintPriority: priority,
+      })
+      onToast('Suggestion saved')
+      onSaved(updated)
+    } catch (e) { onToast(e instanceof ApiError ? e.message : 'Save failed') }
+    finally { setSaving(false) }
+  }
+
+  const clear = async () => {
+    if (saving) return
+    if (!window.confirm('Remove this manager suggestion?')) return
+    setSaving(true)
+    try {
+      // Empty text + explicit null priority tells the backend to null both
+      // fields (and, because both nullify, also drops managerHintById).
+      const updated = await api.updateOpportunity(opp.id, {
+        managerHint: '',
+        managerHintPriority: null,
+      })
+      onToast('Suggestion cleared')
+      onSaved(updated)
+    } catch (e) { onToast(e instanceof ApiError ? e.message : 'Clear failed') }
+    finally { setSaving(false) }
+  }
+
+  const priorityMeta: Array<{ id: 'info' | 'watch' | 'urgent'; label: string; color: string; hint: string }> = [
+    { id: 'info',   label: 'Info',   color: '#2A6FDB', hint: 'Gentle nudge' },
+    { id: 'watch',  label: 'Watch',  color: '#B4650A', hint: 'Deadline near' },
+    { id: 'urgent', label: 'Urgent', color: '#C0392B', hint: 'Act today' },
+  ]
+
+  return (
+    <Sheet onClose={onClose} title="Manager suggestion">
+      <div style={{ fontSize: 11, color: '#8888A0', marginBottom: 8 }}>For {opp.title} · owner {opp.ownerName}</div>
+
+      <div style={{ ...label, marginBottom: 6 }}>Priority</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginBottom: 12 }}>
+        {priorityMeta.map((p) => {
+          const on = priority === p.id
+          return (
+            <div key={p.id} onClick={() => setPriority(p.id)} style={{
+              padding: '8px 6px', textAlign: 'center', cursor: 'pointer',
+              border: `1px solid ${on ? p.color : '#E5E7F0'}`,
+              background: on ? p.color + '15' : '#fff',
+              color: on ? p.color : '#5C5C74',
+              borderRadius: 10, fontSize: 12, fontWeight: 800,
+            }}>
+              {p.label}
+              <div style={{ fontSize: 10, fontWeight: 500, opacity: on ? 0.9 : 0.6, marginTop: 2 }}>{p.hint}</div>
+            </div>
+          )
+        })}
+      </div>
+
+      <div style={{ ...label, marginBottom: 6 }}>Suggestion</div>
+      <textarea
+        rows={5}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder="What should the owner do next?"
+        style={{ ...inp, resize: 'vertical', fontFamily: 'inherit' }}
+      />
+
+      <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+        {opp.managerHint || opp.managerHintPriority ? (
+          <button type="button" onClick={clear} disabled={saving} style={{ ...outlineBtn, color: '#C0392B', borderColor: '#F5B7B1' }}>Clear</button>
+        ) : (
+          <button type="button" onClick={onClose} style={{ ...outlineBtn, flex: 1 }}>Cancel</button>
+        )}
+        <button type="button" onClick={save} disabled={saving} style={{ ...primaryBtn, flex: 1, opacity: saving ? 0.6 : 1 }}>
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </Sheet>
   )
 }
 

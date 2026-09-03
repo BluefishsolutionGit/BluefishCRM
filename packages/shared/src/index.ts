@@ -391,7 +391,8 @@ export interface CreateOpportunityDto {
   serviceOrProduct?: string
   competitor?: string
   managerHint?: string
-  managerHintPriority?: ManagerHintPriority
+  /** Explicit null clears the priority; string sets it. Undefined skips the update. */
+  managerHintPriority?: ManagerHintPriority | null
   notes?: string
 }
 
