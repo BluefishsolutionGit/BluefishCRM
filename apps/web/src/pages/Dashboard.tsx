@@ -290,15 +290,20 @@ export default function Dashboard() {
       render: () => (
         <div style={card}>
           <div style={cardTitle}>Revenue (last 12 months)</div>
-          <div style={{ padding: '14px 18px', display: 'flex', alignItems: 'flex-end', gap: 6, height: 180 }}>
+          <div style={{ padding: '20px 22px 14px', display: 'flex', alignItems: 'flex-end', gap: 8, height: 240 }}>
             {revenue.monthly.map((m) => {
-              const h = maxMonthly > 0 ? Math.max(3, (m.won / maxMonthly) * 140) : 3
+              const h = maxMonthly > 0 ? Math.max(3, (m.won / maxMonthly) * 170) : 3
+              // "2026-09" → Sep so months read at a glance instead of digits.
+              const monthShort = new Date(`${m.month}-01`).toLocaleString('en-GB', { month: 'short' })
               return (
-                <div key={m.month} style={{ flex: 1, textAlign: 'center' }}>
-                  <div style={{ width: '100%', height: 140, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-                    <div style={{ width: 22, height: h, background: '#2A6FDB', borderRadius: '4px 4px 2px 2px' }} title={`${m.month} ${fmt(m.won)}`} />
+                <div key={m.month} style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: m.won > 0 ? '#3B3B52' : '#B4B4C4', fontFamily: "'IBM Plex Mono', monospace" }}>
+                    {m.won > 0 ? fmt(m.won) : '—'}
                   </div>
-                  <div style={{ fontSize: 9.5, color: '#8888A0', marginTop: 4 }}>{m.month.slice(5)}</div>
+                  <div style={{ width: '100%', height: 170, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+                    <div style={{ width: 26, height: h, background: '#2A6FDB', borderRadius: '4px 4px 2px 2px' }} title={`${monthShort} ${fmt(m.won)}`} />
+                  </div>
+                  <div style={{ fontSize: 11, color: '#5C5C74', fontWeight: 600 }}>{monthShort}</div>
                 </div>
               )
             })}
