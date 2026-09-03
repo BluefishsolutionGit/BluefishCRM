@@ -119,6 +119,21 @@ export class LeadsService {
     return this.toDto(row)
   }
 
+  /**
+   * Clear the owner without triggering round-robin. Sends the lead back to the
+   * unassigned pool where a manager can pick it up manually — used when a rep
+   * shouldn't hold onto a lead any longer but the lead itself is still valid.
+   */
+  async unassign(id: string, ctx: AuditRequestContext): Promise<LeadDto> {
+    const before = await this.prisma.lead.findUnique({ where: { id } })
+    if (!before) throw new NotFoundException(`Lead ${id} not found`)
+    const row = await this.prisma.lead.update({
+      where: { id }, data: { ownerId: null }, include: { owner: true },
+    })
+    await this.audit.log({ ...ctx, action: 'lead.unassign', entity: 'lead', entityId: id, before, after: row })
+    return this.toDto(row)
+  }
+
   async delete(id: string, ctx: AuditRequestContext): Promise<void> {
     const before = await this.prisma.lead.findUnique({ where: { id } })
     if (!before) throw new NotFoundException(`Lead ${id} not found`)

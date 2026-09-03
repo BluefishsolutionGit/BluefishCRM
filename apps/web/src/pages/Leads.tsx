@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import type { LeadDto } from '@bluefish/shared'
+import type { LeadDto, UserDto } from '@bluefish/shared'
 import { SERVICE_LINES } from '@bluefish/shared'
 import { api, ApiError } from '../lib/api'
 import { pill, srcStyle } from '../lib/styleUtils'
@@ -14,10 +14,20 @@ export default function Leads() {
   const [error, setError] = useState<string | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<LeadDto | null>(null)
+  const [assignPickerFor, setAssignPickerFor] = useState<LeadDto | null>(null)
+  const [salesUsers, setSalesUsers] = useState<UserDto[]>([])
   const toast = useToast()
   const navigate = useNavigate()
   const { hasPermission } = useAuth()
   const canWrite = hasPermission('lead:write')
+
+  useEffect(() => {
+    // Only managers/admins can (re)assign; skip the fetch otherwise.
+    if (!canWrite) return
+    api.users()
+      .then((rows) => setSalesUsers(rows.filter((u) => u.role === 'sales_rep' || u.role === 'sales_manager')))
+      .catch(() => setSalesUsers([]))
+  }, [canWrite])
 
   const reload = async () => {
     setLoading(true); setError(null)
@@ -38,10 +48,25 @@ export default function Leads() {
     toast(editing ? 'Lead updated' : 'Lead created + assigned')
   }
 
-  const assign = async (l: LeadDto) => {
-    try { const upd = await api.assignLead(l.id, null); onSaved(upd); toast(`Assigned to ${upd.ownerName}`) }
-    catch (e) { toast(e instanceof ApiError ? e.message : 'Assign failed') }
+  const assignTo = async (l: LeadDto, ownerId: string | null) => {
+    try {
+      const upd = await api.assignLead(l.id, ownerId)
+      onSaved(upd)
+      toast(ownerId ? `Assigned to ${upd.ownerName}` : `Auto-assigned to ${upd.ownerName}`)
+    } catch (e) { toast(e instanceof ApiError ? e.message : 'Assign failed') }
   }
+
+  const unassign = async (l: LeadDto) => {
+    if (!window.confirm(`Return "${l.companyName}" to the unassigned pool?`)) return
+    try {
+      const upd = await api.unassignLead(l.id)
+      onSaved(upd)
+      toast('Lead returned to pool')
+    } catch (e) { toast(e instanceof ApiError ? e.message : 'Unassign failed') }
+  }
+
+  /** Stop row-level navigation whenever an action button inside the row is clicked. */
+  const stop = (e: ReactMouseEvent) => e.stopPropagation()
 
   const convert = async (l: LeadDto) => {
     if (!window.confirm(`Convert "${l.companyName}" into an opportunity?`)) return
@@ -123,7 +148,11 @@ export default function Leads() {
             : l.status === 'Lost' ? pill('#FDECEA', '#C0392B')
             : pill('#F2F3F9', '#5C5C74')
           return (
-            <div key={l.id} style={{ ...gridCols, padding: '12px 18px', borderBottom: '1px solid #F2F3F9', alignItems: 'center' }}>
+            <div
+              key={l.id}
+              onClick={() => navigate(`/leads/${l.id}`)}
+              style={{ ...gridCols, padding: '12px 18px', borderBottom: '1px solid #F2F3F9', alignItems: 'center', cursor: 'pointer' }}
+            >
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{l.companyName}</div>
                 <div style={{ fontSize: 11.5, fontWeight: 400, color: '#5C5C74', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{l.name}</div>
@@ -139,8 +168,10 @@ export default function Leads() {
               <div style={{ fontSize: 12.5, color: '#3B3B52' }}>{l.ownerName ?? '— unassigned —'}</div>
               <div><span style={stStyle}>{l.status}</span></div>
               <div style={{ fontFamily: "'Space Grotesk'", fontSize: 13, fontWeight: 600 }}>{l.estValue ? `฿${(l.estValue / 1e6).toFixed(1)}M` : '—'}</div>
-              <div style={{ display: 'flex', gap: 7, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                {canWrite && !l.ownerId && <div onClick={() => assign(l)} style={smallBtn}>Assign</div>}
+              <div style={{ display: 'flex', gap: 7, justifyContent: 'flex-end', flexWrap: 'wrap' }} onClick={stop}>
+                {canWrite && !l.ownerId && <div onClick={() => setAssignPickerFor(l)} style={smallBtn}>Assign</div>}
+                {canWrite && l.ownerId && <div onClick={() => setAssignPickerFor(l)} style={smallBtn}>Reassign</div>}
+                {canWrite && l.ownerId && <div onClick={() => unassign(l)} style={smallBtn}>Unassign</div>}
                 {canWrite && l.status !== 'Converted' && <div onClick={() => openEdit(l)} style={smallBtn}>Edit</div>}
                 {canWrite && l.status !== 'Converted' && <div onClick={() => convert(l)} style={{ ...smallBtn, background: '#2A6FDB', color: '#fff', borderColor: '#2A6FDB' }}>Convert</div>}
                 {canWrite && <div onClick={() => del(l)} style={{ ...smallBtn, color: '#C0392B' }}>Delete</div>}
@@ -152,8 +183,85 @@ export default function Leads() {
 
       <LeadFormModal open={modalOpen} initial={editing} onClose={() => setModalOpen(false)} onSaved={onSaved} />
       {scoreInfoOpen && <ScoreInfoModal onClose={() => setScoreInfoOpen(false)} />}
+      {assignPickerFor && (
+        <AssignPickerModal
+          lead={assignPickerFor}
+          reps={salesUsers}
+          onClose={() => setAssignPickerFor(null)}
+          onPick={async (ownerId) => {
+            const lead = assignPickerFor
+            setAssignPickerFor(null)
+            await assignTo(lead, ownerId)
+          }}
+        />
+      )}
     </div>
   )
+}
+
+/**
+ * Modal picker for choosing which sales rep gets the lead. First choice is
+ * always "Auto (round-robin)" which mirrors the pre-existing null-ownerId
+ * behavior — same endpoint, just a UI to name a specific rep instead.
+ */
+function AssignPickerModal({ lead, reps, onClose, onPick }: {
+  lead: LeadDto
+  reps: UserDto[]
+  onClose: () => void
+  onPick: (ownerId: string | null) => void
+}) {
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(30,26,48,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 20 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', width: 460, maxHeight: '80vh', borderRadius: 14, overflow: 'auto', padding: '18px 22px' }}>
+        <div style={{ fontSize: 16, fontWeight: 700 }}>Assign lead</div>
+        <div style={{ fontSize: 12.5, color: '#5C5C74', marginTop: 3, marginBottom: 14 }}>
+          {lead.companyName} · {lead.name}
+          {lead.ownerName && <span style={{ marginLeft: 6, color: '#8888A0' }}>(currently {lead.ownerName})</span>}
+        </div>
+
+        <div onClick={() => onPick(null)} style={{ ...pickerRow, borderColor: '#2A6FDB', color: '#2A6FDB', fontWeight: 700 }}>
+          <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#EEF0FA', color: '#2A6FDB', fontSize: 12, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>⚡</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 700 }}>Auto (round-robin)</div>
+            <div style={{ fontSize: 11, color: '#8888A0', fontWeight: 400 }}>Picks the next rep in the rotation</div>
+          </div>
+        </div>
+
+        <div style={{ height: 8 }} />
+        <div style={{ fontSize: 10.5, fontWeight: 700, color: '#8888A0', letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: 6 }}>Pick a rep</div>
+
+        {reps.length === 0 && <div style={{ padding: 12, color: '#8888A0', fontSize: 12.5, textAlign: 'center' }}>No sales reps found.</div>}
+        {reps.map((r) => {
+          const selected = r.id === lead.ownerId
+          return (
+            <div key={r.id} onClick={() => onPick(r.id)} style={{ ...pickerRow, borderColor: selected ? '#0E9C7E' : '#E5E7F0', background: selected ? '#EBF8F3' : '#fff' }}>
+              <div style={{
+                width: 32, height: 32, borderRadius: '50%',
+                background: selected ? '#0E9C7E' : '#F2F3F9',
+                color: selected ? '#fff' : '#3B3B52',
+                fontSize: 11.5, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>{r.name.split(' ').slice(0, 2).map((s) => s[0]).join('').toUpperCase()}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</div>
+                <div style={{ fontSize: 11, color: '#8888A0' }}>{r.role === 'sales_manager' ? 'Sales manager' : 'Sales rep'}</div>
+              </div>
+              {selected && <div style={{ fontSize: 11, color: '#0E9C7E', fontWeight: 700 }}>current</div>}
+            </div>
+          )
+        })}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+          <button type="button" onClick={onClose} style={ghostBtn}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const pickerRow: CSSProperties = {
+  display: 'flex', alignItems: 'center', gap: 10,
+  padding: '10px 12px', borderRadius: 10, border: '1px solid #E5E7F0',
+  marginBottom: 6, cursor: 'pointer',
 }
 
 function ScoreInfoModal({ onClose }: { onClose: () => void }) {

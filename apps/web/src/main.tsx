@@ -10,6 +10,7 @@ import Inbox from './pages/Inbox'
 import Customers from './pages/Customers'
 import CustomerDetail from './pages/CustomerDetail'
 import Leads from './pages/Leads'
+import LeadDetail from './pages/LeadDetail'
 import Pipeline from './pages/Pipeline'
 import Activities from './pages/Activities'
 import Quotations from './pages/Quotations'
@@ -83,6 +84,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="/customers" element={<Customers />} />
             <Route path="/customers/:id" element={<CustomerDetail />} />
             <Route path="/leads" element={<Leads />} />
+            <Route path="/leads/:id" element={<LeadDetail />} />
             <Route path="/pipeline" element={<Pipeline />} />
             <Route path="/activities" element={<Activities />} />
             <Route path="/quotations" element={<Quotations />} />

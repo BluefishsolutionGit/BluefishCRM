@@ -97,6 +97,12 @@ export class LeadsController {
     return this.leads.assign(id, body.ownerId ?? null, auditContext(req))
   }
 
+  @Post(':id/unassign')
+  @RequirePermissions(PERMISSIONS.LEAD_WRITE)
+  unassign(@Param('id') id: string, @Req() req: Request): Promise<LeadDto> {
+    return this.leads.unassign(id, auditContext(req))
+  }
+
   @Post(':id/convert')
   @RequirePermissions(PERMISSIONS.LEAD_WRITE)
   convert(@Param('id') id: string, @Body() body: ConvertLeadBody, @Req() req: Request) {

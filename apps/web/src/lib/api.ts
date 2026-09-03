@@ -253,6 +253,9 @@ export const api = {
   deleteLead: (id: string) => request<void>(`/leads/${id}`, { method: 'DELETE' }),
   assignLead: (id: string, ownerId: string | null) =>
     request<LeadDto>(`/leads/${id}/assign`, { method: 'POST', body: JSON.stringify({ ownerId }) }),
+  /** Clear the owner without triggering round-robin — lead returns to the unassigned pool. */
+  unassignLead: (id: string) =>
+    request<LeadDto>(`/leads/${id}/unassign`, { method: 'POST' }),
   duplicateCheckLead: (input: { name: string; companyName: string; email?: string; phone?: string }) =>
     request<DuplicateCheckResult>('/leads/duplicate-check', { method: 'POST', body: JSON.stringify(input) }),
   convertLead: (id: string, data: ConvertLeadDto) =>
