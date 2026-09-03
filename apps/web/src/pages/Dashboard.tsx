@@ -12,13 +12,15 @@ const SERVICE_COLOR: Record<string, string> = { Box: '#2A6FDB', '3S': '#0E9C7E',
 
 /* ─────────────── Widget layout persistence ─────────────── */
 
+// v5 = Contracts & Ops KPI row removed; Top KPIs reordered to lead with
+//      Revenue MTD → YTD → Deals Won MTD → Open Pipeline.
 // v4 = YTD target + Won-revenue-by-service paired side-by-side in the top
 //      row; KPI rows stay full width below.
 // v3 = YTD target promoted to first, full-width; KPI rows shrunk and moved
 //      below so revenue-vs-target reads as the hero row.
 // v2 = multi-column layout (columns count + per-item column assignment).
 // v1 was single-column only. Load code accepts v1/v2 and upgrades silently.
-const LAYOUT_KEY = 'bluefish.dashboard.layout.v4'
+const LAYOUT_KEY = 'bluefish.dashboard.layout.v5'
 const LEGACY_LAYOUT_KEY = 'bluefish.dashboard.layout.v1'
 
 type ColumnCount = 1 | 2 | 3
@@ -31,8 +33,7 @@ interface DashboardLayout { columns: ColumnCount; items: WidgetLayoutEntry[] }
 const DEFAULT_ITEMS: Array<Omit<WidgetLayoutEntry, 'column'>> = [
   { id: 'byServiceTarget',  visible: true },   // hero row — target ↔ revenue paired
   { id: 'byServiceRevenue', visible: true },   // sits next to target
-  { id: 'kpiRow1',          visible: true },   // Open pipeline / Revenue MTD / New leads / Deals won
-  { id: 'kpiRow2',          visible: true },
+  { id: 'kpiRow1',          visible: true },   // Revenue MTD / YTD / Deals won MTD / Open pipeline
   { id: 'topDeals',         visible: true },
   { id: 'salesActivities',  visible: true },
   { id: 'activityBreakdown', visible: true },
@@ -45,7 +46,7 @@ const DEFAULT_ITEMS: Array<Omit<WidgetLayoutEntry, 'column'>> = [
 /** Widgets rendered in the wrapping full-width row above the column grid.
  *  Their layout on the row depends on TOP_ROW_FLEX_BASIS below — narrow
  *  cards (640px) pair up, KPI rows force their own line. */
-const FULL_WIDTH_WIDGETS = new Set(['byServiceTarget', 'byServiceRevenue', 'kpiRow1', 'kpiRow2'])
+const FULL_WIDTH_WIDGETS = new Set(['byServiceTarget', 'byServiceRevenue', 'kpiRow1'])
 
 /** Per-widget flex basis on the top row. Revenue-by-service is the wider
  *  card of the pair (12 monthly bars need room to breathe); target is
@@ -171,21 +172,10 @@ export default function Dashboard() {
       title: 'Top KPIs',
       render: () => (
         <div className="dash-kpi-row">
-          <KpiCard label="Open pipeline" value={fmt(exec.openPipeline)} grad="linear-gradient(135deg,#3BB0F5,#1E63E9)" />
           <KpiCard label="Revenue MTD" value={fmt(exec.revenueMTD)} sub={`QTD ${fmt(exec.revenueQTD)}`} grad="linear-gradient(135deg,#2E6BE6,#1B2F8F)" />
-          <KpiCard label="New leads (7d)" value={String(exec.newLeadsPeriod)} sub={`Conversion ${exec.leadConversionRate}%`} grad="linear-gradient(135deg,#FFB047,#F5641E)" />
+          <KpiCard label="Revenue YTD" value={fmt(exec.revenueYTD)} grad="linear-gradient(135deg,#3BB0F5,#1E63E9)" />
           <KpiCard label="Deals won (MTD)" value={String(exec.dealsWonPeriod)} sub={`Avg ${fmt(exec.avgDealSize)}`} grad="linear-gradient(135deg,#22C9B4,#0E9C7E)" />
-        </div>
-      ),
-    },
-    kpiRow2: {
-      title: 'Contracts & Ops',
-      render: () => (
-        <div className="dash-kpi-row">
-          <KpiCard label="Active contracts" value={String(exec.activeContracts)} grad="linear-gradient(135deg,#5B93E6,#2A6FDB)" />
-          <KpiCard label="Expiring ≤ 60d" value={String(exec.expiringContracts)} grad="linear-gradient(135deg,#FFB047,#B4650A)" />
-          <KpiCard label="Pending approvals" value={String(exec.pendingApprovals)} grad="linear-gradient(135deg,#8A5CF6,#5B2C9E)" />
-          <KpiCard label="AI spend (all time)" value={`$${exec.aiSpendUsd.toFixed(4)}`} grad="linear-gradient(135deg,#6C55E0,#4A3AB8)" />
+          <KpiCard label="Open pipeline" value={fmt(exec.openPipeline)} grad="linear-gradient(135deg,#8A5CF6,#5B2C9E)" />
         </div>
       ),
     },
