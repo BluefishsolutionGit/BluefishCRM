@@ -24,7 +24,7 @@ import { useAuth } from '../lib/AuthContext'
 type Sub = 'dashboard' | 'repository' | 'calendar' | 'approvals' | 'obligations' | 'competitors'
 const SUB_DEFS: { id: Sub; label: string; icon: string }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: icons.home },
-  { id: 'repository', label: 'Repository', icon: icons.contract },
+  { id: 'repository', label: 'Contracts & Agreements', icon: icons.contract },
   { id: 'calendar', label: 'Calendar', icon: icons.cal },
   { id: 'approvals', label: 'Approvals', icon: icons.check },
   { id: 'obligations', label: 'Obligations', icon: icons.target },
