@@ -296,7 +296,9 @@ type RepoGroupBy = 'none' | 'company'
 function RepositoryTab({ statusFilters, serviceFilters, search, selectedId, onSelect, onNewFromTemplate: _onNewFromTemplate, onToast }: { statusFilters: ContractStatus[]; serviceFilters: ServiceLine[]; search: string; selectedId: string | null; onSelect: (id: string) => void; onNewFromTemplate: () => void; onToast: (m: string) => void }) {
   const [rows, setRows] = useState<ContractDto[]>([])
   const [loading, setLoading] = useState(true)
-  const [groupBy, setGroupBy] = useState<RepoGroupBy>('none')
+  // Default to company grouping — repository is almost always browsed
+  // "give me every deal we have with X" rather than a flat scroll.
+  const [groupBy, setGroupBy] = useState<RepoGroupBy>('company')
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
 
   const reload = async () => {
