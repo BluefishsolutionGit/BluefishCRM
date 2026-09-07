@@ -60,6 +60,7 @@ model User {
   authProviders       AuthProvider[]
   competitorContracts CompetitorContract[]
   channelIntegrationsCreated ChannelIntegration[]
+  customerVoices      CustomerVoice[]
 }
 
 model Customer {
@@ -94,6 +95,7 @@ model Customer {
   inboxThreads InboxThread[]
   competitorContracts CompetitorContract[]
   tags         Tag[]     @relation("CustomerTags")
+  voices       CustomerVoice[]
 
   @@index([status])
   @@index([ownerId])
@@ -219,6 +221,7 @@ model Opportunity {
   quotations       Quotation[]
   contracts        Contract[]
   documents        Document[]
+  voices           CustomerVoice[]
 
   @@index([customerId])
   @@index([ownerId])
@@ -265,6 +268,7 @@ model Activity {
   owner         User      @relation(fields: [ownerId], references: [id])
   customer      Customer? @relation(fields: [customerId], references: [id])
   opportunity   Opportunity? @relation(fields: [opportunityId], references: [id])
+  voices        CustomerVoice[]
 
   @@index([ownerId])
   @@index([customerId])
@@ -272,6 +276,34 @@ model Activity {
   @@index([externalCalendarId])
   @@index([scheduledAt])
   @@index([status])
+}
+
+/// Customer feedback log — praise / complaint / suggestion / NPS / CSAT.
+/// Distinct from Inbox (message threads) and Activity (touchpoints); a
+/// voice item is the *insight* someone captured, not the conversation.
+/// See requirements/add_customervoice.md.
+model CustomerVoice {
+  id            String   @id @default(cuid())
+  customerId    String
+  authorId      String
+  kind          String    // 'praise' | 'complaint' | 'suggestion' | 'nps' | 'csat'
+  rating        Int?      // 0-10 (NPS) or 1-5 (CSAT); null for other kinds
+  text          String
+  source        String?   // 'phone' | 'email' | 'meeting' | 'line' | 'survey' | 'other'
+  topic         String?
+  activityId    String?
+  opportunityId String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  customer     Customer     @relation(fields: [customerId], references: [id])
+  author       User         @relation(fields: [authorId], references: [id])
+  activity     Activity?    @relation(fields: [activityId], references: [id])
+  opportunity  Opportunity? @relation(fields: [opportunityId], references: [id])
+
+  @@index([customerId])
+  @@index([kind])
+  @@index([createdAt])
 }
 
 // ─────── Quotations ───────

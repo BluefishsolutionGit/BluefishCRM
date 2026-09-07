@@ -1453,3 +1453,64 @@ export interface CreateCompetitorContractDto {
 
 export interface UpdateCompetitorContractDto extends Partial<CreateCompetitorContractDto> {}
 
+// ─────── Customer Voice ───────
+// Feedback captured against a customer. Distinct from Inbox (message
+// threads) and Activity (touchpoints) — a voice item is the insight
+// someone jotted down, not the raw conversation.
+// Spec: requirements/add_customervoice.md
+
+export const VOICE_KINDS = ['praise', 'complaint', 'suggestion', 'nps', 'csat'] as const
+export type VoiceKind = (typeof VOICE_KINDS)[number]
+
+export const VOICE_SOURCES = ['phone', 'email', 'meeting', 'line', 'survey', 'other'] as const
+export type VoiceSource = (typeof VOICE_SOURCES)[number]
+
+export interface CustomerVoiceDto {
+  id: string
+  customerId: string
+  customerName: string
+  authorId: string
+  authorName: string
+  kind: VoiceKind
+  rating: number | null
+  text: string
+  source: VoiceSource | null
+  topic: string | null
+  activityId: string | null
+  opportunityId: string | null
+  opportunityTitle: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CreateCustomerVoiceDto {
+  customerId: string
+  kind: VoiceKind
+  text: string
+  rating?: number | null
+  source?: VoiceSource | null
+  topic?: string
+  activityId?: string
+  opportunityId?: string
+}
+
+export interface UpdateCustomerVoiceDto extends Partial<Omit<CreateCustomerVoiceDto, 'customerId'>> {}
+
+export interface CustomerVoiceDashboardDto {
+  windowDays: number             // period covered (default 30)
+  totalCount: number
+  byKind: Record<VoiceKind, number>
+  bySource: Record<string, number>
+  monthly: Array<{
+    month: string                // "YYYY-MM"
+    count: number
+    avgNps: number | null        // avg of kind='nps' this month, or null
+  }>
+  npsScore: number               // -100..+100 (promoter% - detractor%)
+  npsResponses: number           // sample size behind the score
+  csatAvg: number                // 0..5
+  csatResponses: number
+  topTopics: Array<{ topic: string; count: number }>
+  recent: CustomerVoiceDto[]     // last 5
+}
+

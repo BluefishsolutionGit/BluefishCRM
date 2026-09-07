@@ -256,6 +256,32 @@ export const api = {
   /** Clear the owner without triggering round-robin — lead returns to the unassigned pool. */
   unassignLead: (id: string) =>
     request<LeadDto>(`/leads/${id}/unassign`, { method: 'POST' }),
+
+  // ─── Customer Voice ──────────────────────────────────────────────
+  customerVoices: (filter: { customerId?: string; kind?: string; from?: string; to?: string; limit?: number } = {}) => {
+    const qs = new URLSearchParams()
+    if (filter.customerId) qs.set('customerId', filter.customerId)
+    if (filter.kind) qs.set('kind', filter.kind)
+    if (filter.from) qs.set('from', filter.from)
+    if (filter.to) qs.set('to', filter.to)
+    if (filter.limit) qs.set('limit', String(filter.limit))
+    const s = qs.toString()
+    return request<import('@bluefish/shared').CustomerVoiceDto[]>(`/customer-voice${s ? `?${s}` : ''}`)
+  },
+  customerVoiceDashboard: (windowDays?: number) =>
+    request<import('@bluefish/shared').CustomerVoiceDashboardDto>(
+      `/customer-voice/dashboard${windowDays ? `?windowDays=${windowDays}` : ''}`,
+    ),
+  createCustomerVoice: (data: import('@bluefish/shared').CreateCustomerVoiceDto) =>
+    request<import('@bluefish/shared').CustomerVoiceDto>('/customer-voice', {
+      method: 'POST', body: JSON.stringify(data),
+    }),
+  updateCustomerVoice: (id: string, data: import('@bluefish/shared').UpdateCustomerVoiceDto) =>
+    request<import('@bluefish/shared').CustomerVoiceDto>(`/customer-voice/${id}`, {
+      method: 'PATCH', body: JSON.stringify(data),
+    }),
+  deleteCustomerVoice: (id: string) =>
+    request<void>(`/customer-voice/${id}`, { method: 'DELETE' }),
   duplicateCheckLead: (input: { name: string; companyName: string; email?: string; phone?: string }) =>
     request<DuplicateCheckResult>('/leads/duplicate-check', { method: 'POST', body: JSON.stringify(input) }),
   convertLead: (id: string, data: ConvertLeadDto) =>

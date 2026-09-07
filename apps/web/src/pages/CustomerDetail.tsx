@@ -9,12 +9,14 @@ import { useToast } from '../lib/ToastContext'
 import { useAuth } from '../lib/AuthContext'
 import VoiceInputButton from '../components/VoiceInputButton'
 import DocumentViewer, { type ViewableVersion } from '../components/DocumentViewer'
+import CustomerVoicePanel from '../components/CustomerVoicePanel'
 
-type Tab = 'overview' | 'contacts' | 'docs'
+type Tab = 'overview' | 'contacts' | 'docs' | 'voice'
 const TABS: [Tab, string][] = [
   ['overview', 'Overview'],
   ['contacts', 'Contacts'],
   ['docs', 'Documents'],
+  ['voice', 'Voice'],
 ]
 
 export default function CustomerDetail() {
@@ -127,6 +129,15 @@ export default function CustomerDetail() {
 
       {tab === 'docs' && (
         <CustomerDocumentsPortal
+          customerId={customer.id}
+          customerName={customer.name}
+          canWrite={hasPermission('customer:write')}
+          onToast={toast}
+        />
+      )}
+
+      {tab === 'voice' && (
+        <CustomerVoicePanel
           customerId={customer.id}
           customerName={customer.name}
           canWrite={hasPermission('customer:write')}

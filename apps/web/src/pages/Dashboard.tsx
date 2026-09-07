@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties, type DragEvent, type ReactNode } from 'react'
-import type { ByServiceDashboardDto, ExecutiveDashboardDto, PipelineDashboardDto, RevenueDashboardDto, SalesDashboardDto, UserDto } from '@bluefish/shared'
+import type { ByServiceDashboardDto, CustomerVoiceDashboardDto, ExecutiveDashboardDto, PipelineDashboardDto, RevenueDashboardDto, SalesDashboardDto, UserDto, VoiceKind } from '@bluefish/shared'
 import { SERVICE_LINES } from '@bluefish/shared'
 import { api, ApiError } from '../lib/api'
 import { useToast } from '../lib/ToastContext'
@@ -36,6 +36,7 @@ const DEFAULT_ITEMS: Array<Omit<WidgetLayoutEntry, 'column'>> = [
   { id: 'kpiRow1',          visible: true },   // Revenue MTD / YTD / Deals won MTD / Open pipeline
   { id: 'topDeals',         visible: true },
   { id: 'salesActivities',  visible: true },
+  { id: 'customerVoice',    visible: true },
   { id: 'activityBreakdown', visible: true },
   { id: 'salesTeam',        visible: true },
   { id: 'pipelineByStage',  visible: true },
@@ -129,6 +130,7 @@ export default function Dashboard() {
   const [pipeline, setPipeline] = useState<PipelineDashboardDto | null>(null)
   const [revenue, setRevenue] = useState<RevenueDashboardDto | null>(null)
   const [byService, setByService] = useState<ByServiceDashboardDto | null>(null)
+  const [voice, setVoice] = useState<CustomerVoiceDashboardDto | null>(null)
   const [loading, setLoading] = useState(true)
   const [editMode, setEditMode] = useState(false)
   const [layout, setLayout] = useState<DashboardLayout>(() => loadLayout())
@@ -150,8 +152,10 @@ export default function Dashboard() {
     Promise.all([
       api.execDashboard(filter), api.salesDashboard(filter), api.pipelineDashboard(filter),
       api.revenueDashboard(filter), api.byServiceDashboard(undefined, filter),
+      // Customer Voice aggregate isn't service/owner-filterable yet — global view.
+      api.customerVoiceDashboard(30).catch(() => null),
     ])
-      .then(([e, s, p, r, b]) => { setExec(e); setSales(s); setPipeline(p); setRevenue(r); setByService(b) })
+      .then(([e, s, p, r, b, v]) => { setExec(e); setSales(s); setPipeline(p); setRevenue(r); setByService(b); setVoice(v) })
       .catch((e) => toast(e instanceof ApiError ? e.message : 'Failed'))
       .finally(() => setLoading(false))
   }, [serviceFilter, ownerFilter, toast])
@@ -300,6 +304,10 @@ export default function Dashboard() {
           </div>
         )
       },
+    },
+    customerVoice: {
+      title: 'Customer voice',
+      render: () => <CustomerVoiceWidget data={voice} />,
     },
     salesTeam: {
       title: `Sales team performance · quota attainment ${sales.quotaAttainment}%`,
@@ -929,6 +937,112 @@ function TargetBar({ label, color, won, target, pct, primary }: {
 }
 
 /* ─────────────── Shared bits ─────────────── */
+
+/**
+ * Customer Voice widget — org-wide feedback summary for the last 30d.
+ * Shows headline counts (NPS / CSAT / total) + breakdown by kind and
+ * top-5 topics. Empty state is graceful — the module works even before
+ * anyone has logged a single voice item.
+ */
+function CustomerVoiceWidget({ data }: { data: CustomerVoiceDashboardDto | null }) {
+  if (!data) {
+    return (
+      <div style={card}>
+        <div style={cardTitle}>Customer voice</div>
+        <div style={{ padding: 24, textAlign: 'center', color: '#8888A0', fontSize: 13 }}>Loading…</div>
+      </div>
+    )
+  }
+  const KIND_META: Record<VoiceKind, { label: string; color: string; icon: string }> = {
+    praise:     { label: 'Praise',     color: '#0E9C7E', icon: '👍' },
+    complaint:  { label: 'Complaint',  color: '#C0392B', icon: '⚠️' },
+    suggestion: { label: 'Suggestion', color: '#B4650A', icon: '💡' },
+    nps:        { label: 'NPS',        color: '#2A6FDB', icon: '📊' },
+    csat:       { label: 'CSAT',       color: '#6C55E0', icon: '⭐' },
+  }
+  const kindEntries = (Object.keys(data.byKind) as VoiceKind[])
+  const maxKindCount = Math.max(1, ...kindEntries.map((k) => data.byKind[k]))
+  // NPS colour bands: green ≥ 50 (excellent), amber 0-49, red < 0.
+  const npsColor = data.npsScore >= 50 ? '#0E9C7E' : data.npsScore >= 0 ? '#B4650A' : '#C0392B'
+  return (
+    <div style={card}>
+      <div style={cardTitle}>Customer voice · last {data.windowDays}d</div>
+      <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+        {/* Headline row: total / NPS / CSAT */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+          <VoiceStat label="Total feedback" value={String(data.totalCount)} color="#1B2F8F" />
+          <VoiceStat
+            label={`NPS (${data.npsResponses})`}
+            value={data.npsResponses > 0 ? String(data.npsScore) : '—'}
+            color={data.npsResponses > 0 ? npsColor : '#B4B4C4'}
+          />
+          <VoiceStat
+            label={`CSAT (${data.csatResponses})`}
+            value={data.csatResponses > 0 ? `${data.csatAvg.toFixed(1)}/5` : '—'}
+            color={data.csatResponses > 0 ? '#6C55E0' : '#B4B4C4'}
+          />
+        </div>
+
+        {/* By-kind bars */}
+        <div>
+          <div style={{ fontSize: 10.5, fontWeight: 700, color: '#8082A5', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 }}>By kind</div>
+          {kindEntries.map((k) => {
+            const count = data.byKind[k]
+            const meta = KIND_META[k]
+            const w = (count / maxKindCount) * 100
+            return (
+              <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 12 }}>
+                <div style={{ width: 100, display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <span style={{ fontSize: 12 }}>{meta.icon}</span>
+                  <span style={{ fontWeight: 700, color: '#3B3B52' }}>{meta.label}</span>
+                </div>
+                <div style={{ flex: 1, height: 8, background: '#F2F3F9', borderRadius: 3, overflow: 'hidden' }}>
+                  <div style={{ width: `${w}%`, height: '100%', background: count > 0 ? meta.color : '#E5E7F0', transition: 'width .3s' }} />
+                </div>
+                <div style={{ width: 30, textAlign: 'right', fontFamily: "'Space Grotesk'", fontWeight: 700, color: count > 0 ? '#1E1E30' : '#B4B4C4' }}>
+                  {count}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Top topics */}
+        {data.topTopics.length > 0 && (
+          <div>
+            <div style={{ fontSize: 10.5, fontWeight: 700, color: '#8082A5', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 }}>Top topics</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {data.topTopics.map((t) => (
+                <span key={t.topic} style={{
+                  fontSize: 11, background: '#F2F3F9', color: '#3B3B52',
+                  padding: '3px 9px', borderRadius: 999, fontWeight: 600,
+                }}>
+                  #{t.topic} <span style={{ color: '#8888A0' }}>· {t.count}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {data.totalCount === 0 && (
+          <div style={{ padding: 14, textAlign: 'center', color: '#8888A0', fontSize: 12, background: '#F7F8FC', borderRadius: 8 }}>
+            No feedback logged in the last {data.windowDays} days. Log from any Customer detail → Voice tab.
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function VoiceStat({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <div style={{ background: '#F7F8FC', border: '1px solid #EEF0F7', borderRadius: 10, padding: '10px 12px' }}>
+      <div style={{ fontSize: 9.5, fontWeight: 700, color: '#8082A5', textTransform: 'uppercase', letterSpacing: 0.4 }}>{label}</div>
+      <div style={{ fontFamily: "'Space Grotesk'", fontSize: 20, fontWeight: 700, color, marginTop: 4 }}>{value}</div>
+    </div>
+  )
+}
 
 function KpiCard({ label, value, sub, grad }: { label: string; value: string; sub?: string; grad: string }) {
   // Shrunk from padding 17/19 + value 32 to 12/15 + value 22 so the KPI row
