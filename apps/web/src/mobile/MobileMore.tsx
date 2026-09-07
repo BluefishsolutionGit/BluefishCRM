@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
-import type { CreateActivityDto, CustomerDto, ScanCardResultDto } from '@bluefish/shared'
+import type { CreateActivityDto, CustomerDto, ScanCardResultDto, VoiceKind, VoiceSource } from '@bluefish/shared'
+import { VOICE_KINDS, VOICE_SOURCES } from '@bluefish/shared'
 import { api, ApiError } from '../lib/api'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/ToastContext'
@@ -19,6 +20,7 @@ export default function MobileMore() {
   const [cardResult, setCardResult] = useState<ScanCardResultDto | null>(null)
   const [captureOpen, setCaptureOpen] = useState(false)
   const [checkinCustomerOpen, setCheckinCustomerOpen] = useState(false)
+  const [voiceLogOpen, setVoiceLogOpen] = useState(false)
   const { user } = useAuth()
   const toast = useToast()
   const navigate = useNavigate()
@@ -163,6 +165,7 @@ export default function MobileMore() {
         <SectionLabel>Log</SectionLabel>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
           <SmallTile icon="+" label="Activity" onClick={() => setLogOpen({})} />
+          <SmallTile icon="🗣" label="Voice" onClick={() => setVoiceLogOpen(true)} />
           <SmallTile icon="💬" label="Inbox" onClick={() => navigate('/m/inbox')} />
           <SmallTile icon="📁" label="Docs" onClick={() => navigate('/m/documents')} />
           <SmallTile icon="📄" label="Quotes" onClick={() => navigate('/m/quotations')} />
@@ -206,6 +209,13 @@ export default function MobileMore() {
         <CheckinCustomerSheet
           onClose={() => setCheckinCustomerOpen(false)}
           onPick={(c) => void runCheckin(c)}
+        />
+      )}
+      {voiceLogOpen && (
+        <VoiceLogSheet
+          onClose={() => setVoiceLogOpen(false)}
+          onSaved={() => { setVoiceLogOpen(false); toast('Feedback logged') }}
+          onToast={toast}
         />
       )}
     </div>
@@ -332,3 +342,232 @@ const tileStyle: CSSProperties = {
   background: '#fff', border: '1px solid #E5E7F0', borderRadius: 12,
   padding: '12px 6px', textAlign: 'center', cursor: 'pointer',
 }
+
+const VOICE_KIND_META: Record<VoiceKind, { label: string; color: string; icon: string }> = {
+  praise:     { label: 'Praise',     color: '#0E9C7E', icon: '👍' },
+  complaint:  { label: 'Complaint',  color: '#C0392B', icon: '⚠️' },
+  suggestion: { label: 'Suggestion', color: '#B4650A', icon: '💡' },
+  nps:        { label: 'NPS',        color: '#2A6FDB', icon: '📊' },
+  csat:       { label: 'CSAT',       color: '#6C55E0', icon: '⭐' },
+}
+
+/**
+ * Two-step bottom sheet for logging customer voice from the mobile shell.
+ * Step 1: customer picker (debounced search).
+ * Step 2: kind / rating / text / source / topic form.
+ * Mirrors the desktop CustomerVoicePanel form field-for-field so a rep
+ * logging on their phone captures the same schema as one at a laptop.
+ */
+function VoiceLogSheet({ onClose, onSaved, onToast }: {
+  onClose: () => void
+  onSaved: () => void
+  onToast: (m: string) => void
+}) {
+  const [customer, setCustomer] = useState<CustomerDto | null>(null)
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<CustomerDto[]>([])
+  const [loading, setLoading] = useState(false)
+
+  const [kind, setKind] = useState<VoiceKind>('praise')
+  const [rating, setRating] = useState<string>('')
+  const [text, setText] = useState('')
+  const [source, setSource] = useState<VoiceSource | ''>('')
+  const [topic, setTopic] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  // Customer search — only runs while on step 1 (customer === null).
+  useEffect(() => {
+    if (customer) return
+    let cancelled = false
+    setLoading(true)
+    const h = setTimeout(() => {
+      api.customers(query || undefined)
+        .then((rows) => { if (!cancelled) { setResults(rows.slice(0, 40)); setLoading(false) } })
+        .catch(() => { if (!cancelled) { setResults([]); setLoading(false) } })
+    }, 200)
+    return () => { cancelled = true; clearTimeout(h) }
+  }, [query, customer])
+
+  const needsRating = kind === 'nps' || kind === 'csat'
+  const ratingMin = kind === 'nps' ? 0 : 1
+  const ratingMax = kind === 'nps' ? 10 : 5
+
+  const save = async () => {
+    if (saving || !customer) return
+    if (!text.trim()) { onToast('Enter feedback text'); return }
+    if (needsRating && !rating) { onToast(`Rating (${ratingMin}-${ratingMax}) required for ${kind.toUpperCase()}`); return }
+    const ratingNum = needsRating ? Number(rating) : null
+    if (needsRating && (Number.isNaN(ratingNum!) || ratingNum! < ratingMin || ratingNum! > ratingMax)) {
+      onToast(`Rating must be ${ratingMin}-${ratingMax}`); return
+    }
+    setSaving(true)
+    try {
+      await api.createCustomerVoice({
+        customerId: customer.id,
+        kind,
+        text: text.trim(),
+        rating: needsRating ? ratingNum : null,
+        source: source || null,
+        topic: topic.trim() || undefined,
+      })
+      onSaved()
+    } catch (e) { onToast(e instanceof ApiError ? e.message : 'Save failed') }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <div onClick={onClose} style={{
+      position: 'fixed', inset: 0, background: 'rgba(20,20,45,.55)', zIndex: 90,
+      display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+    }}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        width: '100%', maxWidth: 480, background: '#fff',
+        borderRadius: '18px 18px 0 0', padding: '10px 16px 16px',
+        maxHeight: '90vh', display: 'flex', flexDirection: 'column',
+      }}>
+        <div style={{ width: 40, height: 4, background: '#D0D0DF', borderRadius: 2, margin: '4px auto 10px' }} />
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          {customer && (
+            <div onClick={() => setCustomer(null)} style={{ color: '#2A6FDB', fontSize: 13, cursor: 'pointer' }}>‹ Back</div>
+          )}
+          <div style={{ fontSize: 15, fontWeight: 800, flex: 1 }}>
+            {customer ? `Log feedback` : 'Log customer voice'}
+          </div>
+          <div onClick={onClose} style={{ color: '#8888A0', fontSize: 18, cursor: 'pointer', padding: '2px 6px' }}>✕</div>
+        </div>
+
+        {!customer && (
+          <>
+            <input
+              type="text"
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search customer name…"
+              style={{
+                border: '1px solid #E5E7F0', borderRadius: 10,
+                padding: '10px 12px', fontSize: 14, outline: 'none',
+                marginBottom: 8,
+              }}
+            />
+            <div style={{ flex: 1, overflowY: 'auto' }}>
+              {loading && <div style={{ padding: 20, textAlign: 'center', color: '#8888A0', fontSize: 12.5 }}>Loading…</div>}
+              {!loading && results.length === 0 && (
+                <div style={{ padding: 20, textAlign: 'center', color: '#8888A0', fontSize: 12.5 }}>
+                  {query ? 'No matches.' : 'Type a name to search.'}
+                </div>
+              )}
+              {!loading && results.map((c) => (
+                <div
+                  key={c.id}
+                  onClick={() => setCustomer(c)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '10px 12px', borderRadius: 10, cursor: 'pointer',
+                    border: '1px solid #E5E7F0', marginBottom: 6, background: '#fff',
+                  }}
+                >
+                  <div style={{
+                    width: 34, height: 34, borderRadius: '50%',
+                    background: '#EEF3FC', color: '#2A6FDB', border: '1px solid #D6E2F7',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 12, fontWeight: 800, flex: 'none',
+                  }}>{c.name.split(' ').slice(0, 2).map((s) => s[0]).join('').toUpperCase()}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name}</div>
+                    {c.industry && <div style={{ fontSize: 11, color: '#8888A0' }}>{c.industry}</div>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {customer && (
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            <div style={{ fontSize: 12, color: '#5C5C74', marginBottom: 10 }}>For {customer.name}</div>
+
+            <div style={voiceFieldLabel}>Kind</div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+              {VOICE_KINDS.map((k) => {
+                const on = kind === k
+                const meta = VOICE_KIND_META[k]
+                return (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => { setKind(k); if (k !== 'nps' && k !== 'csat') setRating('') }}
+                    style={{
+                      background: on ? meta.color : '#fff',
+                      color: on ? '#fff' : meta.color,
+                      border: `1px solid ${on ? meta.color : '#E5E7F0'}`,
+                      borderRadius: 8, padding: '6px 10px',
+                      fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
+                      display: 'inline-flex', alignItems: 'center', gap: 4,
+                    }}
+                  >
+                    <span>{meta.icon}</span>{meta.label}
+                  </button>
+                )
+              })}
+            </div>
+
+            {needsRating && (
+              <>
+                <div style={voiceFieldLabel}>Rating ({ratingMin}-{ratingMax})</div>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  value={rating}
+                  onChange={(e) => setRating(e.target.value)}
+                  min={ratingMin}
+                  max={ratingMax}
+                  style={{ ...voiceInp, marginBottom: 12 }}
+                />
+              </>
+            )}
+
+            <div style={voiceFieldLabel}>Feedback *</div>
+            <textarea
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              rows={4}
+              placeholder="What did the customer say?"
+              style={{ ...voiceInp, resize: 'vertical', fontFamily: 'inherit', marginBottom: 12 }}
+            />
+
+            <div style={voiceFieldLabel}>Source</div>
+            <select value={source} onChange={(e) => setSource(e.target.value as VoiceSource | '')} style={{ ...voiceInp, marginBottom: 12 }}>
+              <option value="">(unspecified)</option>
+              {VOICE_SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+
+            <div style={voiceFieldLabel}>Topic</div>
+            <input
+              value={topic}
+              onChange={(e) => setTopic(e.target.value)}
+              placeholder="pricing / support / onboarding"
+              style={{ ...voiceInp, marginBottom: 16 }}
+            />
+
+            <button
+              type="button"
+              onClick={save}
+              disabled={saving}
+              style={{
+                width: '100%', background: '#2A6FDB', color: '#fff',
+                border: 'none', borderRadius: 10, padding: '12px',
+                fontSize: 14, fontWeight: 700, cursor: 'pointer',
+                opacity: saving ? 0.6 : 1,
+              }}
+            >{saving ? 'Saving…' : 'Log feedback'}</button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+const voiceFieldLabel: CSSProperties = { fontSize: 10.5, fontWeight: 700, color: '#8888A0', letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: 4 }
+const voiceInp: CSSProperties = { width: '100%', border: '1px solid #E5E7F0', borderRadius: 8, padding: '10px 12px', fontSize: 14, outline: 'none', boxSizing: 'border-box' }
