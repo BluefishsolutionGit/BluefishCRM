@@ -108,6 +108,22 @@ export default function Leads() {
   const fileRef = useRef<HTMLInputElement | null>(null)
   const [importing, setImporting] = useState(false)
   const [scoreInfoOpen, setScoreInfoOpen] = useState(false)
+  const [templateBusy, setTemplateBusy] = useState(false)
+  const [exportBusy, setExportBusy] = useState(false)
+
+  const onDownloadTemplate = async () => {
+    setTemplateBusy(true)
+    try { await api.downloadLeadsTemplate() }
+    catch (err) { toast(err instanceof ApiError ? err.message : 'Download failed') }
+    finally { setTemplateBusy(false) }
+  }
+
+  const onExport = async () => {
+    setExportBusy(true)
+    try { await api.downloadLeadsExport() }
+    catch (err) { toast(err instanceof ApiError ? err.message : 'Export failed') }
+    finally { setExportBusy(false) }
+  }
 
   const onImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -144,8 +160,8 @@ export default function Leads() {
           </div>
         )}
         <div style={{ flex: 1 }} />
-        <a href={api.leadsImportTemplateUrl()} target="_blank" rel="noopener noreferrer" style={ghostBtn}>Template</a>
-        <a href={api.leadsExportUrl()} style={ghostBtn}>Export ↓</a>
+        <div onClick={templateBusy ? undefined : onDownloadTemplate} style={{ ...ghostBtn, opacity: templateBusy ? 0.5 : 1 }}>{templateBusy ? 'Downloading…' : 'Template'}</div>
+        <div onClick={exportBusy ? undefined : onExport} style={{ ...ghostBtn, opacity: exportBusy ? 0.5 : 1 }}>{exportBusy ? 'Exporting…' : 'Export ↓'}</div>
         {canWrite && (
           <>
             <input ref={fileRef} type="file" accept=".xlsx,.xls" onChange={onImport} style={{ display: 'none' }} />
