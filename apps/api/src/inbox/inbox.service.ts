@@ -1,6 +1,7 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
+import { BadGatewayException, BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
 import { AuditService } from '../audit/audit.service'
+import { ChannelIntegrationsService } from '../integrations/channel-integrations.service'
 import type { InboxChannel, InboxMessageDto, InboxThreadDto } from '@bluefish/shared'
 import type { AuditRequestContext } from '../common/request-context'
 
@@ -16,7 +17,9 @@ interface IncomingMessageInput {
 
 @Injectable()
 export class InboxService {
-  constructor(private prisma: PrismaService, private audit: AuditService) {}
+  private readonly logger = new Logger(InboxService.name)
+
+  constructor(private prisma: PrismaService, private audit: AuditService, private channels: ChannelIntegrationsService) {}
 
   async listThreads(): Promise<InboxThreadDto[]> {
     const rows = await this.prisma.inboxThread.findMany({
@@ -88,7 +91,10 @@ export class InboxService {
 
     const user = await this.prisma.user.findUnique({ where: { id: userId } })
 
-    // In real life this would call LINE/FB/IG send-message APIs. In dev we just persist the outbound message.
+    // Push to the external channel first — only persist once delivery succeeds,
+    // so a failed send doesn't leave a message in the thread that the customer never received.
+    await this.deliverToChannel(thread.channel as InboxChannel, thread.externalId, text)
+
     const message = await this.prisma.inboxMessage.create({
       data: {
         threadId, direction: 'out', text,
@@ -102,6 +108,27 @@ export class InboxService {
     })
     await this.audit.log({ ...ctx, action: 'inbox.message.out', entity: 'thread', entityId: threadId })
     return this.toMessageDto(message)
+  }
+
+  /** Send the reply out over the real channel. Throws if the channel requires
+   *  delivery and it fails — channels with no outbound integration yet are a no-op. */
+  private async deliverToChannel(channel: InboxChannel, externalId: string, text: string): Promise<void> {
+    if (channel !== 'LINE OA') return
+
+    const config = await this.channels.getPlain('LINE OA')
+    const token = config?.channelAccessToken
+    if (!token) throw new BadRequestException('LINE channel access token is not configured — set it in Settings → Integrations')
+
+    const res = await fetch('https://api.line.me/v2/bot/message/push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ to: externalId, messages: [{ type: 'text', text }] }),
+    })
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      this.logger.warn(`LINE push failed for ${externalId}: ${res.status} ${body}`)
+      throw new BadGatewayException(`LINE send failed (${res.status}): ${body.slice(0, 300)}`)
+    }
   }
 
   async markRead(threadId: string): Promise<InboxThreadDto> {

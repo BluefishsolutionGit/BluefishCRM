@@ -43,12 +43,20 @@ export class InboxWebhooksController {
       }
     }
 
+    const profileCache = new Map<string, string | null>()
     const results: Array<{ threadId: string; messageId: string }> = []
     for (const e of body.events ?? []) {
       if (e.type !== 'message' || e.message?.type !== 'text') continue
       const userId = e.source?.userId ?? 'unknown'
       const text = e.message?.text ?? ''
-      const authorName = `LINE user ${userId.slice(-4)}`
+
+      let displayName = profileCache.get(userId)
+      if (displayName === undefined) {
+        displayName = config?.channelAccessToken ? await this.getLineDisplayName(userId, config.channelAccessToken) : null
+        profileCache.set(userId, displayName)
+      }
+      const authorName = displayName ?? `LINE user ${userId.slice(-4)}`
+
       const res = await this.inbox.ingestIncoming({
         channel: 'LINE OA',
         externalThreadId: userId,
@@ -152,6 +160,21 @@ export class InboxWebhooksController {
       sentAt: Number.isNaN(sentAt.getTime()) ? new Date() : sentAt,
     })
     return { ok: true, ...res }
+  }
+
+  /** LINE Get Profile API — returns the user's current display name, or null if unavailable. */
+  private async getLineDisplayName(userId: string, accessToken: string): Promise<string | null> {
+    try {
+      const res = await fetch(`https://api.line.me/v2/bot/profile/${userId}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      })
+      if (!res.ok) return null
+      const body = (await res.json()) as { displayName?: string }
+      return body.displayName?.trim() || null
+    } catch (err) {
+      this.logger.warn(`LINE profile lookup failed for ${userId}: ${err instanceof Error ? err.message : err}`)
+      return null
+    }
   }
 
   private async metaHandler(channel: InboxChannel, signature: string | undefined, req: Request & { rawBody?: Buffer }, body: FbPayload) {
