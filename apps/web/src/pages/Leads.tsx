@@ -144,8 +144,8 @@ export default function Leads() {
           </div>
         )}
         <div style={{ flex: 1 }} />
-        <a href={api.leadsImportTemplateUrl()} target="_blank" rel="noopener noreferrer" style={ghostBtn}>Template</a>
-        <a href={api.leadsExportUrl()} style={ghostBtn}>Export ↓</a>
+        <div onClick={() => { api.downloadLeadsTemplate().catch((e) => toast(e instanceof ApiError ? e.message : 'Download failed')) }} style={ghostBtn}>Template</div>
+        <div onClick={() => { api.downloadLeadsExport().catch((e) => toast(e instanceof ApiError ? e.message : 'Download failed')) }} style={ghostBtn}>Export ↓</div>
         {canWrite && (
           <>
             <input ref={fileRef} type="file" accept=".xlsx,.xls" onChange={onImport} style={{ display: 'none' }} />

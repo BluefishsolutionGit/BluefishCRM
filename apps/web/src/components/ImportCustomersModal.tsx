@@ -1,6 +1,6 @@
 import { useState, type CSSProperties, type ChangeEvent } from 'react'
 import type { ImportResultDto } from '@bluefish/shared'
-import { api, ApiError, API_BASE } from '../lib/api'
+import { api, ApiError } from '../lib/api'
 
 interface Props { open: boolean; onClose: () => void; onImported: () => void }
 
@@ -41,9 +41,18 @@ export default function ImportCustomersModal({ open, onClose, onImported }: Prop
           <div style={{ fontSize: 13, color: '#5C5C74', marginBottom: 14 }}>
             Upload an .xlsx file with these columns: Code, Name, Name (TH), Industry, Status, Owner Email, City, Address, Tax ID, Phone, Terms, Open Value.
           </div>
-          <a href={`${API_BASE}/customers/import-template`} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-block', fontSize: 12.5, fontWeight: 700, color: '#2A6FDB', marginBottom: 16 }}>
+          {/* Uses authDownload (fetch + Authorization header) instead of
+              <a href> — the endpoint is JWT-guarded and would 401 otherwise. */}
+          <button
+            type="button"
+            onClick={() => { api.downloadCustomersTemplate().catch((e) => setError(e instanceof ApiError ? e.message : 'Download failed')) }}
+            style={{
+              display: 'inline-block', background: 'transparent', border: 'none', padding: 0,
+              fontSize: 12.5, fontWeight: 700, color: '#2A6FDB', marginBottom: 16, cursor: 'pointer',
+            }}
+          >
             ↓ Download template
-          </a>
+          </button>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', border: '1.5px dashed #D0D0DF', borderRadius: 12, padding: 14, marginBottom: 12 }}>
             <input type="file" accept=".xlsx,.xls" onChange={pickFile} />
             {file && <div style={{ fontSize: 12.5, color: '#5C5C74' }}>{file.name} ({Math.round(file.size / 1024)} KB)</div>}
