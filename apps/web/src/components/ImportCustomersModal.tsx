@@ -9,6 +9,7 @@ export default function ImportCustomersModal({ open, onClose, onImported }: Prop
   const [result, setResult] = useState<ImportResultDto | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [templateBusy, setTemplateBusy] = useState(false)
 
   if (!open) return null
 
@@ -16,6 +17,15 @@ export default function ImportCustomersModal({ open, onClose, onImported }: Prop
     const f = e.target.files?.[0]
     setFile(f ?? null)
     setResult(null); setError(null)
+  }
+
+  const downloadTemplate = async () => {
+    setTemplateBusy(true); setError(null)
+    try {
+      await api.downloadCustomersTemplate()
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Download failed')
+    } finally { setTemplateBusy(false) }
   }
 
   const submit = async () => {
@@ -41,17 +51,13 @@ export default function ImportCustomersModal({ open, onClose, onImported }: Prop
           <div style={{ fontSize: 13, color: '#5C5C74', marginBottom: 14 }}>
             Upload an .xlsx file with these columns: Code, Name, Name (TH), Industry, Status, Owner Email, City, Address, Tax ID, Phone, Terms, Open Value.
           </div>
-          {/* Uses authDownload (fetch + Authorization header) instead of
-              <a href> — the endpoint is JWT-guarded and would 401 otherwise. */}
           <button
             type="button"
-            onClick={() => { api.downloadCustomersTemplate().catch((e) => setError(e instanceof ApiError ? e.message : 'Download failed')) }}
-            style={{
-              display: 'inline-block', background: 'transparent', border: 'none', padding: 0,
-              fontSize: 12.5, fontWeight: 700, color: '#2A6FDB', marginBottom: 16, cursor: 'pointer',
-            }}
+            onClick={downloadTemplate}
+            disabled={templateBusy}
+            style={{ display: 'inline-block', background: 'none', border: 'none', padding: 0, cursor: templateBusy ? 'default' : 'pointer', fontSize: 12.5, fontWeight: 700, color: '#2A6FDB', marginBottom: 16, opacity: templateBusy ? 0.6 : 1 }}
           >
-            ↓ Download template
+            {templateBusy ? 'Downloading…' : '↓ Download template'}
           </button>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', border: '1.5px dashed #D0D0DF', borderRadius: 12, padding: 14, marginBottom: 12 }}>
             <input type="file" accept=".xlsx,.xls" onChange={pickFile} />

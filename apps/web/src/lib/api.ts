@@ -189,6 +189,8 @@ export const api = {
     form.append('file', file)
     return request<ImportResultDto>('/customers/import', { method: 'POST', body: form })
   },
+  downloadCustomersTemplate: () =>
+    authDownload('/customers/import-template', 'customers-import-template.xlsx'),
 
   contacts: (customerId: string) =>
     request<ContactDto[]>(`/customers/${customerId}/contacts`),
@@ -245,14 +247,10 @@ export const api = {
     form.append('file', file)
     return request<ImportResultDto>('/leads/import', { method: 'POST', body: form })
   },
-  // Deprecated: raw URLs used in <a href> can't carry the JWT and 401.
-  // Kept temporarily for any external caller; new UI should call
-  // downloadLeadsTemplate() / downloadLeadsExport() which use authDownload.
-  leadsImportTemplateUrl: () => `${API_BASE}/leads/import-template`,
-  leadsExportUrl: () => `${API_BASE}/leads/export`,
-  downloadLeadsTemplate: () => authDownload('/leads/import-template', 'leads-import-template.xlsx'),
-  downloadLeadsExport: () => authDownload('/leads/export', 'leads.xlsx'),
-  downloadCustomersTemplate: () => authDownload('/customers/import-template', 'customers-import-template.xlsx'),
+  downloadLeadsTemplate: () =>
+    authDownload('/leads/import-template', 'leads-import-template.xlsx'),
+  downloadLeadsExport: () =>
+    authDownload('/leads/export', 'leads.xlsx'),
   lead: (id: string) => request<LeadDto>(`/leads/${id}`),
   createLead: (data: CreateLeadDto) => request<LeadDto>('/leads', { method: 'POST', body: JSON.stringify(data) }),
   updateLead: (id: string, data: UpdateLeadDto) => request<LeadDto>(`/leads/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
@@ -306,8 +304,6 @@ export const api = {
     form.append('file', file)
     return request<ImportResultDto>('/opportunities/import', { method: 'POST', body: form })
   },
-  opportunitiesImportTemplateUrl: () => `${API_BASE}/opportunities/import-template`,
-  opportunitiesExportUrl: () => `${API_BASE}/opportunities/export`,
   downloadOpportunitiesTemplate: () =>
     authDownload('/opportunities/import-template', 'opportunities-import-template.xlsx'),
   downloadOpportunitiesExport: () =>
