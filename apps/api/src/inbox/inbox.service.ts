@@ -113,8 +113,11 @@ export class InboxService {
   /** Send the reply out over the real channel. Throws if the channel requires
    *  delivery and it fails — channels with no outbound integration yet are a no-op. */
   private async deliverToChannel(channel: InboxChannel, externalId: string, text: string): Promise<void> {
-    if (channel !== 'LINE OA') return
+    if (channel === 'LINE OA') return this.deliverToLine(externalId, text)
+    if (channel === 'Messenger') return this.deliverToMessenger(externalId, text)
+  }
 
+  private async deliverToLine(externalId: string, text: string): Promise<void> {
     const config = await this.channels.getPlain('LINE OA')
     const token = config?.channelAccessToken
     if (!token) throw new BadRequestException('LINE channel access token is not configured — set it in Settings → Integrations')
@@ -128,6 +131,23 @@ export class InboxService {
       const body = await res.text().catch(() => '')
       this.logger.warn(`LINE push failed for ${externalId}: ${res.status} ${body}`)
       throw new BadGatewayException(`LINE send failed (${res.status}): ${body.slice(0, 300)}`)
+    }
+  }
+
+  private async deliverToMessenger(externalId: string, text: string): Promise<void> {
+    const config = await this.channels.getPlain('Messenger')
+    const token = config?.pageAccessToken
+    if (!token) throw new BadRequestException('Facebook Page access token is not configured — set it in Settings → Integrations')
+
+    const res = await fetch(`https://graph.facebook.com/v19.0/me/messages?access_token=${encodeURIComponent(token)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ recipient: { id: externalId }, message: { text } }),
+    })
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      this.logger.warn(`Messenger send failed for ${externalId}: ${res.status} ${body}`)
+      throw new BadGatewayException(`Messenger send failed (${res.status}): ${body.slice(0, 300)}`)
     }
   }
 

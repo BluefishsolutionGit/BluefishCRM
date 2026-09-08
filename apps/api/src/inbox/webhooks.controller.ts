@@ -1,8 +1,8 @@
-import { Body, Controller, ForbiddenException, Headers, HttpCode, Logger, Post, Query, Req } from '@nestjs/common'
+import { Body, Controller, ForbiddenException, Get, Headers, HttpCode, Logger, Post, Query, Req, Res } from '@nestjs/common'
 import * as crypto from 'crypto'
 import { InboxService } from './inbox.service'
 import { ChannelIntegrationsService } from '../integrations/channel-integrations.service'
-import type { Request } from 'express'
+import type { Request, Response } from 'express'
 import type { InboxChannel } from '@bluefish/shared'
 
 interface LineEvent {
@@ -79,12 +79,25 @@ export class InboxWebhooksController {
     return this.metaHandler('Messenger', signature, req, body)
   }
 
-  /** FB verification handshake (GET is exposed via a separate endpoint below, but for simplicity we handle inside POST) */
-  @Post('facebook/verify')
-  async fbVerify(@Query('hub.mode') mode: string, @Query('hub.verify_token') token: string, @Query('hub.challenge') challenge: string) {
+  /**
+   * Meta's webhook verification handshake — it sends a GET to the SAME callback
+   * URL configured in the App Dashboard (not a separate path), with the mode/
+   * token/challenge as query params, and expects the raw challenge echoed back
+   * as plain text.
+   */
+  @Get('facebook')
+  async fbVerify(
+    @Query('hub.mode') mode: string,
+    @Query('hub.verify_token') token: string,
+    @Query('hub.challenge') challenge: string,
+    @Res() res: Response,
+  ) {
     const config = await this.channels.getPlain('Messenger')
     const verifyToken = config?.verifyToken ?? ''
-    if (mode === 'subscribe' && token === verifyToken) return challenge
+    if (mode === 'subscribe' && token && verifyToken && token === verifyToken) {
+      res.status(200).send(challenge)
+      return
+    }
     throw new ForbiddenException()
   }
 
@@ -177,6 +190,21 @@ export class InboxWebhooksController {
     }
   }
 
+  /** Facebook Graph API profile lookup — returns the PSID's name, or null if unavailable. */
+  private async getFacebookProfileName(psid: string, pageAccessToken: string): Promise<string | null> {
+    try {
+      const url = `https://graph.facebook.com/v19.0/${psid}?fields=first_name,last_name&access_token=${encodeURIComponent(pageAccessToken)}`
+      const res = await fetch(url)
+      if (!res.ok) return null
+      const body = (await res.json()) as { first_name?: string; last_name?: string }
+      const name = [body.first_name, body.last_name].filter(Boolean).join(' ').trim()
+      return name || null
+    } catch (err) {
+      this.logger.warn(`Facebook profile lookup failed for ${psid}: ${err instanceof Error ? err.message : err}`)
+      return null
+    }
+  }
+
   private async metaHandler(channel: InboxChannel, signature: string | undefined, req: Request & { rawBody?: Buffer }, body: FbPayload) {
     const config = await this.channels.getPlain('Messenger')
     const secret = config?.appSecret ?? ''
@@ -186,16 +214,24 @@ export class InboxWebhooksController {
       if (signature !== expected) throw new ForbiddenException('Invalid signature')
     }
 
+    const profileCache = new Map<string, string | null>()
     let count = 0
     for (const entry of body.entry ?? []) {
       for (const msg of entry.messaging ?? []) {
         if (!msg.message?.text) continue
         const externalId = msg.sender?.id ?? 'unknown'
+
+        let displayName = profileCache.get(externalId)
+        if (displayName === undefined) {
+          displayName = config?.pageAccessToken ? await this.getFacebookProfileName(externalId, config.pageAccessToken) : null
+          profileCache.set(externalId, displayName)
+        }
+
         await this.inbox.ingestIncoming({
           channel,
           externalThreadId: externalId,
           externalMessageId: msg.message.mid,
-          authorName: `${channel} user ${externalId.slice(-4)}`,
+          authorName: displayName ?? `${channel} user ${externalId.slice(-4)}`,
           text: msg.message.text,
           sentAt: msg.timestamp ? new Date(msg.timestamp) : new Date(),
         })
