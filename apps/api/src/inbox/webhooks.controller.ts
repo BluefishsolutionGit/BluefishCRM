@@ -118,6 +118,42 @@ export class InboxWebhooksController {
     return { ok: true, ...res }
   }
 
+  /**
+   * Generic inbound-email receiver — designed for an n8n workflow (e.g. a
+   * Microsoft 365 / Outlook trigger) to POST parsed messages into, so we don't
+   * depend on a paid inbound-parse provider (SendGrid/Postmark/Mailgun).
+   *
+   * Auth is a shared secret in `x-bluefish-email-key`, matching the "Webhook
+   * signing secret" field configured under Settings → Integrations → Email.
+   */
+  @Post('email')
+  @HttpCode(200)
+  async email(
+    @Headers('x-bluefish-email-key') secret: string | undefined,
+    @Body() body: { fromEmail?: string; fromName?: string; subject?: string; text?: string; messageId?: string; receivedAt?: string },
+  ) {
+    const config = await this.channels.getPlain('Email')
+    const expected = config?.signingSecret ?? ''
+    if (expected && secret !== expected) throw new ForbiddenException('Invalid email webhook key')
+
+    const fromEmail = (body.fromEmail ?? '').trim().toLowerCase()
+    const text = (body.text ?? '').trim()
+    if (!fromEmail || !text) return { ok: false, error: 'fromEmail + text required' }
+
+    const subject = (body.subject ?? '').trim()
+    const fullText = subject ? `${subject}\n\n${text}` : text
+    const authorName = (body.fromName ?? '').trim() || fromEmail
+    const sentAt = body.receivedAt ? new Date(body.receivedAt) : new Date()
+    const res = await this.inbox.ingestIncoming({
+      channel: 'Email',
+      externalThreadId: fromEmail,
+      externalMessageId: body.messageId,
+      authorName, text: fullText,
+      sentAt: Number.isNaN(sentAt.getTime()) ? new Date() : sentAt,
+    })
+    return { ok: true, ...res }
+  }
+
   private async metaHandler(channel: InboxChannel, signature: string | undefined, req: Request & { rawBody?: Buffer }, body: FbPayload) {
     const config = await this.channels.getPlain('Messenger')
     const secret = config?.appSecret ?? ''
