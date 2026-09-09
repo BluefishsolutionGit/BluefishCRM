@@ -47,7 +47,7 @@ export default function Inbox() {
 
   const refreshThreads = () => api.inboxThreads().then((t) => {
     setThreads(t)
-    if (!threadId && t.length > 0) setThreadId(t[0].id)
+    setThreadId((prev) => prev ?? (t.length > 0 ? t[0].id : prev))
   }).catch((e) => toast(e instanceof ApiError ? e.message : 'Load failed'))
 
   useEffect(() => {
