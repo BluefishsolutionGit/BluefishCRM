@@ -4,11 +4,17 @@ import { SERVICE_LINES } from '@bluefish/shared'
 import { api, ApiError } from '../lib/api'
 import VoiceInputButton from './VoiceInputButton'
 
-interface Props { open: boolean; initial?: LeadDto | null; onClose: () => void; onSaved: (l: LeadDto) => void }
-const SOURCES = ['LINE OA', 'e-GP Tender', 'Facebook Ads', 'Email', 'Website', 'Referral']
+interface Props {
+  open: boolean
+  initial?: LeadDto | null
+  createDefaults?: Partial<CreateLeadDto> | null
+  onClose: () => void
+  onSaved: (l: LeadDto) => void
+}
+const SOURCES = ['LINE OA', 'e-GP Tender', 'Facebook Ads', 'WhatsApp', 'Email', 'Website', 'Referral']
 const STATUSES: LeadStatus[] = ['New', 'Contacted', 'Qualified', 'AI Sourced', 'Converted', 'Lost']
 
-export default function LeadFormModal({ open, initial, onClose, onSaved }: Props) {
+export default function LeadFormModal({ open, initial, createDefaults, onClose, onSaved }: Props) {
   const [form, setForm] = useState<CreateLeadDto>({
     name: '', companyName: '', email: '', phone: '', source: 'Website', estValue: undefined, serviceOrProduct: '', notes: '',
   })
@@ -34,10 +40,10 @@ export default function LeadFormModal({ open, initial, onClose, onSaved }: Props
         notes: initial.notes ?? '',
       })
     } else if (open) {
-      setForm({ name: '', companyName: '', email: '', phone: '', source: 'Website', serviceOrProduct: '', notes: '' })
+      setForm({ name: '', companyName: '', email: '', phone: '', source: 'Website', serviceOrProduct: '', notes: '', ...createDefaults })
     }
     setError(null); setDupes([])
-  }, [initial, open])
+  }, [initial, open, createDefaults])
 
   useEffect(() => {
     if (!open || initial) return

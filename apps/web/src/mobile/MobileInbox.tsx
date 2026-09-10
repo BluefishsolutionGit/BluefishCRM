@@ -181,6 +181,7 @@ export function MobileInboxThread() {
 
   if (!thread) return <div style={{ padding: 16, color: '#8888A0' }}>Loading…</div>
 
+  const canReply = thread.channel !== 'Email' && thread.channel !== 'Website'
   const ch = CHANNEL_STYLE[thread.channel]
   const grouped = groupByDay(messages)
 
@@ -234,23 +235,29 @@ export function MobileInboxThread() {
       </div>
 
       {/* Composer */}
-      <form onSubmit={send} style={{ padding: 10, display: 'flex', gap: 8, background: '#fff', borderTop: '1px solid #E5E7F0' }}>
-        <input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder={`Reply on ${thread.channel}…`}
-          style={{ ...inp, flex: 1 }}
-        />
-        <button
-          type="submit"
-          disabled={sending || !text.trim()}
-          style={{
-            background: '#2A6FDB', color: '#fff', border: 'none', borderRadius: 10,
-            padding: '0 16px', fontSize: 13.5, fontWeight: 700, cursor: 'pointer',
-            opacity: sending || !text.trim() ? 0.5 : 1,
-          }}
-        >{sending ? '…' : 'Send'}</button>
-      </form>
+      {canReply ? (
+        <form onSubmit={send} style={{ padding: 10, display: 'flex', gap: 8, background: '#fff', borderTop: '1px solid #E5E7F0' }}>
+          <input
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder={`Reply on ${thread.channel}…`}
+            style={{ ...inp, flex: 1 }}
+          />
+          <button
+            type="submit"
+            disabled={sending || !text.trim()}
+            style={{
+              background: '#2A6FDB', color: '#fff', border: 'none', borderRadius: 10,
+              padding: '0 16px', fontSize: 13.5, fontWeight: 700, cursor: 'pointer',
+              opacity: sending || !text.trim() ? 0.5 : 1,
+            }}
+          >{sending ? '…' : 'Send'}</button>
+        </form>
+      ) : (
+        <div style={{ padding: '10px 16px', textAlign: 'center', fontSize: 12, color: '#8888A0', background: '#fff', borderTop: '1px solid #E5E7F0' }}>
+          {thread.channel} is inbound-only — replying from Inbox isn't supported for this channel.
+        </div>
+      )}
 
       {linkOpen && <LinkCustomerSheet threadId={thread.id} currentCustomerId={thread.customerId} onClose={() => setLinkOpen(false)} onLinked={() => { setLinkOpen(false); void reload() }} />}
     </div>
