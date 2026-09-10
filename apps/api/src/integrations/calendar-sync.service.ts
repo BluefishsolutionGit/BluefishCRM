@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config'
 import * as crypto from 'crypto'
 import { PrismaService } from '../prisma/prisma.service'
 import { AuditService } from '../audit/audit.service'
+import { decryptSecret, encryptSecret } from './crypto'
 import type { CalendarAccountDto, CalendarSyncResultDto } from '@bluefish/shared'
 
 interface GraphEvent {
@@ -102,6 +103,28 @@ export class CalendarSyncService {
     for (const [k, v] of this.pendingConnects) if (v.expiresAt < now) this.pendingConnects.delete(k)
   }
 
+  /* ─────────────── Token encryption at rest ───────────────
+   * access/refresh tokens are stored encrypted (same cipher as ChannelIntegration
+   * credentials, see crypto.ts). Encrypt right before a DB write, decrypt right after a
+   * fetch, so the rest of this service keeps working with plain tokens as before.
+   * decryptToken falls back to the raw value on failure so rows written before this
+   * encryption was added (plaintext) keep working without a migration. */
+  private encryptToken(token: string): string {
+    return encryptSecret(token)
+  }
+
+  private decryptToken(token: string): string {
+    return decryptSecret<string>(token) ?? token
+  }
+
+  private withPlainTokens<T extends { accessToken: string; refreshToken: string | null }>(row: T): T {
+    return {
+      ...row,
+      accessToken: this.decryptToken(row.accessToken),
+      refreshToken: row.refreshToken ? this.decryptToken(row.refreshToken) : null,
+    }
+  }
+
   /**
    * Called from GET /callback — exchanges the auth code for tokens, decodes the id_token
    * to get identity, and upserts a CalendarSyncAccount linked to the user we stashed
@@ -198,16 +221,18 @@ export class CalendarSyncService {
     externalId: string; email: string
     accessToken: string; refreshToken?: string; expiresAt?: Date
   }): Promise<CalendarAccountDto> {
+    const accessToken = this.encryptToken(input.accessToken)
+    const refreshToken = input.refreshToken ? this.encryptToken(input.refreshToken) : null
     const row = await this.prisma.calendarSyncAccount.upsert({
       where: { provider_externalId: { provider: input.provider, externalId: input.externalId } },
       update: {
         userId, email: input.email,
-        accessToken: input.accessToken, refreshToken: input.refreshToken ?? null,
+        accessToken, refreshToken,
         expiresAt: input.expiresAt ?? null,
       },
       create: {
         userId, provider: input.provider, externalId: input.externalId, email: input.email,
-        accessToken: input.accessToken, refreshToken: input.refreshToken ?? null,
+        accessToken, refreshToken,
         expiresAt: input.expiresAt ?? null,
       },
     })
@@ -223,7 +248,7 @@ export class CalendarSyncService {
     if (account.userId !== userId) throw new UnauthorizedException()
     // Delete the Graph subscription first so Microsoft stops sending notifications for
     // a user we no longer track. Failure here (revoked consent, network) is non-fatal.
-    await this.deleteWebhookSubscription(account)
+    await this.deleteWebhookSubscription(this.withPlainTokens(account))
     await this.prisma.calendarSyncAccount.delete({ where: { id } })
   }
 
@@ -239,14 +264,14 @@ export class CalendarSyncService {
     const account = await this.prisma.calendarSyncAccount.findUnique({ where: { id } })
     if (!account) throw new NotFoundException()
     if (account.userId !== userId) throw new UnauthorizedException()
-    return this.runSync(account)
+    return this.runSync(this.withPlainTokens(account))
   }
 
   /** Same as syncAccount but skips ownership check — used by the polling cron. */
   async runSyncForAccountId(id: string): Promise<CalendarSyncResultDto> {
     const account = await this.prisma.calendarSyncAccount.findUnique({ where: { id } })
     if (!account) throw new NotFoundException()
-    return this.runSync(account)
+    return this.runSync(this.withPlainTokens(account))
   }
 
   private async runSync(account: {
@@ -593,9 +618,9 @@ export class CalendarSyncService {
     await this.prisma.calendarSyncAccount.update({
       where: { id: accountId },
       data: {
-        accessToken: tokens.access_token,
+        accessToken: this.encryptToken(tokens.access_token),
         // Microsoft may or may not rotate the refresh token — persist whichever we got.
-        refreshToken: tokens.refresh_token ?? refreshToken,
+        refreshToken: this.encryptToken(tokens.refresh_token ?? refreshToken),
         expiresAt,
       },
     })
@@ -612,8 +637,9 @@ export class CalendarSyncService {
   async ensureWebhookSubscription(accountId: string): Promise<void> {
     const publicUrl = this.webhookPublicUrl()
     if (!publicUrl) return
-    const account = await this.prisma.calendarSyncAccount.findUnique({ where: { id: accountId } })
-    if (!account) return
+    const row = await this.prisma.calendarSyncAccount.findUnique({ where: { id: accountId } })
+    if (!row) return
+    const account = this.withPlainTokens(row)
     if (account.accessToken.startsWith('dev_stub')) {
       // Simulate a subscription so the storage path is testable.
       await this.prisma.calendarSyncAccount.update({
@@ -649,8 +675,10 @@ export class CalendarSyncService {
   }
 
   async renewWebhookSubscription(accountId: string): Promise<void> {
-    const account = await this.prisma.calendarSyncAccount.findUnique({ where: { id: accountId } })
-    if (!account?.webhookSubscriptionId) return
+    const row = await this.prisma.calendarSyncAccount.findUnique({ where: { id: accountId } })
+    if (!row?.webhookSubscriptionId) return
+    const subscriptionId = row.webhookSubscriptionId
+    const account = this.withPlainTokens(row)
     if (account.accessToken.startsWith('dev_stub')) {
       await this.prisma.calendarSyncAccount.update({
         where: { id: accountId },
@@ -659,7 +687,7 @@ export class CalendarSyncService {
       return
     }
     const expiresAt = new Date(Date.now() + 4200 * 60 * 1000)
-    await this.callGraph<void>(account, `/subscriptions/${encodeURIComponent(account.webhookSubscriptionId)}`, 'PATCH', {
+    await this.callGraph<void>(account, `/subscriptions/${encodeURIComponent(subscriptionId)}`, 'PATCH', {
       expirationDateTime: expiresAt.toISOString(),
     })
     await this.prisma.calendarSyncAccount.update({
@@ -693,7 +721,7 @@ export class CalendarSyncService {
       this.logger.warn(`Rejected notification for ${account.email}: clientState mismatch`)
       return
     }
-    await this.runSync(account)
+    await this.runSync(this.withPlainTokens(account))
   }
 
   private durationMinutes(evt: GraphEvent): number | null {
@@ -735,8 +763,9 @@ export class CalendarSyncService {
   async pushUpdate(activityId: string): Promise<void> {
     const activity = await this.prisma.activity.findUnique({ where: { id: activityId }, include: { owner: true } })
     if (!activity?.externalCalendarId || !activity.externalCalendarAccountId) return
-    const account = await this.prisma.calendarSyncAccount.findUnique({ where: { id: activity.externalCalendarAccountId } })
-    if (!account) return
+    const row = await this.prisma.calendarSyncAccount.findUnique({ where: { id: activity.externalCalendarAccountId } })
+    if (!row) return
+    const account = this.withPlainTokens(row)
     const payload = this.buildGraphEvent({ ...activity, recurrence: activity.recurrence }, activity.owner.timezone)
     await this.callGraph<void>(account, `/me/events/${encodeURIComponent(activity.externalCalendarId)}`, 'PATCH', payload)
     await this.prisma.activity.update({ where: { id: activityId }, data: { calendarSyncedAt: new Date() } })
@@ -745,17 +774,19 @@ export class CalendarSyncService {
   /** Delete uses the pre-delete snapshot because the row is already gone from the DB. */
   async pushDelete(activity: { externalCalendarId: string | null; externalCalendarAccountId: string | null }): Promise<void> {
     if (!activity.externalCalendarId || !activity.externalCalendarAccountId) return
-    const account = await this.prisma.calendarSyncAccount.findUnique({ where: { id: activity.externalCalendarAccountId } })
-    if (!account) return
+    const row = await this.prisma.calendarSyncAccount.findUnique({ where: { id: activity.externalCalendarAccountId } })
+    if (!row) return
+    const account = this.withPlainTokens(row)
     await this.callGraph<void>(account, `/me/events/${encodeURIComponent(activity.externalCalendarId)}`, 'DELETE')
   }
 
   private async pickAccount(ownerId: string) {
     // If a user has multiple Microsoft accounts, push to the most-recently-linked one.
-    return this.prisma.calendarSyncAccount.findFirst({
+    const row = await this.prisma.calendarSyncAccount.findFirst({
       where: { userId: ownerId, provider: 'microsoft' },
       orderBy: { createdAt: 'desc' },
     })
+    return row ? this.withPlainTokens(row) : null
   }
 
   private buildGraphEvent(a: {
