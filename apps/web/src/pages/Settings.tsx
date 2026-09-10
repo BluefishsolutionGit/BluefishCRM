@@ -295,8 +295,8 @@ function CalendarSyncCard({ onToast }: { onToast: (msg: string) => void }) {
       <div style={cardTitle}>Calendar sync — Microsoft 365</div>
       <div style={{ padding: '14px 20px 18px', fontSize: 13, color: '#3B3B52' }}>
         <div style={{ color: '#5C5C74', marginBottom: 12, lineHeight: 1.55 }}>
-          Connect your Outlook calendar so meetings appear as Activities in the CRM. Runs pull the next 60 days.
-          Two-way sync (CRM → Outlook) is not enabled in this build.
+          Connect your Outlook calendar so meetings appear as Activities in the CRM. Runs pull the next 60 days,
+          and changes you make to Activities in the CRM push back to Outlook automatically.
         </div>
 
         {configured === false && (
