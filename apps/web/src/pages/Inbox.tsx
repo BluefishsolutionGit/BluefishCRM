@@ -1,8 +1,19 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import type { CustomerDto, InboxChannel, InboxMessageDto, InboxThreadDto } from '@bluefish/shared'
+import type { CreateLeadDto, CustomerDto, InboxChannel, InboxMessageDto, InboxThreadDto } from '@bluefish/shared'
 import { api, ApiError } from '../lib/api'
 import { chStyle } from '../lib/styleUtils'
 import { useToast } from '../lib/ToastContext'
+import { useAuth } from '../lib/AuthContext'
+import LeadFormModal from '../components/LeadFormModal'
+
+const CHANNEL_LEAD_SOURCE: Record<InboxChannel, string> = {
+  'LINE OA': 'LINE OA',
+  'LINE': 'LINE OA',
+  'Messenger': 'Facebook Ads',
+  'WhatsApp': 'WhatsApp',
+  'Email': 'Email',
+  'Website': 'Website',
+}
 
 const QUICK_REPLIES = [
   'เดี๋ยวส่งใบเสนอราคาให้ภายในบ่ายนี้นะคะ',
@@ -42,8 +53,11 @@ export default function Inbox() {
   const [sending, setSending] = useState(false)
   const [customers, setCustomers] = useState<CustomerDto[]>([])
   const [linkOpen, setLinkOpen] = useState(false)
+  const [leadOpen, setLeadOpen] = useState(false)
+  const [leadDefaults, setLeadDefaults] = useState<Partial<CreateLeadDto> | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const toast = useToast()
+  const { user } = useAuth()
 
   const refreshThreads = () => api.inboxThreads().then((t) => {
     setThreads(t)
@@ -69,6 +83,7 @@ export default function Inbox() {
   }, [threadId])
 
   const activeThread = useMemo(() => threads.find((t) => t.id === threadId) ?? null, [threads, threadId])
+  const canReply = activeThread ? activeThread.channel !== 'Email' && activeThread.channel !== 'Website' : false
 
   const filtered = useMemo(() => {
     if (channelFilter === 'all') return threads
@@ -100,11 +115,11 @@ export default function Inbox() {
   }
 
   const assign = async () => {
-    if (!activeThread) return
+    if (!activeThread || !user) return
     try {
-      const updated = await api.assignInboxThread(activeThread.id, null)
+      const updated = await api.assignInboxThread(activeThread.id, user.id)
       setThreads((prev) => prev.map((t) => t.id === updated.id ? updated : t))
-      toast('Assigned to me — refresh queue')
+      toast('Assigned to you')
     } catch (e) {
       toast(e instanceof ApiError ? e.message : 'Assign failed')
     }
@@ -127,6 +142,26 @@ export default function Inbox() {
       try { setCustomers(await api.customers()) } catch { toast('Load customers failed'); return }
     }
     setLinkOpen(true)
+  }
+
+  const openCreateLead = async () => {
+    if (!activeThread) return
+    let list = customers
+    if (activeThread.customerId && list.length === 0) {
+      try { list = await api.customers(); setCustomers(list) } catch { list = [] }
+    }
+    const customer = activeThread.customerId ? list.find((c) => c.id === activeThread.customerId) : undefined
+    setLeadDefaults({
+      name: activeThread.name,
+      companyName: customer?.name ?? activeThread.customerName ?? activeThread.companyName ?? activeThread.name,
+      phone: customer?.phone ?? '',
+      source: CHANNEL_LEAD_SOURCE[activeThread.channel] ?? 'Website',
+      ownerId: activeThread.ownerId ?? user?.id ?? undefined,
+      notes: customer
+        ? `Created from Inbox (${activeThread.channel}) — linked customer: ${customer.name}`
+        : `Created from Inbox (${activeThread.channel}): ${activeThread.name}`,
+    })
+    setLeadOpen(true)
   }
 
   return (
@@ -186,7 +221,9 @@ export default function Inbox() {
                 <div style={{ fontSize: 13.5, fontWeight: 700 }}>{activeThread.name}</div>
                 <div style={{ fontSize: 11, color: '#5C5C74' }}>{activeThread.channel} · {activeThread.customerName ?? activeThread.companyName ?? 'Unlinked'}</div>
               </div>
-              <div onClick={assign} style={outlineSmall}>Take</div>
+              {(!activeThread.ownerId || activeThread.ownerId !== user?.id) && (
+                <div onClick={assign} style={outlineSmall}>Take</div>
+              )}
               <div onClick={openLink} style={outlineSmall}>{activeThread.customerId ? 'Re-link' : 'Link customer'}</div>
             </div>
             <div ref={scrollRef} style={{ flex: 1, overflow: 'auto', padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -213,29 +250,37 @@ export default function Inbox() {
                 )
               })}
             </div>
-            <div style={{ display: 'flex', gap: 8, padding: '0 22px 10px', flexWrap: 'wrap', alignItems: 'center' }}>
-              <svg viewBox="0 0 24 24" width="13" height="13">
-                <path d="M12 3.5l1.9 5.4 5.4 1.9-5.4 1.9L12 18.1l-1.9-5.4-5.4-1.9 5.4-1.9z" fill="#6C55E0" />
-              </svg>
-              {QUICK_REPLIES.map((q) => (
-                <div key={q} onClick={() => setComposer(q)} style={{ background: '#F4F1FD', border: '1px solid #DCD4F6', color: '#4A3AB8', borderRadius: 16, fontSize: 12, fontWeight: 600, padding: '5px 12px', cursor: 'pointer' }}>{q}</div>
-              ))}
-            </div>
-            <div style={{ display: 'flex', gap: 10, padding: '0 22px 18px' }}>
-              <input
-                value={composer}
-                onChange={(e) => setComposer(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) send() }}
-                placeholder="Reply to customer…"
-                style={{ flex: 1, border: '1px solid #E5E7F0', borderRadius: 11, padding: '11px 14px', fontSize: 13, background: '#fff', outline: 'none' }}
-              />
-              <div
-                onClick={send}
-                style={{ background: sending || !composer.trim() ? '#B7CFF3' : '#2A6FDB', color: '#fff', borderRadius: 11, padding: '11px 20px', fontSize: 13, fontWeight: 700, cursor: sending ? 'default' : 'pointer' }}
-              >
-                {sending ? '…' : 'Send'}
+            {canReply ? (
+              <>
+                <div style={{ display: 'flex', gap: 8, padding: '0 22px 10px', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <svg viewBox="0 0 24 24" width="13" height="13">
+                    <path d="M12 3.5l1.9 5.4 5.4 1.9-5.4 1.9L12 18.1l-1.9-5.4-5.4-1.9 5.4-1.9z" fill="#6C55E0" />
+                  </svg>
+                  {QUICK_REPLIES.map((q) => (
+                    <div key={q} onClick={() => setComposer(q)} style={{ background: '#F4F1FD', border: '1px solid #DCD4F6', color: '#4A3AB8', borderRadius: 16, fontSize: 12, fontWeight: 600, padding: '5px 12px', cursor: 'pointer' }}>{q}</div>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', gap: 10, padding: '0 22px 18px' }}>
+                  <input
+                    value={composer}
+                    onChange={(e) => setComposer(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) send() }}
+                    placeholder="Reply to customer…"
+                    style={{ flex: 1, border: '1px solid #E5E7F0', borderRadius: 11, padding: '11px 14px', fontSize: 13, background: '#fff', outline: 'none' }}
+                  />
+                  <div
+                    onClick={send}
+                    style={{ background: sending || !composer.trim() ? '#B7CFF3' : '#2A6FDB', color: '#fff', borderRadius: 11, padding: '11px 20px', fontSize: 13, fontWeight: 700, cursor: sending ? 'default' : 'pointer' }}
+                  >
+                    {sending ? '…' : 'Send'}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div style={{ margin: '0 22px 18px', padding: '10px 14px', background: '#F2F3F9', color: '#8888A0', fontSize: 12, borderRadius: 10, textAlign: 'center' }}>
+                {activeThread.channel} is inbound-only — replying from Inbox isn't supported for this channel.
               </div>
-            </div>
+            )}
           </>
         ) : (
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8888A0' }}>
@@ -268,7 +313,7 @@ export default function Inbox() {
             <MetaRow label="Last msg" value={timeShort(activeThread.lastMessageAt)} />
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <div onClick={() => toast('Feature TBD — convert thread to lead')} style={{ flex: 1, border: '1px solid #E5E7F0', borderRadius: 9, fontSize: 12, fontWeight: 700, padding: '8px 0', textAlign: 'center', cursor: 'pointer' }}>Create lead</div>
+            <div onClick={openCreateLead} style={{ flex: 1, border: '1px solid #E5E7F0', borderRadius: 9, fontSize: 12, fontWeight: 700, padding: '8px 0', textAlign: 'center', cursor: 'pointer' }}>Create lead</div>
             <div onClick={() => toast('Feature TBD — new quotation')} style={{ flex: 1, background: '#2A6FDB', color: '#fff', borderRadius: 9, fontSize: 12, fontWeight: 700, padding: '8px 0', textAlign: 'center', cursor: 'pointer' }}>New quotation</div>
           </div>
         </div>
@@ -281,6 +326,14 @@ export default function Inbox() {
           onPick={link}
         />
       )}
+
+      <LeadFormModal
+        open={leadOpen}
+        initial={null}
+        createDefaults={leadDefaults}
+        onClose={() => setLeadOpen(false)}
+        onSaved={() => { toast('Lead created'); setLeadOpen(false) }}
+      />
     </div>
   )
 }

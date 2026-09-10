@@ -5,6 +5,7 @@ const SOURCE_SCORE: Record<string, number> = {
   'Facebook Ads': 15,
   'Website': 10,
   'Email': 8,
+  'WhatsApp': 12,
 }
 
 export function scoreLead(input: {
