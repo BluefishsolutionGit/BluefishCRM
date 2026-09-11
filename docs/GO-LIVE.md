@@ -10,7 +10,7 @@ Every item below is a hard gate. Anything unchecked blocks launch. Owner in pare
 - [ ] Domain DNS pre-staged; TTL lowered to 60s (Ops)
 - [ ] TLS certificate issued and installed (Ops)
 - [ ] `NODE_ENV=production` set in the deployment unit (Ops)
-- [ ] `CORS_ORIGINS`, JWT secrets, refresh secrets rotated from dev (Ops)
+- [ ] `CORS_ORIGINS`, `WEB_BASE_URL`, JWT secrets, refresh secrets rotated from dev — `WEB_BASE_URL` missing/localhost is the #1 cause of OAuth/SSO/password-reset links redirecting to `localhost:5173` in prod (Ops)
 - [ ] Anthropic, LINE, Meta, VAPID secrets set (Ops + Integrations)
 - [ ] Entra app registered; `MICROSOFT_CLIENT_ID/SECRET/TENANT_ID` + `MICROSOFT_CALENDAR_REDIRECT_URI` set; admin consent granted for `Calendars.ReadWrite offline_access User.Read` (Ops + Integrations)
 - [ ] (Optional) `MICROSOFT_WEBHOOK_URL` set to a public HTTPS URL on the prod host — subscription auto-creation on user connect verified in staging (Ops)

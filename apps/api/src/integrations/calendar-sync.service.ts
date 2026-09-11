@@ -78,7 +78,7 @@ export class CalendarSyncService {
       response_mode: 'query',
       scope: CALENDAR_SCOPES,
       state,
-      prompt: 'consent',
+      prompt: 'select_account',
     })
     return `https://login.microsoftonline.com/${tenant}/oauth2/v2.0/authorize?${params.toString()}`
   }

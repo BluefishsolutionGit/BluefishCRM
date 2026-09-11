@@ -2,8 +2,10 @@ import { Module } from '@nestjs/common'
 import { CustomersService } from './customers.service'
 import { CustomersController } from './customers.controller'
 import { CustomersImportController } from './customers-import.controller'
+import { ContactsModule } from '../contacts/contacts.module'
 
 @Module({
+  imports: [ContactsModule],
   providers: [CustomersService],
   // ImportController registered first so /customers/import-template + /customers/import
   // don't collide with the /:id route on CustomersController.

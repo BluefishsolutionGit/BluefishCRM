@@ -50,6 +50,9 @@ export default function ImportCustomersModal({ open, onClose, onImported }: Prop
         <div style={{ padding: '18px 22px' }}>
           <div style={{ fontSize: 13, color: '#5C5C74', marginBottom: 14 }}>
             Upload an .xlsx file with these columns: Code, Name, Name (TH), Industry, Status, Owner Email, City, Address, Tax ID, Phone, Terms, Open Value.
+            <br />
+            The template also includes an optional <b>contacts</b> sheet — one row per contact, linked back by Customer Code, so a
+            customer can have any number of contacts (or none). Leave it blank to skip.
           </div>
           <button
             type="button"
@@ -69,6 +72,11 @@ export default function ImportCustomersModal({ open, onClose, onImported }: Prop
           {result && (
             <div style={{ background: '#F7F8FC', borderRadius: 10, padding: '12px 14px', fontSize: 13, marginBottom: 12 }}>
               <div><b>Imported:</b> {result.imported} · <b>Skipped:</b> {result.skipped}</div>
+              {(result.contactsImported ?? 0) > 0 || (result.contactsSkipped ?? 0) > 0 ? (
+                <div style={{ marginTop: 4, color: '#5C5C74' }}>
+                  <b>Contacts imported:</b> {result.contactsImported ?? 0} · <b>Contacts skipped:</b> {result.contactsSkipped ?? 0}
+                </div>
+              ) : null}
               {result.errors.length > 0 && (
                 <div style={{ marginTop: 10, maxHeight: 180, overflow: 'auto' }}>
                   <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>

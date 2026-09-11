@@ -237,6 +237,9 @@ export interface ImportResultDto {
   imported: number
   skipped: number
   errors: { row: number; field?: string; message: string }[]
+  /** Present when the workbook included an optional "contacts" sheet (customers import only). */
+  contactsImported?: number
+  contactsSkipped?: number
 }
 
 // ─────── Leads ───────
