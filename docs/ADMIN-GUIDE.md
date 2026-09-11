@@ -80,6 +80,11 @@ route into it.
    MICROSOFT_TENANT_ID=<tenant id or 'common'>
    MICROSOFT_CALENDAR_REDIRECT_URI=https://<prod>/api/integrations/calendar/microsoft/callback
    ```
+   Also make sure `WEB_BASE_URL=https://<prod>` is set — after Microsoft redirects back to
+   `MICROSOFT_CALENDAR_REDIRECT_URI`, the API's own callback handler 302s the browser to
+   `${WEB_BASE_URL}/settings?calendar=connected`. If `WEB_BASE_URL` is unset it falls back to
+   `http://localhost:5173`, which is why "connect" can end up redirecting to localhost even
+   when the Microsoft-facing redirect URI above is set correctly.
 5. Restart the API. `GET /api/integrations/calendar/microsoft/status` should return
    `{configured: true}`.
 

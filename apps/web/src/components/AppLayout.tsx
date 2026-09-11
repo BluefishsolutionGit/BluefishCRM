@@ -17,7 +17,7 @@ type NavEntry = NavDef | { divider: true } | { spacer: true }
 
 const NAV: NavEntry[] = [
   { path: '/dashboard', label: 'Home', icon: icons.home },
-  { path: '/inbox', label: 'Inbox', icon: icons.inbox, badge: 3 },
+  { path: '/inbox', label: 'Inbox', icon: icons.inbox },
   { path: '/leads', label: 'Leads', icon: icons.target },
   { path: '/pipeline', label: 'Pipeline', icon: icons.kanban },
   { path: '/activities', label: 'Activities', icon: icons.cal },
@@ -62,11 +62,14 @@ export default function AppLayout() {
   const navigate = useNavigate()
   const [notifOpen, setNotifOpen] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
+  const [inboxUnread, setInboxUnread] = useState(0)
 
   const refreshUnreadCount = () => api.notifications().then((rows) => setUnreadCount(rows.filter((r) => r.unread).length)).catch(() => {})
+  const refreshInboxUnread = () => api.inboxThreads().then((threads) => setInboxUnread(threads.reduce((s, t) => s + t.unread, 0))).catch(() => {})
   useEffect(() => {
     refreshUnreadCount()
-    const iv = setInterval(refreshUnreadCount, 60_000)
+    refreshInboxUnread()
+    const iv = setInterval(() => { refreshUnreadCount(); refreshInboxUnread() }, 60_000)
     return () => clearInterval(iv)
   }, [])
   const [userMenuOpen, setUserMenuOpen] = useState(false)
@@ -235,8 +238,8 @@ export default function AppLayout() {
                     <path d={n.icon} fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                   <span style={{ fontSize: 13 }}>{n.label}</span>
-                  {n.badge != null && (
-                    <span style={{ background: '#C0392B', color: '#fff', fontSize: 10, fontWeight: 700, borderRadius: 8, padding: '1px 6px', marginLeft: 2 }}>{n.badge}</span>
+                  {(n.path === '/inbox' ? inboxUnread : n.badge ?? 0) > 0 && (
+                    <span style={{ background: '#C0392B', color: '#fff', fontSize: 10, fontWeight: 700, borderRadius: 8, padding: '1px 6px', marginLeft: 2 }}>{n.path === '/inbox' ? (inboxUnread > 99 ? '99+' : inboxUnread) : n.badge}</span>
                   )}
                 </NavLink>
               )
