@@ -9,6 +9,8 @@ import { auditContext } from '../common/request-context'
 import type { Request } from 'express'
 import type { ActivityDto, ActivityStatus, ActivityType, AttendeeInput, RecurrencePatternDto } from '@bluefish/shared'
 
+interface JwtRequest extends Request { user?: { sub: string; email: string; role: string } }
+
 const TYPES: ActivityType[] = ['meeting', 'call', 'visit', 'demo', 'task', 'follow_up', 'email']
 const STATUSES: ActivityStatus[] = ['scheduled', 'completed', 'cancelled']
 
@@ -55,6 +57,7 @@ export class ActivitiesController {
   @Get()
   @RequirePermissions(PERMISSIONS.OPPORTUNITY_READ)
   list(
+    @Req() req: JwtRequest,
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('ownerId') ownerId?: string,
@@ -65,6 +68,8 @@ export class ActivitiesController {
       from: from ? new Date(from) : undefined,
       to: to ? new Date(to) : undefined,
       ownerId, customerId, opportunityId,
+      viewerId: req.user!.sub,
+      viewerRole: req.user!.role,
     })
   }
 

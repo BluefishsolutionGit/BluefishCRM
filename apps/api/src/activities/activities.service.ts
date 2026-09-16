@@ -39,10 +39,23 @@ export class ActivitiesService {
     private calendar: CalendarSyncService,
   ) {}
 
-  async list(filter: { from?: Date; to?: Date; ownerId?: string; customerId?: string; opportunityId?: string } = {}): Promise<ActivityDto[]> {
+  async list(filter: {
+    from?: Date; to?: Date; ownerId?: string; customerId?: string; opportunityId?: string
+    viewerId: string; viewerRole: string
+  }): Promise<ActivityDto[]> {
+    const visibleOwnerIds = await this.resolveVisibleOwnerIds(filter.viewerId, filter.viewerRole)
+    // A requested ownerId outside the viewer's scope yields an empty list rather
+    // than 403 — a stale dropdown selection shouldn't blow up the whole page.
+    let ownerWhere: Prisma.ActivityWhereInput['ownerId']
+    if (filter.ownerId) {
+      if (!visibleOwnerIds.includes(filter.ownerId)) return []
+      ownerWhere = filter.ownerId
+    } else {
+      ownerWhere = { in: visibleOwnerIds }
+    }
     const rows = await this.prisma.activity.findMany({
       where: {
-        ownerId: filter.ownerId,
+        ownerId: ownerWhere,
         customerId: filter.customerId,
         opportunityId: filter.opportunityId,
         scheduledAt: filter.from || filter.to ? { gte: filter.from, lte: filter.to } : undefined,
@@ -51,6 +64,21 @@ export class ActivitiesService {
       orderBy: { scheduledAt: 'asc' },
     })
     return this.toDtos(rows)
+  }
+
+  // admin + sales_manager see every sales_rep (plus themselves, since managers
+  // often own activities too); everyone else is scoped to their own owner id.
+  // Same rule covers Outlook-synced events because synced rows are written with
+  // ownerId = the calendar-account holder.
+  private async resolveVisibleOwnerIds(viewerId: string, viewerRole: string): Promise<string[]> {
+    if (viewerRole === 'admin' || viewerRole === 'sales_manager') {
+      const reps = await this.prisma.user.findMany({
+        where: { role: { name: 'sales_rep' } },
+        select: { id: true },
+      })
+      return Array.from(new Set([viewerId, ...reps.map((r) => r.id)]))
+    }
+    return [viewerId]
   }
 
   async findOne(id: string): Promise<ActivityDto> {

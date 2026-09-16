@@ -45,8 +45,11 @@ export default function Activities() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<ActivityDto | null>(null)
   const toast = useToast()
-  const { hasPermission } = useAuth()
+  const { hasPermission, user } = useAuth()
   const canWrite = hasPermission('opportunity:write')
+  // Only admin + sales_manager see other people's activities, so the owner-picker
+  // dropdown is meaningless (and misleading) for everyone else.
+  const canSeeAllOwners = user?.role === 'admin' || user?.role === 'sales_manager'
 
   useEffect(() => { api.users().then(setUsers).catch(() => {}) }, [])
 
@@ -140,15 +143,19 @@ export default function Activities() {
 
       {/* Filters row */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-        <div style={{ fontSize: 11.5, fontWeight: 700, color: '#8888A0', letterSpacing: '.06em', textTransform: 'uppercase' }}>Sales</div>
-        <select value={ownerFilter} onChange={(e) => setOwnerFilter(e.target.value)} style={selectSm}>
-          <option value="all">All owners ({items.length})</option>
-          {users.filter((u) => u.role === 'sales_rep' || u.role === 'sales_manager').map((u) => (
-            <option key={u.id} value={u.id}>{u.name} ({items.filter((a) => a.ownerId === u.id).length})</option>
-          ))}
-        </select>
+        {canSeeAllOwners && (
+          <>
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: '#8888A0', letterSpacing: '.06em', textTransform: 'uppercase' }}>Sales</div>
+            <select value={ownerFilter} onChange={(e) => setOwnerFilter(e.target.value)} style={selectSm}>
+              <option value="all">All owners ({items.length})</option>
+              {users.filter((u) => u.role === 'sales_rep' || u.role === 'sales_manager').map((u) => (
+                <option key={u.id} value={u.id}>{u.name} ({items.filter((a) => a.ownerId === u.id).length})</option>
+              ))}
+            </select>
 
-        <div style={{ width: 1, height: 22, background: '#E5E7F0', margin: '0 4px' }} />
+            <div style={{ width: 1, height: 22, background: '#E5E7F0', margin: '0 4px' }} />
+          </>
+        )}
 
         <div style={{ fontSize: 11.5, fontWeight: 700, color: '#8888A0', letterSpacing: '.06em', textTransform: 'uppercase' }}>Service</div>
         {(['all', ...SERVICE_LINES, 'unassigned'] as const).map((s) => {
