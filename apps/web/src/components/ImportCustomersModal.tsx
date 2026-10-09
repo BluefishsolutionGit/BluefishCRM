@@ -1,6 +1,7 @@
 import { useState, type CSSProperties, type ChangeEvent } from 'react'
 import type { ImportResultDto } from '@bluefish/shared'
 import { api, ApiError } from '../lib/api'
+import ImportResultSection from './ImportResultSection'
 
 interface Props { open: boolean; onClose: () => void; onImported: () => void }
 
@@ -34,7 +35,7 @@ export default function ImportCustomersModal({ open, onClose, onImported }: Prop
     try {
       const r = await api.importCustomers(file)
       setResult(r)
-      if (r.imported > 0) onImported()
+      if (r.imported > 0 || (r.contactsImported ?? 0) > 0) onImported()
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Import failed')
     } finally { setBusy(false) }
@@ -49,7 +50,7 @@ export default function ImportCustomersModal({ open, onClose, onImported }: Prop
         </div>
         <div style={{ padding: '18px 22px' }}>
           <div style={{ fontSize: 13, color: '#5C5C74', marginBottom: 14 }}>
-            Upload an .xlsx file with these columns: Code, Name, Name (TH), Industry, Status, Owner Email, City, Address, Tax ID, Phone, Terms, Open Value.
+            Upload an .xlsx file with these columns (<b>*</b> = required): Code *, Name *, Name (TH), Industry *, Status, Owner Email *, City *, Address *, Tax ID *, Phone *, Terms, Open Value.
             <br />
             The template also includes an optional <b>contacts</b> sheet — one row per contact, linked back by Customer Code, so a
             customer can have any number of contacts (or none). Leave it blank to skip.
@@ -69,38 +70,23 @@ export default function ImportCustomersModal({ open, onClose, onImported }: Prop
 
           {error && <div style={{ background: '#FDECEA', color: '#C0392B', border: '1px solid #F5B7B1', borderRadius: 10, padding: '10px 14px', fontSize: 13, marginBottom: 12 }}>{error}</div>}
 
-          {result && (
-            <div style={{ background: '#F7F8FC', borderRadius: 10, padding: '12px 14px', fontSize: 13, marginBottom: 12 }}>
-              <div><b>Imported:</b> {result.imported} · <b>Skipped:</b> {result.skipped}</div>
-              {(result.contactsImported ?? 0) > 0 || (result.contactsSkipped ?? 0) > 0 ? (
-                <div style={{ marginTop: 4, color: '#5C5C74' }}>
-                  <b>Contacts imported:</b> {result.contactsImported ?? 0} · <b>Contacts skipped:</b> {result.contactsSkipped ?? 0}
-                </div>
-              ) : null}
-              {result.errors.length > 0 && (
-                <div style={{ marginTop: 10, maxHeight: 180, overflow: 'auto' }}>
-                  <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
-                    <thead>
-                      <tr style={{ color: '#8888A0' }}>
-                        <th style={{ textAlign: 'left', padding: 4 }}>Row</th>
-                        <th style={{ textAlign: 'left', padding: 4 }}>Field</th>
-                        <th style={{ textAlign: 'left', padding: 4 }}>Message</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {result.errors.map((e, i) => (
-                        <tr key={i} style={{ borderTop: '1px solid #E5E7F0' }}>
-                          <td style={{ padding: 4 }}>{e.row}</td>
-                          <td style={{ padding: 4 }}>{e.field ?? '—'}</td>
-                          <td style={{ padding: 4, color: '#C0392B' }}>{e.message}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          )}
+          {result && (() => {
+            // The API tags contacts-sheet errors with a "[Contacts]" prefix; split on it so each
+            // sheet gets its own summary and error list.
+            const contactErrors = result.errors
+              .filter((e) => e.message.startsWith(CONTACTS_PREFIX))
+              .map((e) => ({ ...e, message: e.message.slice(CONTACTS_PREFIX.length).trim() }))
+            const customerErrors = result.errors.filter((e) => !e.message.startsWith(CONTACTS_PREFIX))
+            const hasContacts = (result.contactsImported ?? 0) > 0 || (result.contactsSkipped ?? 0) > 0 || contactErrors.length > 0
+            return (
+              <>
+                <ImportResultSection title="Customers" sheet="customers" imported={result.imported} skipped={result.skipped} errors={customerErrors} />
+                {hasContacts && (
+                  <ImportResultSection title="Contacts" sheet="contacts" imported={result.contactsImported ?? 0} skipped={result.contactsSkipped ?? 0} errors={contactErrors} />
+                )}
+              </>
+            )
+          })()}
         </div>
         <div style={{ padding: '14px 22px', borderTop: '1px solid #E5E7F0', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
           <button type="button" onClick={onClose} style={btnGhost}>Close</button>
@@ -112,6 +98,8 @@ export default function ImportCustomersModal({ open, onClose, onImported }: Prop
     </div>
   )
 }
+
+const CONTACTS_PREFIX = '[Contacts]'
 
 const backdrop: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(30,26,48,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 20 }
 const dialog: CSSProperties = { background: '#fff', width: '100%', maxWidth: 640, borderRadius: 14, boxShadow: '0 30px 80px -30px rgba(30,26,48,.4)' }

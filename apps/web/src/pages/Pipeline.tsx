@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSPropert
 import type { CreateOpportunityDto, CustomerDto, ForecastDto, ManagerHintPriority, OpportunityDto, OpportunityStage, UserDto } from '@bluefish/shared'
 import { SERVICE_LINES } from '@bluefish/shared'
 import { api, ApiError } from '../lib/api'
+import ContactPicker from '../components/ContactPicker'
 import { av } from '../lib/styleUtils'
 import { useToast } from '../lib/ToastContext'
 import { useAuth } from '../lib/AuthContext'
@@ -405,6 +406,11 @@ export default function Pipeline() {
                       )}
                     </div>
                     <div style={{ fontSize: 11.5, color: '#5C5C74', marginTop: 3 }}>{d.customerName}</div>
+                    {d.contactName && (
+                      <div style={{ fontSize: 11, color: '#8888A0', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={[d.contactName, d.contactPhone, d.contactEmail].filter(Boolean).join(' · ')}>
+                        👤 {d.contactName}{d.contactPhone ? ` · ${d.contactPhone}` : ''}
+                      </div>
+                    )}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 9 }}>
                       <div style={{ fontFamily: "'Space Grotesk'", fontSize: 14.5, fontWeight: 700 }}>{fmt(d.value)}</div>
                       <span style={probStyle(d.probability)}>{d.probability}%</span>
@@ -505,6 +511,11 @@ export default function Pipeline() {
                         )}
                       </div>
                       <div style={{ fontSize: 11.5, color: '#5C5C74', marginTop: 3 }}>{d.customerName}</div>
+                      {d.contactName && (
+                        <div style={{ fontSize: 11, color: '#8888A0', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={[d.contactName, d.contactPhone, d.contactEmail].filter(Boolean).join(' · ')}>
+                          👤 {d.contactName}{d.contactPhone ? ` · ${d.contactPhone}` : ''}
+                        </div>
+                      )}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 9 }}>
                         <div style={{ fontFamily: "'Space Grotesk'", fontSize: 14.5, fontWeight: 700 }}>{fmt(d.value)}</div>
                         <span style={probStyle(d.probability)}>{d.probability}%</span>
@@ -553,7 +564,12 @@ export default function Pipeline() {
                   ...(o.stage === 'Lost' ? LOST_ROW_STYLE : null),
                 }}
               >
-                <div style={{ fontSize: 13, fontWeight: 600, color: o.stage === 'Lost' ? '#8888A0' : '#2A6FDB' }}>{o.title} — {o.customerName}</div>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: o.stage === 'Lost' ? '#8888A0' : '#2A6FDB' }}>{o.title} — {o.customerName}</div>
+                  {o.contactName && (
+                    <div style={{ fontSize: 11, color: '#8888A0', marginTop: 2 }}>👤 {o.contactName}{o.contactPhone ? ` · ${o.contactPhone}` : ''}{o.contactEmail ? ` · ${o.contactEmail}` : ''}</div>
+                  )}
+                </div>
                 <div>
                   {o.serviceOrProduct ? (
                     <span style={{ background: hexToRgba(SERVICE_COLOR[o.serviceOrProduct] ?? '#5C5C74', 0.12), color: SERVICE_COLOR[o.serviceOrProduct] ?? '#5C5C74', border: `1px solid ${hexToRgba(SERVICE_COLOR[o.serviceOrProduct] ?? '#5C5C74', 0.35)}`, borderRadius: 6, fontSize: 10.5, fontWeight: 700, padding: '2px 7px' }}>
@@ -1261,6 +1277,7 @@ function CreateDealModal({
   const [form, setForm] = useState<CreateOpportunityDto>({
     title: '',
     customerId: '',
+    contactId: null,
     ownerId: defaultOwnerId ?? '',
     stage: firstStage as OpportunityStage,
     value: 0,
@@ -1325,7 +1342,7 @@ function CreateDealModal({
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <FormField label="Customer">
-              <select required value={form.customerId} onChange={(e) => set('customerId', e.target.value)} style={inputStyle} disabled={loadingCust}>
+              <select required value={form.customerId} onChange={(e) => setForm((f) => ({ ...f, customerId: e.target.value, contactId: null }))} style={inputStyle} disabled={loadingCust}>
                 <option value="">{loadingCust ? 'Loading…' : '— Select customer —'}</option>
                 {customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
@@ -1337,6 +1354,17 @@ function CreateDealModal({
               </select>
             </FormField>
           </div>
+
+          <FormField label="Contact person" hint="Who to reach out to at this customer">
+            <ContactPicker
+              key={form.customerId}
+              customerId={form.customerId}
+              value={form.contactId}
+              onChange={(id) => set('contactId', id)}
+              autoSelectPrimary
+              style={inputStyle}
+            />
+          </FormField>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <FormField label="Stage">

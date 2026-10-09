@@ -211,12 +211,15 @@ function ContactsPanel({ customerId, contacts, onReload, canWrite, onToast }: { 
             </div>
             {open && (
               <div style={{ marginTop: 10, marginLeft: 52, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px 24px', fontSize: 12.5, background: '#FAFBFD', border: '1px solid #E5E7F0', borderRadius: 8, padding: '10px 14px' }}>
-                <MetaRow label="First name" value={p.firstName} />
-                <MetaRow label="Last name" value={p.lastName} />
+                <MetaRow label="First name" value={splitContactName(p).first} />
+                <MetaRow label="Last name" value={splitContactName(p).last} />
                 <MetaRow label="Nickname" value={p.nickname} />
-                <MetaRow label="Position" value={p.position} />
+                <MetaRow label="Position" value={p.position || p.role} />
                 <MetaRow label="Department" value={p.department} />
                 <MetaRow label="LINE ID" value={p.lineId} />
+                <MetaRow label="Email" value={p.email} />
+                <MetaRow label="Mobile" value={p.phone} />
+                <MetaRow label="Telephone" value={p.telephone} />
                 {p.notes && <div style={{ gridColumn: '1 / -1' }}><MetaRow label="Notes" value={p.notes} /></div>}
               </div>
             )}
@@ -230,6 +233,16 @@ function ContactsPanel({ customerId, contacts, onReload, canWrite, onToast }: { 
   )
 }
 
+// Legacy / imported contacts have only `name` — split it so the details panel and the
+// edit form aren't empty.
+function splitContactName(c: Pick<ContactDto, 'name' | 'firstName' | 'lastName'>): { first: string; last: string } {
+  if (c.firstName || c.lastName) return { first: c.firstName ?? '', last: c.lastName ?? '' }
+  const raw = (c.name ?? '').replace(/^คุณ\s*/, '').trim()
+  if (!raw) return { first: '', last: '' }
+  const parts = raw.split(/\s+/)
+  return { first: parts[0] ?? '', last: parts.slice(1).join(' ') }
+}
+
 function MetaRow({ label, value }: { label: string; value: string | null | undefined }) {
   return (
     <div>
@@ -240,15 +253,7 @@ function MetaRow({ label, value }: { label: string; value: string | null | undef
 }
 
 function ContactForm({ initial, customerId, onCancel, onSaved }: { initial?: ContactDto; customerId: string; onCancel: () => void; onSaved: () => void }) {
-  // Legacy contacts have only `name` — split it so the form isn't empty on first edit.
-  const legacySplit = (() => {
-    if (!initial) return { first: '', last: '' }
-    if (initial.firstName || initial.lastName) return { first: initial.firstName ?? '', last: initial.lastName ?? '' }
-    const raw = (initial.name ?? '').replace(/^คุณ\s*/, '').trim()
-    if (!raw) return { first: '', last: '' }
-    const parts = raw.split(/\s+/)
-    return { first: parts[0] ?? '', last: parts.slice(1).join(' ') }
-  })()
+  const legacySplit = initial ? splitContactName(initial) : { first: '', last: '' }
   const [firstName, setFirstName] = useState(legacySplit.first)
   const [lastName, setLastName] = useState(legacySplit.last)
   const [nickname, setNickname] = useState(initial?.nickname ?? '')

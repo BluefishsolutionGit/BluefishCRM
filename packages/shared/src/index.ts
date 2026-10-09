@@ -33,6 +33,8 @@ export interface UserDto {
   timezone?: string
   /** List of permission keys the user's role grants (e.g. "customer:read"). */
   permissions?: string[]
+  /** Whether TOTP MFA is active. Only returned for the signed-in user (/users/me). */
+  mfaEnabled?: boolean
 }
 
 export type UserRole =
@@ -357,6 +359,12 @@ export interface OpportunityDto {
   title: string
   customerId: string
   customerName: string
+  /** The customer contact to reach out to for this deal. Null when not set. */
+  contactId: string | null
+  contactName: string | null
+  contactEmail: string | null
+  contactPhone: string | null
+  contactPosition: string | null
   ownerId: string
   ownerName: string
   stage: OpportunityStage
@@ -384,6 +392,8 @@ export interface OpportunityDto {
 export interface CreateOpportunityDto {
   title: string
   customerId: string
+  /** Must belong to `customerId`. Explicit null clears it on update. */
+  contactId?: string | null
   ownerId: string
   stage?: OpportunityStage
   value?: number

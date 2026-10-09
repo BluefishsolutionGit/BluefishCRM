@@ -849,7 +849,7 @@ function MfaCard({ onToast }: { onToast: (msg: string) => void }) {
   const [err, setErr] = useState<string | null>(null)
 
   useEffect(() => {
-    api.me().then((u) => setStatus((u as unknown as { mfaEnabled?: boolean }).mfaEnabled ? 'enabled' : 'disabled')).catch(() => setStatus('disabled'))
+    api.me().then((u) => setStatus(u.mfaEnabled ? 'enabled' : 'disabled')).catch(() => setStatus('disabled'))
   }, [user])
 
   const startSetup = async () => {

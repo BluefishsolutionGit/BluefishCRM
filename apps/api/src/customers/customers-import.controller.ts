@@ -9,6 +9,7 @@ import { CustomersService } from './customers.service'
 import { ContactsService } from '../contacts/contacts.service'
 import { PrismaService } from '../prisma/prisma.service'
 import { auditContext } from '../common/request-context'
+import { cellText, normalizeHeader, templateHeader } from '../common/excel-import'
 import type { Request, Response } from 'express'
 import type { ImportResultDto } from '@bluefish/shared'
 
@@ -53,7 +54,7 @@ export class CustomersImportController {
   async downloadTemplate(@Res() res: Response): Promise<void> {
     const wb = new ExcelJS.Workbook()
     const sheet = wb.addWorksheet('customers')
-    sheet.columns = COLUMNS.map((c) => ({ header: c.header, key: c.key, width: 24 }))
+    sheet.columns = COLUMNS.map((c) => ({ header: templateHeader(c), key: c.key, width: 24 }))
     sheet.getRow(1).font = { bold: true }
     sheet.addRow({
       code: 'C-9001', name: 'Example Co., Ltd.', nameTh: 'บจก. ตัวอย่าง',
@@ -68,7 +69,7 @@ export class CustomersImportController {
     // no contacts. A customer can have more than one contact, so each contact is its own
     // row matched back to a customer by Code, rather than a fixed number of columns.
     const contactsSheet = wb.addWorksheet('contacts')
-    contactsSheet.columns = CONTACT_COLUMNS.map((c) => ({ header: c.header, key: c.key, width: 22 }))
+    contactsSheet.columns = CONTACT_COLUMNS.map((c) => ({ header: templateHeader(c), key: c.key, width: 22 }))
     contactsSheet.getRow(1).font = { bold: true }
     contactsSheet.addRow({
       customerCode: 'C-9001', name: 'Somchai Jaidee',
@@ -107,8 +108,8 @@ export class CustomersImportController {
     const headerRow = sheet.getRow(1)
     const headerMap = new Map<string, number>()
     headerRow.eachCell((cell, colNumber) => {
-      const text = String(cell.value ?? '').trim()
-      const col = COLUMNS.find((c) => c.header.toLowerCase() === text.toLowerCase())
+      const text = normalizeHeader(cellText(cell.value))
+      const col = COLUMNS.find((c) => c.header.toLowerCase() === text)
       if (col) headerMap.set(col.key, colNumber)
     })
 
@@ -136,7 +137,7 @@ export class CustomersImportController {
         const col = headerMap.get(key)
         if (!col) return ''
         const cell = row.getCell(col)
-        return String(cell.value ?? '').trim()
+        return cellText(cell.value)
       }
       const numValue = (key: string): number | undefined => {
         const v = value(key)
@@ -213,8 +214,8 @@ export class CustomersImportController {
     const headerRow = contactsSheet.getRow(1)
     const headerMap = new Map<string, number>()
     headerRow.eachCell((cell, colNumber) => {
-      const text = String(cell.value ?? '').trim()
-      const col = CONTACT_COLUMNS.find((c) => c.header.toLowerCase() === text.toLowerCase())
+      const text = normalizeHeader(cellText(cell.value))
+      const col = CONTACT_COLUMNS.find((c) => c.header.toLowerCase() === text)
       if (col) headerMap.set(col.key, colNumber)
     })
     const missingHeaders = CONTACT_COLUMNS.filter((c) => c.required && !headerMap.has(c.key))
@@ -225,11 +226,16 @@ export class CustomersImportController {
     const customerIdCache = new Map<string, string | null>(codeToCustomerId)
     const getCustomerId = async (code: string): Promise<string | null> => {
       if (customerIdCache.has(code)) return customerIdCache.get(code)!
-      const c = await this.prisma.customer.findUnique({ where: { code } })
+      const c = await this.prisma.customer.findFirst({ where: { code, deletedAt: null } })
       const id = c?.id ?? null
       customerIdCache.set(code, id)
       return id
     }
+
+    // Emails already on file (any customer) plus ones added earlier in this sheet — a
+    // re-import of the same file then skips existing contacts instead of duplicating them.
+    const existing = await this.prisma.contact.findMany({ where: { customer: { deletedAt: null } }, select: { email: true } })
+    const seenEmails = new Set(existing.map((c) => c.email.trim().toLowerCase()))
 
     for (let r = 2; r <= contactsSheet.rowCount; r++) {
       const row = contactsSheet.getRow(r)
@@ -237,7 +243,7 @@ export class CustomersImportController {
         const col = headerMap.get(key)
         if (!col) return ''
         const cell = row.getCell(col)
-        return String(cell.value ?? '').trim()
+        return cellText(cell.value)
       }
 
       const code = value('customerCode')
@@ -255,6 +261,12 @@ export class CustomersImportController {
         contactsSkipped++; continue
       }
 
+      const emailKey = email.toLowerCase()
+      if (seenEmails.has(emailKey)) {
+        errors.push({ row: r, field: 'email', message: `[Contacts] Email "${email}" already exists — skipped` })
+        contactsSkipped++; continue
+      }
+
       const customerId = await getCustomerId(code)
       if (!customerId) {
         errors.push({ row: r, field: 'customerCode', message: `[Contacts] Unknown customer code "${code}"` })
@@ -265,8 +277,13 @@ export class CustomersImportController {
       const isPrimary = ['yes', 'true', '1'].includes(primaryRaw)
 
       try {
+        // Store first/last too (not just the display name) so the contact's details panel
+        // and edit form are populated — mirrors the web form's split of a legacy name.
+        const nameParts = name.replace(/^คุณ\s*/, '').trim().split(/\s+/)
         await this.contacts.create(customerId, {
           name,
+          firstName: nameParts[0] || undefined,
+          lastName: nameParts.slice(1).join(' ') || undefined,
           email, phone,
           position: value('position') || undefined,
           department: value('department') || undefined,
@@ -274,6 +291,7 @@ export class CustomersImportController {
           lineId: value('lineId') || undefined,
           isPrimary,
         }, ctx)
+        seenEmails.add(emailKey)
         contactsImported++
       } catch (e) {
         errors.push({ row: r, message: `[Contacts] ${e instanceof Error ? e.message : 'Create failed'}` })
