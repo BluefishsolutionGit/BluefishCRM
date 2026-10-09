@@ -6,6 +6,7 @@ import { useToast } from '../lib/ToastContext'
 import { useAuth } from '../lib/AuthContext'
 import VoiceInputButton from './VoiceInputButton'
 import DocumentViewer, { type ViewableVersion } from './DocumentViewer'
+import ContactPicker from './ContactPicker'
 
 interface Props {
   opp: OpportunityDto | null
@@ -46,6 +47,7 @@ export default function OpportunityDetailModal({ opp, onClose, onChanged, onDele
     setForm({
       title: opp.title,
       customerId: opp.customerId,
+      contactId: opp.contactId,
       ownerId: opp.ownerId,
       stage: opp.stage,
       value: opp.value,
@@ -138,6 +140,10 @@ export default function OpportunityDetailModal({ opp, onClose, onChanged, onDele
           </div>
           <div style={{ display: 'flex', gap: 10, marginTop: 6, fontSize: 12, color: '#5C5C74', alignItems: 'center' }}>
             <span><b>{opp.customerName}</b></span>
+            {opp.contactName && (<>
+              <span>·</span>
+              <span title={[opp.contactPhone, opp.contactEmail].filter(Boolean).join(' · ')}>👤 {opp.contactName}</span>
+            </>)}
             <span>·</span>
             <span>Owner {opp.ownerName}</span>
             <span>·</span>
@@ -163,7 +169,7 @@ export default function OpportunityDetailModal({ opp, onClose, onChanged, onDele
             <form onSubmit={saveAndClose} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 14px' }}>
                 <Field label="Customer" hint="Reassign this deal to a different company">
-                  <select disabled={!canWrite} value={form.customerId ?? opp.customerId} onChange={(e) => set('customerId', e.target.value)} style={inp}>
+                  <select disabled={!canWrite} value={form.customerId ?? opp.customerId} onChange={(e) => setForm((f) => ({ ...f, customerId: e.target.value, contactId: null }))} style={inp}>
                     {/* Sorted alphabetically. Show code inline so operators can spot duplicates. */}
                     {[...customers].sort((a, b) => a.name.localeCompare(b.name)).map((c) => (
                       <option key={c.id} value={c.id}>{c.name}{c.code ? ` (${c.code})` : ''}</option>
@@ -184,6 +190,18 @@ export default function OpportunityDetailModal({ opp, onClose, onChanged, onDele
                     )}
                   </select>
                 </Field>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <Field label="Contact person" hint="Who to reach out to at this customer — from the company's contact list">
+                    <ContactPicker
+                      key={form.customerId ?? opp.customerId}
+                      customerId={form.customerId ?? opp.customerId}
+                      value={form.contactId}
+                      onChange={(id) => set('contactId', id)}
+                      disabled={!canWrite}
+                      style={inp}
+                    />
+                  </Field>
+                </div>
                 <Field label="Stage">
                   <select disabled={!canWrite} value={form.stage ?? opp.stage} onChange={(e) => set('stage', e.target.value as OpportunityStage)} style={inp}>
                     {STAGES.map((s) => <option key={s} value={s}>{s}</option>)}

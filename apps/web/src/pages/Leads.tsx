@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import type { LeadDto, UserDto } from '@bluefish/shared'
+import type { ImportResultDto, LeadDto, UserDto } from '@bluefish/shared'
 import { SERVICE_LINES } from '@bluefish/shared'
 import { api, ApiError } from '../lib/api'
 import { pill, srcStyle } from '../lib/styleUtils'
 import { useToast } from '../lib/ToastContext'
 import { useAuth } from '../lib/AuthContext'
 import LeadFormModal from '../components/LeadFormModal'
+import ImportResultSection from '../components/ImportResultSection'
 
 export default function Leads() {
   const [leads, setLeads] = useState<LeadDto[]>([])
@@ -107,6 +108,7 @@ export default function Leads() {
 
   const fileRef = useRef<HTMLInputElement | null>(null)
   const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState<ImportResultDto | null>(null)
   const [scoreInfoOpen, setScoreInfoOpen] = useState(false)
   const [templateBusy, setTemplateBusy] = useState(false)
   const [exportBusy, setExportBusy] = useState(false)
@@ -132,8 +134,8 @@ export default function Leads() {
     setImporting(true)
     try {
       const res = await api.importLeads(file)
-      toast(`Imported ${res.imported} · skipped ${res.skipped}${res.errors.length ? ` · ${res.errors.length} error(s)` : ''}`)
-      await reload()
+      setImportResult(res)
+      if (res.imported > 0) await reload()
     } catch (err) {
       toast(err instanceof ApiError ? err.message : 'Import failed')
     } finally { setImporting(false) }
@@ -172,6 +174,23 @@ export default function Leads() {
       </div>
 
       {error && <div style={{ background: '#FDECEA', color: '#C0392B', border: '1px solid #F5B7B1', borderRadius: 10, padding: '10px 14px', fontSize: 13, marginBottom: 14 }}>{error}</div>}
+
+      {importResult && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(30,26,48,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 20 }} onClick={() => setImportResult(null)}>
+          <div style={{ background: '#fff', width: '100%', maxWidth: 640, borderRadius: 14, boxShadow: '0 30px 80px -30px rgba(30,26,48,.4)' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ padding: '16px 22px', borderBottom: '1px solid #E5E7F0', display: 'flex', alignItems: 'center' }}>
+              <div style={{ fontFamily: "'Space Grotesk'", fontSize: 17, fontWeight: 700, flex: 1 }}>Lead import result</div>
+              <div onClick={() => setImportResult(null)} style={{ cursor: 'pointer', fontSize: 20, color: '#8888A0', padding: 4 }}>×</div>
+            </div>
+            <div style={{ padding: '16px 22px 6px' }}>
+              <ImportResultSection title="Leads" imported={importResult.imported} skipped={importResult.skipped} errors={importResult.errors} />
+            </div>
+            <div style={{ padding: '0 22px 16px', display: 'flex', justifyContent: 'flex-end' }}>
+              <div onClick={() => setImportResult(null)} style={ghostBtn}>Close</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div style={{ background: '#fff', border: '1px solid #E5E7F0', borderRadius: 14, overflow: 'hidden' }}>
         <div style={{ ...gridCols, padding: '11px 18px', borderBottom: '1px solid #E5E7F0', fontSize: 10.5, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: '#8888A0' }}>

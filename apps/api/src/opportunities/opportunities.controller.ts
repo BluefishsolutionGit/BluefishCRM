@@ -14,6 +14,7 @@ interface JwtRequest extends Request { user?: { sub: string; email: string; role
 class CreateBody {
   @IsString() @MinLength(1) title!: string
   @IsString() customerId!: string
+  @IsOptional() @IsString() contactId?: string | null
   @IsString() ownerId!: string
   @IsOptional() @IsString() @MinLength(1) stage?: OpportunityStage
   @IsOptional() @IsInt() @Min(0) value?: number
@@ -30,6 +31,7 @@ class CreateBody {
 class UpdateBody {
   @IsOptional() @IsString() title?: string
   @IsOptional() @IsString() customerId?: string
+  @IsOptional() @IsString() contactId?: string | null
   @IsOptional() @IsString() ownerId?: string
   @IsOptional() @IsString() @MinLength(1) stage?: OpportunityStage
   @IsOptional() @IsInt() @Min(0) value?: number

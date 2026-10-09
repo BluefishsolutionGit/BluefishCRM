@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common'
+import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common'
 import * as OTPAuth from 'otpauth'
 import { PrismaService } from '../prisma/prisma.service'
 
@@ -11,6 +11,9 @@ export class MfaService {
   async initSetup(userId: string): Promise<{ secret: string; otpauth: string }> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } })
     if (!user) throw new UnauthorizedException('User not found')
+    // Re-running setup replaces the secret and turns MFA off until re-verified — never do
+    // that silently on an account that already has MFA; it must be disabled (with a code) first.
+    if (user.mfaEnabled) throw new BadRequestException('MFA is already enabled — disable it first to set up a new authenticator')
 
     const secret = new OTPAuth.Secret({ size: 20 }).base32
     await this.prisma.user.update({ where: { id: userId }, data: { mfaSecret: secret, mfaEnabled: false } })

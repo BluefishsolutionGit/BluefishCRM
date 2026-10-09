@@ -59,7 +59,7 @@ export class UsersController {
     if (!id) throw new NotFoundException('User not found')
     const u = await this.users.findById(id)
     if (!u) throw new NotFoundException('User not found')
-    return { ...this.users.toDto(u), permissions: permissionsFor(u.role.name) }
+    return { ...this.users.toDto(u), permissions: permissionsFor(u.role.name), mfaEnabled: u.mfaEnabled }
   }
 
   @UseGuards(JwtAuthGuard)

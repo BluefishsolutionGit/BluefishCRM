@@ -361,7 +361,7 @@ function DealCard({ o, onOpen, big }: { o: OpportunityDto; onOpen: () => void; b
             )}
             <div style={{ fontSize: big ? 13.5 : 13, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.title}</div>
           </div>
-          <div style={{ fontSize: 11, color: '#8888A0', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.customerName ?? '—'}</div>
+          <div style={{ fontSize: 11, color: '#8888A0', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.customerName ?? '—'}{o.contactName ? ` · 👤 ${o.contactName}` : ''}</div>
         </div>
         <div style={{ fontFamily: "'Space Grotesk'", fontSize: big ? 14 : 12.5, fontWeight: 800, color: stageColor, flex: 'none' }}>{fmt(o.value)}</div>
       </div>

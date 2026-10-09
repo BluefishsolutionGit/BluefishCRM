@@ -21,6 +21,7 @@ export class OpportunitiesService {
    *  who last wrote the hint (raw user row; toDto extracts just the name). */
   private readonly baseInclude = {
     customer: true,
+    contact: true,
     owner: true,
     lines: { include: { product: true } },
   } as const
@@ -78,13 +79,21 @@ export class OpportunitiesService {
     return this.toDto({ ...row, managerHintByName })
   }
 
+  /** A deal's contact must be one of its customer's contacts. */
+  private async assertContactOfCustomer(contactId: string, customerId: string): Promise<void> {
+    const c = await this.prisma.contact.findUnique({ where: { id: contactId }, select: { customerId: true } })
+    if (!c || c.customerId !== customerId) throw new BadRequestException('Contact does not belong to this customer')
+  }
+
   async create(input: CreateOpportunityDto, ctx: AuditRequestContext): Promise<OpportunityDto> {
     if (input.stage !== undefined && input.stage.trim().length === 0) throw new BadRequestException('Stage cannot be empty')
+    if (input.contactId) await this.assertContactOfCustomer(input.contactId, input.customerId)
     // If a hint is supplied on create, credit the creator so the owner sees "จากคุณ X".
     const managerHintById = (input.managerHint || input.managerHintPriority) ? (ctx.userId ?? null) : null
     const row = await this.prisma.opportunity.create({
       data: {
         title: input.title, customerId: input.customerId, ownerId: input.ownerId,
+        contactId: input.contactId || null,
         stage: input.stage ?? 'Qualification', value: input.value ?? 0,
         probability: input.probability ?? 20,
         closeDate: input.closeDate ? new Date(input.closeDate) : null,
@@ -112,6 +121,16 @@ export class OpportunitiesService {
     if (input.closeDate !== undefined) data.closeDate = input.closeDate ? new Date(input.closeDate) : null
     if (input.bidDeadline !== undefined) data.bidDeadline = input.bidDeadline ? new Date(input.bidDeadline) : null
     if (input.decisionDate !== undefined) data.decisionDate = input.decisionDate ? new Date(input.decisionDate) : null
+
+    // Contact must match the (possibly new) customer. Moving the deal to another customer
+    // without picking a new contact drops the old one, since it belongs to the old company.
+    const nextCustomerId = input.customerId ?? before.customerId
+    if (input.contactId !== undefined) {
+      data.contactId = input.contactId || null
+      if (input.contactId) await this.assertContactOfCustomer(input.contactId, nextCustomerId)
+    } else if (nextCustomerId !== before.customerId && before.contactId) {
+      data.contactId = null
+    }
 
     // Whenever the manager hint text/priority is touched by this update, credit the
     // current user as author. If both fields are being cleared to null/empty, clear
@@ -204,11 +223,18 @@ export class OpportunitiesService {
     notes: string | null
     createdAt: Date; updatedAt: Date
     customer: { name: string }; owner: { name: string }
+    contactId: string | null
+    contact: { name: string; email: string; phone: string; position: string | null; role: string } | null
     lines: Array<{ id: string; productId: string; product: { code: string; name: string }; quantity: number; unitPrice: number; discount: number }>
   }): OpportunityDto => {
     return {
       id: row.id, title: row.title,
       customerId: row.customerId, customerName: row.customer.name,
+      contactId: row.contactId,
+      contactName: row.contact?.name ?? null,
+      contactEmail: row.contact?.email ?? null,
+      contactPhone: row.contact?.phone ?? null,
+      contactPosition: row.contact ? (row.contact.position || row.contact.role || null) : null,
       ownerId: row.ownerId, ownerName: row.owner.name,
       stage: row.stage as OpportunityStage,
       value: row.value, probability: row.probability,

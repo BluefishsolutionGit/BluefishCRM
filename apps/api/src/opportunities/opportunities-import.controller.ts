@@ -8,6 +8,7 @@ import { PERMISSIONS } from '../auth/permissions'
 import { OpportunitiesService } from './opportunities.service'
 import { PrismaService } from '../prisma/prisma.service'
 import { auditContext } from '../common/request-context'
+import { cellText, normalizeHeader, templateHeader } from '../common/excel-import'
 import type { Request, Response } from 'express'
 import type { ImportResultDto, OpportunityStage } from '@bluefish/shared'
 import { SERVICE_LINES } from '@bluefish/shared'
@@ -18,6 +19,8 @@ const STAGES: OpportunityStage[] = ['Qualification', 'Proposal', 'Negotiation', 
 const COLUMNS: { key: string; header: string; required?: boolean }[] = [
   { key: 'title', header: 'Title', required: true },
   { key: 'customerCode', header: 'Customer Code', required: true },
+  // Optional — picks which of the customer's contacts to reach out to for this deal.
+  { key: 'contactEmail', header: 'Contact Email' },
   { key: 'ownerEmail', header: 'Owner Email', required: true },
   { key: 'stage', header: 'Stage' },
   { key: 'value', header: 'Value' },
@@ -38,11 +41,12 @@ export class OpportunitiesImportController {
   async downloadTemplate(@Res() res: Response): Promise<void> {
     const wb = new ExcelJS.Workbook()
     const sheet = wb.addWorksheet('opportunities')
-    sheet.columns = COLUMNS.map((c) => ({ header: c.header, key: c.key, width: 22 }))
+    sheet.columns = COLUMNS.map((c) => ({ header: templateHeader(c), key: c.key, width: 22 }))
     sheet.getRow(1).font = { bold: true }
     sheet.addRow({
       title: 'Factory Automation Phase 3',
       customerCode: 'C-1024',
+      contactEmail: 'somchai@example.com',
       ownerEmail: 'nattaya@bluefishsolution.com',
       stage: 'Proposal',
       value: 4500000,
@@ -90,8 +94,8 @@ export class OpportunitiesImportController {
     const headerRow = sheet.getRow(1)
     const headerMap = new Map<string, number>()
     headerRow.eachCell((cell, colNumber) => {
-      const text = String(cell.value ?? '').trim()
-      const col = COLUMNS.find((c) => c.header.toLowerCase() === text.toLowerCase())
+      const text = normalizeHeader(cellText(cell.value))
+      const col = COLUMNS.find((c) => c.header.toLowerCase() === text)
       if (col) headerMap.set(col.key, colNumber)
     })
     const missing = COLUMNS.filter((c) => c.required && !headerMap.has(c.key))
@@ -104,7 +108,7 @@ export class OpportunitiesImportController {
     const getCustomerId = async (code: string): Promise<string | null> => {
       const norm = code.toUpperCase().trim()
       if (custCache.has(norm)) return custCache.get(norm)!
-      const c = await this.prisma.customer.findUnique({ where: { code: norm } })
+      const c = await this.prisma.customer.findFirst({ where: { code: norm, deletedAt: null } })
       if (!c) return null
       custCache.set(norm, c.id)
       return c.id
@@ -129,7 +133,7 @@ export class OpportunitiesImportController {
         const cell = row.getCell(col)
         const v = cell.value
         if (v instanceof Date) return v.toISOString().slice(0, 10)
-        return String(v ?? '').trim()
+        return cellText(v)
       }
       const numValue = (key: string): number | undefined => {
         const v = value(key)
@@ -151,6 +155,20 @@ export class OpportunitiesImportController {
         errors.push({ row: r, field: 'customerCode', message: `Unknown customer code "${value('customerCode')}"` })
         skipped++; continue
       }
+      const contactEmail = value('contactEmail')
+      let contactId: string | undefined
+      if (contactEmail) {
+        const contact = await this.prisma.contact.findFirst({
+          where: { customerId, email: { equals: contactEmail, mode: 'insensitive' } },
+          select: { id: true },
+        })
+        if (!contact) {
+          errors.push({ row: r, field: 'contactEmail', message: `No contact "${contactEmail}" under customer "${value('customerCode')}"` })
+          skipped++; continue
+        }
+        contactId = contact.id
+      }
+
       const ownerId = await getOwnerId(value('ownerEmail'))
       if (!ownerId) {
         errors.push({ row: r, field: 'ownerEmail', message: `Unknown owner "${value('ownerEmail')}"` })
@@ -182,6 +200,7 @@ export class OpportunitiesImportController {
         await this.opps.create({
           title,
           customerId,
+          contactId,
           ownerId,
           stage,
           value: numValue('value') ?? 0,
@@ -207,6 +226,7 @@ export class OpportunitiesImportController {
     const rows = await this.prisma.opportunity.findMany({
       include: {
         customer: { select: { code: true, name: true } },
+        contact: { select: { email: true } },
         owner: { select: { email: true, name: true } },
       },
       orderBy: [{ stage: 'asc' }, { value: 'desc' }],
@@ -217,6 +237,7 @@ export class OpportunitiesImportController {
       { header: 'Title', key: 'title', width: 32 },
       { header: 'Customer Code', key: 'customerCode', width: 14 },
       { header: 'Customer', key: 'customerName', width: 32 },
+      { header: 'Contact Email', key: 'contactEmail', width: 28 },
       { header: 'Owner Email', key: 'ownerEmail', width: 28 },
       { header: 'Owner Name', key: 'ownerName', width: 22 },
       { header: 'Stage', key: 'stage', width: 14 },
@@ -234,6 +255,7 @@ export class OpportunitiesImportController {
         title: o.title,
         customerCode: o.customer?.code ?? '',
         customerName: o.customer?.name ?? '',
+        contactEmail: o.contact?.email ?? '',
         ownerEmail: o.owner?.email ?? '',
         ownerName: o.owner?.name ?? '',
         stage: o.stage,

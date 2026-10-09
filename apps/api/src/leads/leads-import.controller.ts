@@ -8,8 +8,10 @@ import { PERMISSIONS } from '../auth/permissions'
 import { LeadsService } from './leads.service'
 import { PrismaService } from '../prisma/prisma.service'
 import { auditContext } from '../common/request-context'
+import { cellText, normalizeHeader, templateHeader } from '../common/excel-import'
 import type { Request, Response } from 'express'
 import type { ImportResultDto } from '@bluefish/shared'
+import { SERVICE_LINES } from '@bluefish/shared'
 
 interface JwtRequest extends Request { user?: { sub: string; email: string; role: string } }
 
@@ -27,6 +29,8 @@ const COLUMNS: { key: string; header: string; required?: boolean }[] = [
 ]
 const VALID_STATUSES = ['New', 'Contacted', 'Qualified', 'AI Sourced', 'Converted', 'Lost'] as const
 type LeadStatus = (typeof VALID_STATUSES)[number]
+// Suggestions only (Source is free text) — mirrors the lead form's dropdown.
+const SUGGESTED_SOURCES = ['LINE OA', 'e-GP Tender', 'Facebook Ads', 'WhatsApp', 'Email', 'Website', 'Referral']
 
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('leads')
@@ -37,16 +41,28 @@ export class LeadsImportController {
   async downloadTemplate(@Res() res: Response): Promise<void> {
     const wb = new ExcelJS.Workbook()
     const sheet = wb.addWorksheet('leads')
-    sheet.columns = COLUMNS.map((c) => ({ header: c.header, key: c.key, width: 24 }))
+    sheet.columns = COLUMNS.map((c) => ({ header: templateHeader(c), key: c.key, width: 24 }))
     sheet.getRow(1).font = { bold: true }
     sheet.addRow({
       name: 'Somchai P.', companyName: 'Acme Manufacturing Co., Ltd.',
       email: 'somchai@acme.example', phone: '+66 2 000 0000',
-      source: 'Website form', estValue: 500000,
-      serviceOrProduct: 'ERP Consulting',
+      source: 'Website', estValue: 500000,
+      serviceOrProduct: '3D',
       status: 'New', ownerEmail: 'nattaya@bluefishsolution.com',
       notes: 'Interested in ERP upgrade Q3.',
     })
+
+    // Helper sheet listing what to type in the constrained columns.
+    const helper = wb.addWorksheet('valid values')
+    helper.columns = [
+      { header: 'Status', key: 'status', width: 16 },
+      { header: 'Service / Product', key: 'service', width: 20 },
+      { header: 'Source (suggested)', key: 'source', width: 22 },
+    ]
+    const helperRows = Math.max(VALID_STATUSES.length, SERVICE_LINES.length, SUGGESTED_SOURCES.length)
+    for (let i = 0; i < helperRows; i++) {
+      helper.addRow({ status: VALID_STATUSES[i] ?? '', service: SERVICE_LINES[i] ?? '', source: SUGGESTED_SOURCES[i] ?? '' })
+    }
     const buf = await wb.xlsx.writeBuffer()
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     res.setHeader('Content-Disposition', 'attachment; filename="leads-import-template.xlsx"')
@@ -71,8 +87,8 @@ export class LeadsImportController {
     const headerRow = sheet.getRow(1)
     const headerMap = new Map<string, number>()
     headerRow.eachCell((cell, colNumber) => {
-      const text = String(cell.value ?? '').trim()
-      const col = COLUMNS.find((c) => c.header.toLowerCase() === text.toLowerCase())
+      const text = normalizeHeader(cellText(cell.value))
+      const col = COLUMNS.find((c) => c.header.toLowerCase() === text)
       if (col) headerMap.set(col.key, colNumber)
     })
     const missing = COLUMNS.filter((c) => c.required && !headerMap.has(c.key))
@@ -91,6 +107,11 @@ export class LeadsImportController {
       return u.id
     }
 
+    // Emails already on file plus ones added earlier in this sheet — re-importing the
+    // same file skips existing leads instead of duplicating them.
+    const existing = await this.prisma.lead.findMany({ where: { email: { not: null } }, select: { email: true } })
+    const seenEmails = new Set(existing.map((l) => (l.email ?? '').trim().toLowerCase()).filter(Boolean))
+
     const ctx = auditContext(req)
 
     for (let r = 2; r <= sheet.rowCount; r++) {
@@ -98,7 +119,7 @@ export class LeadsImportController {
       const value = (key: string): string => {
         const col = headerMap.get(key)
         if (!col) return ''
-        return String(row.getCell(col).value ?? '').trim()
+        return cellText(row.getCell(col).value)
       }
       const numValue = (key: string): number | undefined => {
         const v = value(key)
@@ -122,6 +143,19 @@ export class LeadsImportController {
         skipped++; continue
       }
 
+      const email = value('email')
+      const emailKey = email.toLowerCase()
+      if (emailKey && seenEmails.has(emailKey)) {
+        errors.push({ row: r, field: 'email', message: `Email "${email}" already exists — skipped` })
+        skipped++; continue
+      }
+
+      const svc = value('serviceOrProduct')
+      if (svc && !(SERVICE_LINES as readonly string[]).includes(svc)) {
+        errors.push({ row: r, field: 'serviceOrProduct', message: `Service must be one of: ${SERVICE_LINES.join(', ')}` })
+        skipped++; continue
+      }
+
       const status = value('status') || 'New'
       if (!(VALID_STATUSES as readonly string[]).includes(status)) {
         errors.push({ row: r, field: 'status', message: `Invalid status "${status}"` })
@@ -132,15 +166,16 @@ export class LeadsImportController {
         await this.leads.create({
           name,
           companyName: value('companyName'),
-          email: value('email') || undefined,
+          email: email || undefined,
           phone: value('phone') || undefined,
           source: value('source'),
           estValue: numValue('estValue'),
-          serviceOrProduct: value('serviceOrProduct') || undefined,
+          serviceOrProduct: svc || undefined,
           status: status as LeadStatus,
           ownerId,
           notes: value('notes') || undefined,
         }, ctx)
+        if (emailKey) seenEmails.add(emailKey)
         imported++
       } catch (e) {
         errors.push({ row: r, message: e instanceof Error ? e.message : 'Create failed' })

@@ -20,7 +20,8 @@ function fishTransform(rotation: number, radius: number, scale: number): string 
 }
 
 export default function Login() {
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState(() => readRememberedEmail() ?? '')
+  const [rememberEmail, setRememberEmail] = useState(() => readRememberedEmail() !== null)
   const [password, setPassword] = useState('')
   const [showPw, setShowPw] = useState(false)
   const [fEmail, setFEmail] = useState(false)
@@ -103,6 +104,8 @@ export default function Login() {
     setError(null)
     try {
       const outcome = await login(email, password)
+      // Password accepted — persist (or forget) the email before branching to MFA.
+      saveRememberedEmail(rememberEmail ? email.trim() : null)
       if (outcome?.requiresMfa) {
         navigate('/login/mfa', { state: { mfaToken: outcome.mfaToken, email } })
         return
@@ -523,6 +526,7 @@ export default function Login() {
             </svg>
             <input
               type="email"
+              autoComplete="username"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               onFocus={() => setFEmail(true)}
@@ -558,6 +562,7 @@ export default function Login() {
             </svg>
             <input
               type={showPw ? 'text' : 'password'}
+              autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               onFocus={() => setFPw(true)}
@@ -585,7 +590,16 @@ export default function Login() {
             </button>
           </div>
 
-          <div style={{ textAlign: 'right', marginBottom: 26 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 26 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#6A6F82', cursor: 'pointer', userSelect: 'none' }}>
+              <input
+                type="checkbox"
+                checked={rememberEmail}
+                onChange={(e) => setRememberEmail(e.target.checked)}
+                style={{ width: 16, height: 16, accentColor: '#2A6FDB', cursor: 'pointer', margin: 0 }}
+              />
+              Remember my email
+            </label>
             <Link to="/forgot-password" className="forgot-link">
               Forget Password?
             </Link>
@@ -665,4 +679,19 @@ export default function Login() {
       </div>
     </div>
   )
+}
+
+// Only the email is remembered (never the password), in this browser's localStorage.
+// Storage can throw in private mode / with site data blocked — treat that as "nothing saved".
+const REMEMBER_EMAIL_KEY = 'bluefish.rememberedEmail'
+
+function readRememberedEmail(): string | null {
+  try { return localStorage.getItem(REMEMBER_EMAIL_KEY) || null } catch { return null }
+}
+
+function saveRememberedEmail(email: string | null) {
+  try {
+    if (email) localStorage.setItem(REMEMBER_EMAIL_KEY, email)
+    else localStorage.removeItem(REMEMBER_EMAIL_KEY)
+  } catch { /* storage unavailable — nothing to remember */ }
 }

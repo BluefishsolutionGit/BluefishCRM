@@ -450,6 +450,15 @@ export function MobileOpportunityDetail() {
           </div>
           <span style={{ background: '#F7F8FC', color: STAGE_COLOR[o.stage], border: `1px solid ${STAGE_COLOR[o.stage]}30`, fontSize: 10.5, fontWeight: 700, padding: '3px 8px', borderRadius: 999 }}>{o.stage}</span>
         </div>
+        {o.contactName && (
+          <div style={{ marginTop: 10, padding: '8px 10px', background: '#F7F8FC', borderRadius: 10, fontSize: 12.5 }}>
+            <div style={{ fontWeight: 700 }}>👤 {o.contactName}{o.contactPosition ? <span style={{ color: '#8888A0', fontWeight: 500 }}> · {o.contactPosition}</span> : null}</div>
+            <div style={{ display: 'flex', gap: 14, marginTop: 4, flexWrap: 'wrap' }}>
+              {o.contactPhone && <a href={`tel:${o.contactPhone}`} style={{ color: '#2A6FDB', fontWeight: 600, textDecoration: 'none' }}>📞 {o.contactPhone}</a>}
+              {o.contactEmail && <a href={`mailto:${o.contactEmail}`} style={{ color: '#2A6FDB', fontWeight: 600, textDecoration: 'none' }}>✉ {o.contactEmail}</a>}
+            </div>
+          </div>
+        )}
         <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           <button onClick={() => setEditing('value')} style={editableCell}>
             <div style={label}>Value</div>
