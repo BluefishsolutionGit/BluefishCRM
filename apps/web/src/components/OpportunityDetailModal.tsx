@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent, type CSSProperties, type FormEvent } from 'react'
-import type { ActivityDto, ActivityType, CreateActivityDto, CustomerDto, DocumentDto, ManagerHintPriority, OpportunityDto, OpportunityStage, UpdateOpportunityDto, UserDto } from '@bluefish/shared'
+import { useNavigate } from 'react-router-dom'
+import type { ActivityDto, ActivityType, CreateActivityDto, CustomerDto, DocumentDto, ManagerHintPriority, OpportunityDto, OpportunityStage, ServiceLine, UpdateOpportunityDto, UserDto } from '@bluefish/shared'
 import { MANAGER_HINT_PRIORITIES, SERVICE_LINES } from '@bluefish/shared'
 import { api, ApiError } from '../lib/api'
 import { useToast } from '../lib/ToastContext'
@@ -35,9 +36,35 @@ export default function OpportunityDetailModal({ opp, onClose, onChanged, onDele
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState<UpdateOpportunityDto>({})
   const toast = useToast()
+  const navigate = useNavigate()
   const { hasPermission, user } = useAuth()
   const canWrite = hasPermission('opportunity:write')
+  const canCreateContract = hasPermission('contract:write')
   const canEditManagerHint = user?.role === 'admin' || user?.role === 'sales_manager'
+
+  const convertToContract = () => {
+    if (!opp) return
+    const svc = opp.serviceOrProduct && (SERVICE_LINES as readonly string[]).includes(opp.serviceOrProduct)
+      ? [opp.serviceOrProduct as ServiceLine]
+      : undefined
+    navigate('/contracts', {
+      state: {
+        prefillFromOpportunity: {
+          opportunityId: opp.id,
+          opportunityTitle: opp.title,
+          customerId: opp.customerId,
+          value: opp.value,
+          name: opp.title,
+          serviceDescription: opp.notes ?? undefined,
+          serviceLines: svc,
+          contactPerson: opp.contactName ?? undefined,
+          contactEmail: opp.contactEmail ?? undefined,
+          contactTel: opp.contactPhone ?? undefined,
+        },
+      },
+    })
+    onClose()
+  }
 
   const reloadAttachments = (id: string) =>
     api.documents({ opportunityId: id }).then(setAttachments).catch(() => setAttachments([]))
@@ -149,6 +176,11 @@ export default function OpportunityDetailModal({ opp, onClose, onChanged, onDele
             <span>·</span>
             <span>{fmt(opp.value)}</span>
             <span style={{ flex: 1 }} />
+            {opp.stage === 'Won' && canCreateContract && (
+              <div onClick={convertToContract} style={{ background: '#0E9C7E', color: '#fff', border: 'none', borderRadius: 9, padding: '8px 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+                → Convert to Contract
+              </div>
+            )}
             {canWrite && <div onClick={remove} style={{ ...ghostBtn, color: '#C0392B', borderColor: '#F5B7B1' }}>Delete deal</div>}
           </div>
         </div>

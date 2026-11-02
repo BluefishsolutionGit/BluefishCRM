@@ -48,6 +48,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Generate Prisma client
+        run: cd apps/api && npx prisma generate
+
       - name: Build shared package
         run: npm --workspace @bluefish/shared run build
 
@@ -59,9 +62,6 @@ jobs:
 
       - name: Apply Prisma migrations
         run: cd apps/api && npx prisma migrate deploy
-
-      - name: Generate Prisma client
-        run: cd apps/api && npx prisma generate
 
       - name: Seed database
         run: cd apps/api && npx prisma db seed

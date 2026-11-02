@@ -705,6 +705,8 @@ export interface ObligationDto {
   id: string
   contractId: string
   contractNo: string
+  customerId: string
+  customerName: string
   kind: ObligationKind
   title: string
   dueDate: string
@@ -858,6 +860,24 @@ export interface ContractDashboardDto {
   byStatus: Array<{ status: ContractStatus; count: number }>
   byType: Array<{ type: string; count: number; value: number }>
   upcomingObligations: ObligationDto[]
+  /** Contracts expiring within N days (cumulative — ≤30 is subset of ≤60 is subset of ≤90) */
+  expiringBuckets: {
+    in30: { count: number; value: number }
+    in60: { count: number; value: number }
+    in90: { count: number; value: number }
+  }
+  /** Count of contracts at each risk level */
+  riskBreakdown: { high: number; medium: number; low: number }
+  /** Open obligations with dueDate in the past */
+  overdueFollowupsCount: number
+  /** Last 12 months of contract value — bucketed by signedAt (or startDate if not signed) */
+  monthlyValueTrend: Array<{ month: string; value: number; count: number }>
+  /** Top 5 customers by contract value */
+  topCustomers: Array<{ customerId: string; customerName: string; count: number; value: number }>
+  /** Contract state transitions in the current calendar month */
+  thisMonthThroughput: { signed: number; renewed: number; terminated: number; expired: number }
+  /** Oldest contract still waiting in Pending Approval / Under Review (null if none) */
+  approvalLongestWait: { days: number; contractId: string; contractNo: string } | null
 }
 
 // ─────── Documents ───────
@@ -934,6 +954,8 @@ export interface DocumentDto {
   opportunityId: string | null
   quotationId: string | null
   contractId: string | null
+  contractNo: string | null
+  contractName: string | null
   uploadedByName: string
   currentVersion: DocumentVersionDto | null
   versions: Array<{ id: string; versionNo: number; notes: string | null; createdAt: string; uploadedByName: string; filename: string; sizeBytes: number }>

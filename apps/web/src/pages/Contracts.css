@@ -1,20 +1,27 @@
-/* Contract repository table — 6 cols: # · Party · Type · Value · Status · Risk */
+/* Contract repository table — 9 cols:
+   # · Party · Type · Start · End · Owner · Value · Status · Risk */
 .contract-repo-grid {
   display: grid;
-  grid-template-columns: 135px 1.5fr 150px 100px 130px 90px;
+  grid-template-columns: 110px 1.3fr 110px 110px 110px 1fr 95px 110px 80px;
   gap: 10px;
 }
-@media (max-width: 1279px) {
+@media (max-width: 1399px) {
+  /* Hide Type (3) + Risk (9) → 7 visible cols */
   .contract-repo-grid {
-    grid-template-columns: 115px 1.5fr 100px 110px 70px;
+    grid-template-columns: 105px 1.3fr 110px 110px 1fr 95px 100px;
   }
   .contract-repo-grid > :nth-child(3) { display: none !important; } /* Type */
+  .contract-repo-grid > :nth-child(9) { display: none !important; } /* Risk */
 }
 @media (max-width: 1023px) {
+  /* Hide Type (3) + Owner (6) + Value (7) + Risk (9) → 5 visible cols */
   .contract-repo-grid {
-    grid-template-columns: 100px 1.8fr 90px 60px;
+    grid-template-columns: 95px 1.6fr 95px 95px 100px;
   }
-  .contract-repo-grid > :nth-child(4) { display: none !important; } /* Value */
+  .contract-repo-grid > :nth-child(3) { display: none !important; } /* Type */
+  .contract-repo-grid > :nth-child(6) { display: none !important; } /* Owner */
+  .contract-repo-grid > :nth-child(7) { display: none !important; } /* Value */
+  .contract-repo-grid > :nth-child(9) { display: none !important; } /* Risk */
 }
 
 /* KPI cards top of page — 4 cards side by side is cramped below ~1280 */
@@ -35,19 +42,3 @@
   }
 }
 
-/* Two-pane: list + selected-detail 460px sidebar. Below tablet-portrait
-   the sidebar drops beneath the list so the list gets full width. */
-.contract-two-pane {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 14px;
-  align-items: start;
-}
-.contract-two-pane.with-selected {
-  grid-template-columns: 1fr 460px;
-}
-@media (max-width: 1023px) {
-  .contract-two-pane.with-selected {
-    grid-template-columns: 1fr;
-  }
-}

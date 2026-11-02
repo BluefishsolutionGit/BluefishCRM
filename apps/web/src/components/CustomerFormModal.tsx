@@ -36,7 +36,6 @@ export default function CustomerFormModal({ open, initial, onClose, onSaved }: P
         industry: initial.industry, status: initial.status,
         ownerId: initial.ownerId, city: initial.city, address: initial.address,
         taxId: initial.taxId, phone: initial.phone, terms: initial.terms,
-        openValue: initial.openValue, wonValue: initial.wonValue,
         lastActivity: initial.lastActivity,
         primaryServiceLines: initial.primaryServiceLines ?? [],
       })

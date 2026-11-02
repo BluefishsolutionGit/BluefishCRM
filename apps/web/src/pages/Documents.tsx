@@ -31,11 +31,12 @@ const SERVICE_STYLE: Record<ServiceLine, { bg: string; fg: string }> = {
   'AI&RPA': { bg: '#E5F8ED', fg: '#0E6E4E' },
 }
 
-type ViewMode = 'category' | 'company' | 'service'
+type ViewMode = 'category' | 'company' | 'contract' | 'service'
 type SelectionKey =
   | { view: 'category'; value: DocumentCategory | 'all' | '__central' }
-  | { view: 'company';  value: string | 'all' | '__central' }
-  | { view: 'service';  value: ServiceLine | 'all' | '__central' }
+  | { view: 'company';  value: string | 'all' | '__central' | '__nocust' }
+  | { view: 'contract'; value: string | 'all' | '__central' | '__nocontract' }
+  | { view: 'service';  value: ServiceLine | 'all' | '__central' | '__nosvc' }
 
 export default function Documents() {
   const [documents, setDocuments] = useState<DocumentDto[]>([])
@@ -44,9 +45,10 @@ export default function Documents() {
   const [uploadOpen, setUploadOpen] = useState<false | 'default' | 'central'>(false)
   const [selected, setSelected] = useState<DocumentDto | null>(null)
   const [viewing, setViewing] = useState<ViewableVersion | null>(null)
-  const [view, setView] = useState<ViewMode>('category')
-  const [pick, setPick] = useState<SelectionKey>({ view: 'category', value: 'all' })
+  const [view, setView] = useState<ViewMode>('company')
+  const [pick, setPick] = useState<SelectionKey>({ view: 'company', value: 'all' })
   const [q, setQ] = useState('')
+  const [svcFilter, setSvcFilter] = useState<ServiceLine[]>([])
   const toast = useToast()
   const { hasPermission, user } = useAuth()
   const canWrite = hasPermission('customer:write')
@@ -103,6 +105,19 @@ export default function Documents() {
         items.push({ key: id, label: meta.name, sub: meta.code, count: meta.count, onPick: () => setPick({ view, value: id } as SelectionKey), tone: { bg: '#F7F8FC', fg: '#3B3B52' } })
       }
       if (noCust > 0) items.push({ key: '__nocust', label: 'Unlinked', sub: 'Not tied to a company', count: noCust, tone: { bg: '#F2F3F9', fg: '#8888A0' }, onPick: () => setPick({ view, value: '__nocust' } as SelectionKey) })
+    } else if (view === 'contract') {
+      const byCt = new Map<string, { no: string; name: string | null; customer: string | null; count: number }>()
+      let noCt = 0
+      for (const d of scopeDocs) {
+        if (!d.contractId) { noCt++; continue }
+        const cur = byCt.get(d.contractId) ?? { no: d.contractNo ?? '—', name: d.contractName, customer: d.customerName, count: 0 }
+        cur.count++; byCt.set(d.contractId, cur)
+      }
+      for (const [id, meta] of [...byCt.entries()].sort(([, a], [, b]) => a.no.localeCompare(b.no))) {
+        const label = meta.name ? `${meta.no} — ${meta.name}` : meta.no
+        items.push({ key: id, label, sub: meta.customer ?? undefined, count: meta.count, onPick: () => setPick({ view, value: id } as SelectionKey), tone: { bg: '#EEF3FC', fg: '#1F5AC2' } })
+      }
+      if (noCt > 0) items.push({ key: '__nocontract', label: 'No contract', sub: 'Not linked to any contract', count: noCt, tone: { bg: '#F2F3F9', fg: '#8888A0' }, onPick: () => setPick({ view, value: '__nocontract' } as SelectionKey) })
     } else {
       const bySvc = new Map<ServiceLine, number>()
       let noSvc = 0
@@ -123,16 +138,37 @@ export default function Documents() {
   // ── Filtering the right-side list based on picked bucket ───────────────
   const visible = useMemo(() => {
     return documents.filter((d) => {
+      // Service filter chips (cross-cutting — applies to every view mode).
+      // Central/company docs stay visible when no service tag so they're never hidden by the filter.
+      if (svcFilter.length > 0) {
+        const docSvcs = d.serviceLines ?? []
+        if (!docSvcs.some((s) => svcFilter.includes(s))) return false
+      }
       if (pick.view !== view) return true
       const v = pick.value as string
       if (v === 'all') return true
       if (v === '__central') return d.isCentral
       if (view === 'category') return !d.isCentral && d.category === v
       if (view === 'company')  return v === '__nocust' ? (!d.customerId && !d.isCentral) : (d.customerId === v && !d.isCentral)
+      if (view === 'contract') return v === '__nocontract' ? (!d.contractId && !d.isCentral) : (d.contractId === v && !d.isCentral)
       if (view === 'service')  return v === '__nosvc' ? ((d.serviceLines?.length ?? 0) === 0 && !d.isCentral) : (d.serviceLines?.includes(v as ServiceLine) && !d.isCentral)
       return true
     })
-  }, [documents, view, pick])
+  }, [documents, view, pick, svcFilter])
+
+  // Group by category whenever a specific company/contract/service bucket is picked —
+  // "pick a bucket → see its documents organised by type". The 'category' view
+  // itself and the catch-all bucket (all / central / unlinked) still render flat.
+  const pickedSpecific = (
+    pick.view === view
+    && typeof pick.value === 'string'
+    && pick.value !== 'all'
+    && pick.value !== '__central'
+    && pick.value !== '__nocust'
+    && pick.value !== '__nocontract'
+    && pick.value !== '__nosvc'
+  )
+  const groupByCategory = pickedSpecific && (view === 'company' || view === 'contract' || view === 'service')
 
   const del = async (d: DocumentDto) => {
     if (!window.confirm(`Delete "${d.name}"? All versions are removed.`)) return
@@ -257,10 +293,35 @@ export default function Documents() {
           {canWrite && <div onClick={() => setUploadOpen('default')} style={primaryBtn}>+ Upload document</div>}
         </div>
 
+        {/* Service filter chips — cross-cutting across all 4 view modes */}
+        <div style={{ padding: '10px 24px', display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid #E5E7F0', background: '#fff', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 10.5, fontWeight: 700, color: '#8888A0', letterSpacing: '.06em', textTransform: 'uppercase', marginRight: 2 }}>Service</span>
+          {availableServices.map((s) => {
+            const on = svcFilter.includes(s)
+            const tone = SERVICE_STYLE[s]
+            return (
+              <div
+                key={s}
+                onClick={() => setSvcFilter((f) => (f.includes(s) ? f.filter((x) => x !== s) : [...f, s]))}
+                style={{
+                  fontSize: 11.5, fontWeight: 700, padding: '4px 10px', borderRadius: 999, cursor: 'pointer',
+                  background: on ? tone.bg : '#fff',
+                  color: on ? tone.fg : '#5C5C74',
+                  border: `1px solid ${on ? tone.fg : '#E5E7F0'}`,
+                }}
+              >{s}</div>
+            )
+          })}
+          {svcFilter.length > 0 && (
+            <div onClick={() => setSvcFilter([])} style={{ fontSize: 11, color: '#2A6FDB', fontWeight: 700, cursor: 'pointer', marginLeft: 4 }}>Clear</div>
+          )}
+          {availableServices.length === 0 && <span style={{ fontSize: 11, color: '#8888A0' }}>No services in your scope.</span>}
+        </div>
+
         {/* Content */}
         <div className={selected ? 'docs-two-pane with-selected' : 'docs-two-pane'} style={{ flex: 1, minHeight: 0 }}>
           <div style={{ overflow: 'auto', padding: '14px 24px 22px' }}>
-            <DocGrid rows={visible} loading={loading} selected={selected} setSelected={setSelected} canWrite={canWrite} del={del} onView={setViewing} />
+            <DocGrid rows={visible} loading={loading} selected={selected} setSelected={setSelected} canWrite={canWrite} del={del} onView={setViewing} groupByCategory={groupByCategory} />
           </div>
           {selected && (
             <div style={{ borderLeft: '1px solid #E5E7F0', background: '#fff', overflow: 'auto' }}>
@@ -297,15 +358,18 @@ export default function Documents() {
 const VIEW_LABEL: Record<ViewMode, string> = {
   category: 'By type',
   company:  'By company',
+  contract: 'By contract',
   service:  'By service',
 }
 
-// Compact SVG paths for the three view modes.
+// Compact SVG paths for the four view modes.
 const VIEW_ICON: Record<ViewMode, string> = {
   // Category → tag-style icon
   category: 'M20 12l-8 8-9-9V3h8l9 9zM6.5 6.5h.01',
   // Company → building icon
   company:  'M4 20V6a2 2 0 012-2h4v16H4zm10-12h4a2 2 0 012 2v10h-6V8zM7 7h.01M7 11h.01M7 15h.01M17 11h.01M17 15h.01',
+  // Contract → document-with-signature icon
+  contract: 'M6 3h9l4 4v14H6V3zm9 0v5h5M9 13h6M9 17h4',
   // Service → layers icon
   service:  'M12 3l9 5-9 5-9-5 9-5zm-9 9l9 5 9-5M3 17l9 5 9-5',
 }
@@ -346,7 +410,7 @@ function ViewSwitcher({ view, onChange }: { view: ViewMode; onChange: (v: ViewMo
           background: '#fff', border: '1px solid #E5E7F0', borderRadius: 10,
           boxShadow: '0 12px 32px rgba(14,31,25,.14)', minWidth: 160, padding: 4, zIndex: 30,
         }}>
-          {(['category', 'company', 'service'] as ViewMode[]).map((id) => (
+          {(['category', 'company', 'contract', 'service'] as ViewMode[]).map((id) => (
             <div key={id} onClick={() => { onChange(id); setOpen(false) }} style={{
               display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 7,
               cursor: 'pointer', fontSize: 12.5, fontWeight: 600,
@@ -372,66 +436,117 @@ function initials(s: string): string {
   return (parts.map((p) => p[0] ?? '').join('') || '·').slice(0, 3).toUpperCase()
 }
 
-function DocGrid({ rows, loading, selected, setSelected, canWrite, del, onView }: {
+function DocGrid({ rows, loading, selected, setSelected, canWrite, del, onView, groupByCategory }: {
   rows: DocumentDto[]; loading: boolean; selected: DocumentDto | null
   setSelected: (d: DocumentDto | null) => void
   canWrite: boolean; del: (d: DocumentDto) => void
   onView: (v: ViewableVersion) => void
+  groupByCategory?: boolean
 }) {
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+
+  const renderRow = (d: DocumentDto) => {
+    const cat = CAT_STYLE[d.category] ?? CAT_STYLE.other
+    const cv = d.currentVersion
+    const openPrimary = (e: ReactMouseEvent) => {
+      e.stopPropagation()
+      if (d.kind === 'link' && d.url) { window.open(d.url, '_blank', 'noopener'); return }
+      if (cv) onView({ id: cv.id, filename: cv.filename, mimeType: cv.mimeType, sizeBytes: cv.sizeBytes, createdAt: cv.createdAt, uploadedByName: cv.uploadedByName, notes: cv.notes })
+      else setSelected(d)
+    }
+    const canOpenViewer = d.kind === 'file' && !!cv
+    return (
+      <div key={d.id} className="docs-grid" onClick={() => setSelected(d)} style={{ padding: '12px 18px', borderBottom: '1px solid #F2F3F9', alignItems: 'center', cursor: 'pointer', background: selected?.id === d.id ? '#F7F8FC' : 'transparent' }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0 }}>
+          <svg viewBox="0 0 24 24" width="18" height="18" style={{ flex: 'none' }}><path d="M6.5 3h8l4 4v14h-12z M14 3v5h4.5" fill="none" stroke="#5C5C74" strokeWidth={1.7} strokeLinejoin="round" /></svg>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', gap: 6, alignItems: 'center' }}>
+              <span
+                onClick={openPrimary}
+                title={canOpenViewer ? 'Open in viewer' : d.kind === 'link' ? 'Open link' : 'Show details'}
+                style={{ color: '#2A6FDB', cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}
+              >{d.name}</span>
+              {d.isCentral && <span style={{ background: '#F4F1FD', color: '#4A3AB8', fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 999, textTransform: 'uppercase' }}>central</span>}
+              {d.kind === 'link' && <span style={{ background: '#EEF0FA', color: '#4A3AB8', fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 999, textTransform: 'uppercase' }}>link</span>}
+            </div>
+            {d.description && <div style={{ fontSize: 11, color: '#8888A0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.description}</div>}
+          </div>
+        </div>
+        <div><span style={{ background: cat.bg, color: cat.fg, borderRadius: 6, fontSize: 10.5, fontWeight: 700, padding: '3px 8px' }}>{d.category}</span></div>
+        <div style={{ fontSize: 12, color: '#5C5C74', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.customerName ?? '—'}</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+          {(d.serviceLines ?? []).length === 0
+            ? <span style={{ color: '#BBBBCB', fontSize: 11 }}>—</span>
+            : (d.serviceLines ?? []).map((s) => {
+                const st = SERVICE_STYLE[s]
+                return <span key={s} style={{ background: st.bg, color: st.fg, borderRadius: 5, fontSize: 9.5, fontWeight: 800, padding: '1px 5px' }}>{s}</span>
+              })}
+        </div>
+        <div style={{ fontSize: 12, color: '#5C5C74' }}>v{cv?.versionNo ?? '—'}</div>
+        <div style={{ fontSize: 12, color: '#5C5C74' }}>{cv ? Math.max(1, Math.round(cv.sizeBytes / 1024)) + ' KB' : '—'}</div>
+        <div style={{ fontSize: 12, color: '#5C5C74' }}>{cv ? new Date(cv.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '—'}</div>
+        <div style={{ display: 'flex', gap: 5, justifyContent: 'flex-end' }}>
+          {cv && d.kind === 'file' && (
+            <div onClick={(e) => { e.stopPropagation(); onView({ id: cv.id, filename: cv.filename, mimeType: cv.mimeType, sizeBytes: cv.sizeBytes, createdAt: cv.createdAt, uploadedByName: cv.uploadedByName, notes: cv.notes }) }} title="Preview" style={miniBtn}>👁</div>
+          )}
+          {cv && <a href={api.documentDownloadUrl(cv.id)} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} style={miniBtn} title="Download">↓</a>}
+          {canWrite && <div onClick={(e) => { e.stopPropagation(); del(d) }} style={{ ...miniBtn, color: '#C0392B' }}>×</div>}
+        </div>
+      </div>
+    )
+  }
+
+  const grouped = useMemo(() => {
+    if (!groupByCategory) return null
+    const byCat = new Map<DocumentCategory, DocumentDto[]>()
+    for (const d of rows) {
+      const list = byCat.get(d.category) ?? []
+      list.push(d); byCat.set(d.category, list)
+    }
+    return DOCUMENT_CATEGORIES.filter((c) => byCat.has(c.id)).map((c) => ({ cat: c, docs: byCat.get(c.id)! }))
+  }, [rows, groupByCategory])
+
   return (
     <div style={{ background: '#fff', border: '1px solid #E5E7F0', borderRadius: 14, overflow: 'hidden' }}>
-      <div className="docs-grid" style={{ padding: '11px 18px', borderBottom: '1px solid #E5E7F0', fontSize: 10.5, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: '#8888A0' }}>
+      <div className="docs-grid" style={{ padding: '11px 18px', borderBottom: '1px solid #E5E7F0', fontSize: 10.5, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: '#8888A0', display: grouped && grouped.length > 1 ? 'none' : undefined }}>
         <div>Name</div><div>Category</div><div>Company</div><div>Services</div><div>v</div><div>Size</div><div>Uploaded</div><div />
       </div>
+      {grouped && grouped.length > 1 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 18px', borderBottom: '1px solid #E5E7F0', background: '#FBFBFD' }}>
+          <span style={{ fontSize: 10.5, fontWeight: 700, color: '#8888A0', letterSpacing: '.06em', textTransform: 'uppercase' }}>Grouped by category</span>
+          <div style={{ flex: 1 }} />
+          <div onClick={() => setCollapsed(Object.fromEntries(grouped.map((g) => [g.cat.id, true])))} style={{ fontSize: 11, color: '#2A6FDB', fontWeight: 700, cursor: 'pointer' }}>Collapse all</div>
+          <div onClick={() => setCollapsed({})} style={{ fontSize: 11, color: '#2A6FDB', fontWeight: 700, cursor: 'pointer' }}>Expand all</div>
+        </div>
+      )}
       {loading && <div style={{ padding: 24, textAlign: 'center', color: '#8888A0', fontSize: 13 }}>Loading…</div>}
       {!loading && rows.length === 0 && <div style={{ padding: 40, textAlign: 'center', color: '#8888A0', fontSize: 13 }}>Nothing here.</div>}
-      {rows.map((d) => {
-        const cat = CAT_STYLE[d.category] ?? CAT_STYLE.other
-        const cv = d.currentVersion
-        const openPrimary = (e: ReactMouseEvent) => {
-          e.stopPropagation()
-          if (d.kind === 'link' && d.url) { window.open(d.url, '_blank', 'noopener'); return }
-          if (cv) onView({ id: cv.id, filename: cv.filename, mimeType: cv.mimeType, sizeBytes: cv.sizeBytes, createdAt: cv.createdAt, uploadedByName: cv.uploadedByName, notes: cv.notes })
-          else setSelected(d)
-        }
-        const canOpenViewer = d.kind === 'file' && !!cv
+      {!loading && !grouped && rows.map(renderRow)}
+      {!loading && grouped && grouped.map(({ cat, docs }) => {
+        const isCollapsed = !!collapsed[cat.id]
+        const style = CAT_STYLE[cat.id] ?? CAT_STYLE.other
         return (
-          <div key={d.id} className="docs-grid" onClick={() => setSelected(d)} style={{ padding: '12px 18px', borderBottom: '1px solid #F2F3F9', alignItems: 'center', cursor: 'pointer', background: selected?.id === d.id ? '#F7F8FC' : 'transparent' }}>
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0 }}>
-              <svg viewBox="0 0 24 24" width="18" height="18" style={{ flex: 'none' }}><path d="M6.5 3h8l4 4v14h-12z M14 3v5h4.5" fill="none" stroke="#5C5C74" strokeWidth={1.7} strokeLinejoin="round" /></svg>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', gap: 6, alignItems: 'center' }}>
-                  <span
-                    onClick={openPrimary}
-                    title={canOpenViewer ? 'Open in viewer' : d.kind === 'link' ? 'Open link' : 'Show details'}
-                    style={{ color: '#2A6FDB', cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}
-                  >{d.name}</span>
-                  {d.isCentral && <span style={{ background: '#F4F1FD', color: '#4A3AB8', fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 999, textTransform: 'uppercase' }}>central</span>}
-                  {d.kind === 'link' && <span style={{ background: '#EEF0FA', color: '#4A3AB8', fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 999, textTransform: 'uppercase' }}>link</span>}
+          <div key={cat.id}>
+            <div
+              onClick={() => setCollapsed((s) => ({ ...s, [cat.id]: !isCollapsed }))}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 18px', background: '#F7F8FC', borderBottom: '1px solid #E5E7F0', borderTop: '1px solid #EEF0FA', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 1 }}
+            >
+              <svg viewBox="0 0 24 24" width="11" height="11" style={{ color: '#5C5C74', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0)', transition: 'transform .12s', flex: 'none' }}>
+                <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              <span style={{ background: style.bg, color: style.fg, borderRadius: 6, fontSize: 11, fontWeight: 800, padding: '3px 10px', letterSpacing: '.02em' }}>{cat.label}</span>
+              {cat.th && <span style={{ fontSize: 11.5, color: '#5C5C74' }}>{cat.th}</span>}
+              <span style={{ flex: 1 }} />
+              <span style={{ fontSize: 11, color: '#5C5C74', fontWeight: 600 }}>{docs.length} doc{docs.length === 1 ? '' : 's'}</span>
+            </div>
+            {!isCollapsed && (
+              <>
+                <div className="docs-grid" style={{ padding: '8px 18px', borderBottom: '1px solid #F2F3F9', fontSize: 10, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: '#AAAABA', background: '#FDFDFE' }}>
+                  <div>Name</div><div>Category</div><div>Company</div><div>Services</div><div>v</div><div>Size</div><div>Uploaded</div><div />
                 </div>
-                {d.description && <div style={{ fontSize: 11, color: '#8888A0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.description}</div>}
-              </div>
-            </div>
-            <div><span style={{ background: cat.bg, color: cat.fg, borderRadius: 6, fontSize: 10.5, fontWeight: 700, padding: '3px 8px' }}>{d.category}</span></div>
-            <div style={{ fontSize: 12, color: '#5C5C74', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.customerName ?? '—'}</div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
-              {(d.serviceLines ?? []).length === 0
-                ? <span style={{ color: '#BBBBCB', fontSize: 11 }}>—</span>
-                : (d.serviceLines ?? []).map((s) => {
-                    const st = SERVICE_STYLE[s]
-                    return <span key={s} style={{ background: st.bg, color: st.fg, borderRadius: 5, fontSize: 9.5, fontWeight: 800, padding: '1px 5px' }}>{s}</span>
-                  })}
-            </div>
-            <div style={{ fontSize: 12, color: '#5C5C74' }}>v{cv?.versionNo ?? '—'}</div>
-            <div style={{ fontSize: 12, color: '#5C5C74' }}>{cv ? Math.max(1, Math.round(cv.sizeBytes / 1024)) + ' KB' : '—'}</div>
-            <div style={{ fontSize: 12, color: '#5C5C74' }}>{cv ? new Date(cv.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '—'}</div>
-            <div style={{ display: 'flex', gap: 5, justifyContent: 'flex-end' }}>
-              {cv && d.kind === 'file' && (
-                <div onClick={(e) => { e.stopPropagation(); onView({ id: cv.id, filename: cv.filename, mimeType: cv.mimeType, sizeBytes: cv.sizeBytes, createdAt: cv.createdAt, uploadedByName: cv.uploadedByName, notes: cv.notes }) }} title="Preview" style={miniBtn}>👁</div>
-              )}
-              {cv && <a href={api.documentDownloadUrl(cv.id)} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} style={miniBtn} title="Download">↓</a>}
-              {canWrite && <div onClick={(e) => { e.stopPropagation(); del(d) }} style={{ ...miniBtn, color: '#C0392B' }}>×</div>}
-            </div>
+                {docs.map(renderRow)}
+              </>
+            )}
           </div>
         )
       })}

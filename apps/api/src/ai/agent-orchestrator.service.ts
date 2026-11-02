@@ -107,10 +107,16 @@ export class AgentOrchestrator {
           },
         })
         if (!customer) throw new BadRequestException('Customer not found')
+        const openValue = customer.opportunities.reduce((a, o) => a + o.value, 0)
+        const wonAgg = await this.prisma.opportunity.aggregate({
+          where: { customerId, stage: 'Won' },
+          _sum: { value: true },
+        })
+        const wonValue = wonAgg._sum.value ?? 0
         return {
           context: JSON.stringify({
             customerName: customer.name, industry: customer.industry,
-            openValue: customer.openValue, wonValue: customer.wonValue,
+            openValue, wonValue,
             openOpportunities: customer.opportunities.map((o) => ({ title: o.title, stage: o.stage, value: o.value, prob: o.probability })),
             recentActivities: customer.activities.map((a) => ({ type: a.type, title: a.title, scheduledAt: a.scheduledAt })),
           }),
