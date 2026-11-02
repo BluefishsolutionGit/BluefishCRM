@@ -156,19 +156,10 @@ export default function Documents() {
     })
   }, [documents, view, pick, svcFilter])
 
-  // Group by category whenever a specific company/contract/service bucket is picked —
-  // "pick a bucket → see its documents organised by type". The 'category' view
-  // itself and the catch-all bucket (all / central / unlinked) still render flat.
-  const pickedSpecific = (
-    pick.view === view
-    && typeof pick.value === 'string'
-    && pick.value !== 'all'
-    && pick.value !== '__central'
-    && pick.value !== '__nocust'
-    && pick.value !== '__nocontract'
-    && pick.value !== '__nosvc'
-  )
-  const groupByCategory = pickedSpecific && (view === 'company' || view === 'contract' || view === 'service')
+  // Category tree is the default grouping in every bucket (All, Company Documents,
+  // Unlinked, No-contract, No-service, and any specific company/contract/service).
+  // Only the "By type" view skips it, since the sidebar is already a category filter.
+  const groupByCategory = view !== 'category'
 
   const del = async (d: DocumentDto) => {
     if (!window.confirm(`Delete "${d.name}"? All versions are removed.`)) return
