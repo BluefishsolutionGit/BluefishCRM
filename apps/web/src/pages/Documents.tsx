@@ -45,8 +45,8 @@ export default function Documents() {
   const [uploadOpen, setUploadOpen] = useState<false | 'default' | 'central'>(false)
   const [selected, setSelected] = useState<DocumentDto | null>(null)
   const [viewing, setViewing] = useState<ViewableVersion | null>(null)
-  const [view, setView] = useState<ViewMode>('category')
-  const [pick, setPick] = useState<SelectionKey>({ view: 'category', value: 'all' })
+  const [view, setView] = useState<ViewMode>('company')
+  const [pick, setPick] = useState<SelectionKey>({ view: 'company', value: 'all' })
   const [q, setQ] = useState('')
   const [svcFilter, setSvcFilter] = useState<ServiceLine[]>([])
   const toast = useToast()
@@ -155,6 +155,20 @@ export default function Documents() {
       return true
     })
   }, [documents, view, pick, svcFilter])
+
+  // Group by category whenever a specific company/contract/service bucket is picked —
+  // "pick a bucket → see its documents organised by type". The 'category' view
+  // itself and the catch-all bucket (all / central / unlinked) still render flat.
+  const pickedSpecific = (
+    pick.view === view
+    && typeof pick.value === 'string'
+    && pick.value !== 'all'
+    && pick.value !== '__central'
+    && pick.value !== '__nocust'
+    && pick.value !== '__nocontract'
+    && pick.value !== '__nosvc'
+  )
+  const groupByCategory = pickedSpecific && (view === 'company' || view === 'contract' || view === 'service')
 
   const del = async (d: DocumentDto) => {
     if (!window.confirm(`Delete "${d.name}"? All versions are removed.`)) return
@@ -307,7 +321,7 @@ export default function Documents() {
         {/* Content */}
         <div className={selected ? 'docs-two-pane with-selected' : 'docs-two-pane'} style={{ flex: 1, minHeight: 0 }}>
           <div style={{ overflow: 'auto', padding: '14px 24px 22px' }}>
-            <DocGrid rows={visible} loading={loading} selected={selected} setSelected={setSelected} canWrite={canWrite} del={del} onView={setViewing} />
+            <DocGrid rows={visible} loading={loading} selected={selected} setSelected={setSelected} canWrite={canWrite} del={del} onView={setViewing} groupByCategory={groupByCategory} />
           </div>
           {selected && (
             <div style={{ borderLeft: '1px solid #E5E7F0', background: '#fff', overflow: 'auto' }}>
@@ -422,66 +436,117 @@ function initials(s: string): string {
   return (parts.map((p) => p[0] ?? '').join('') || '·').slice(0, 3).toUpperCase()
 }
 
-function DocGrid({ rows, loading, selected, setSelected, canWrite, del, onView }: {
+function DocGrid({ rows, loading, selected, setSelected, canWrite, del, onView, groupByCategory }: {
   rows: DocumentDto[]; loading: boolean; selected: DocumentDto | null
   setSelected: (d: DocumentDto | null) => void
   canWrite: boolean; del: (d: DocumentDto) => void
   onView: (v: ViewableVersion) => void
+  groupByCategory?: boolean
 }) {
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+
+  const renderRow = (d: DocumentDto) => {
+    const cat = CAT_STYLE[d.category] ?? CAT_STYLE.other
+    const cv = d.currentVersion
+    const openPrimary = (e: ReactMouseEvent) => {
+      e.stopPropagation()
+      if (d.kind === 'link' && d.url) { window.open(d.url, '_blank', 'noopener'); return }
+      if (cv) onView({ id: cv.id, filename: cv.filename, mimeType: cv.mimeType, sizeBytes: cv.sizeBytes, createdAt: cv.createdAt, uploadedByName: cv.uploadedByName, notes: cv.notes })
+      else setSelected(d)
+    }
+    const canOpenViewer = d.kind === 'file' && !!cv
+    return (
+      <div key={d.id} className="docs-grid" onClick={() => setSelected(d)} style={{ padding: '12px 18px', borderBottom: '1px solid #F2F3F9', alignItems: 'center', cursor: 'pointer', background: selected?.id === d.id ? '#F7F8FC' : 'transparent' }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0 }}>
+          <svg viewBox="0 0 24 24" width="18" height="18" style={{ flex: 'none' }}><path d="M6.5 3h8l4 4v14h-12z M14 3v5h4.5" fill="none" stroke="#5C5C74" strokeWidth={1.7} strokeLinejoin="round" /></svg>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', gap: 6, alignItems: 'center' }}>
+              <span
+                onClick={openPrimary}
+                title={canOpenViewer ? 'Open in viewer' : d.kind === 'link' ? 'Open link' : 'Show details'}
+                style={{ color: '#2A6FDB', cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}
+              >{d.name}</span>
+              {d.isCentral && <span style={{ background: '#F4F1FD', color: '#4A3AB8', fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 999, textTransform: 'uppercase' }}>central</span>}
+              {d.kind === 'link' && <span style={{ background: '#EEF0FA', color: '#4A3AB8', fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 999, textTransform: 'uppercase' }}>link</span>}
+            </div>
+            {d.description && <div style={{ fontSize: 11, color: '#8888A0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.description}</div>}
+          </div>
+        </div>
+        <div><span style={{ background: cat.bg, color: cat.fg, borderRadius: 6, fontSize: 10.5, fontWeight: 700, padding: '3px 8px' }}>{d.category}</span></div>
+        <div style={{ fontSize: 12, color: '#5C5C74', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.customerName ?? '—'}</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+          {(d.serviceLines ?? []).length === 0
+            ? <span style={{ color: '#BBBBCB', fontSize: 11 }}>—</span>
+            : (d.serviceLines ?? []).map((s) => {
+                const st = SERVICE_STYLE[s]
+                return <span key={s} style={{ background: st.bg, color: st.fg, borderRadius: 5, fontSize: 9.5, fontWeight: 800, padding: '1px 5px' }}>{s}</span>
+              })}
+        </div>
+        <div style={{ fontSize: 12, color: '#5C5C74' }}>v{cv?.versionNo ?? '—'}</div>
+        <div style={{ fontSize: 12, color: '#5C5C74' }}>{cv ? Math.max(1, Math.round(cv.sizeBytes / 1024)) + ' KB' : '—'}</div>
+        <div style={{ fontSize: 12, color: '#5C5C74' }}>{cv ? new Date(cv.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '—'}</div>
+        <div style={{ display: 'flex', gap: 5, justifyContent: 'flex-end' }}>
+          {cv && d.kind === 'file' && (
+            <div onClick={(e) => { e.stopPropagation(); onView({ id: cv.id, filename: cv.filename, mimeType: cv.mimeType, sizeBytes: cv.sizeBytes, createdAt: cv.createdAt, uploadedByName: cv.uploadedByName, notes: cv.notes }) }} title="Preview" style={miniBtn}>👁</div>
+          )}
+          {cv && <a href={api.documentDownloadUrl(cv.id)} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} style={miniBtn} title="Download">↓</a>}
+          {canWrite && <div onClick={(e) => { e.stopPropagation(); del(d) }} style={{ ...miniBtn, color: '#C0392B' }}>×</div>}
+        </div>
+      </div>
+    )
+  }
+
+  const grouped = useMemo(() => {
+    if (!groupByCategory) return null
+    const byCat = new Map<DocumentCategory, DocumentDto[]>()
+    for (const d of rows) {
+      const list = byCat.get(d.category) ?? []
+      list.push(d); byCat.set(d.category, list)
+    }
+    return DOCUMENT_CATEGORIES.filter((c) => byCat.has(c.id)).map((c) => ({ cat: c, docs: byCat.get(c.id)! }))
+  }, [rows, groupByCategory])
+
   return (
     <div style={{ background: '#fff', border: '1px solid #E5E7F0', borderRadius: 14, overflow: 'hidden' }}>
-      <div className="docs-grid" style={{ padding: '11px 18px', borderBottom: '1px solid #E5E7F0', fontSize: 10.5, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: '#8888A0' }}>
+      <div className="docs-grid" style={{ padding: '11px 18px', borderBottom: '1px solid #E5E7F0', fontSize: 10.5, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: '#8888A0', display: grouped && grouped.length > 1 ? 'none' : undefined }}>
         <div>Name</div><div>Category</div><div>Company</div><div>Services</div><div>v</div><div>Size</div><div>Uploaded</div><div />
       </div>
+      {grouped && grouped.length > 1 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 18px', borderBottom: '1px solid #E5E7F0', background: '#FBFBFD' }}>
+          <span style={{ fontSize: 10.5, fontWeight: 700, color: '#8888A0', letterSpacing: '.06em', textTransform: 'uppercase' }}>Grouped by category</span>
+          <div style={{ flex: 1 }} />
+          <div onClick={() => setCollapsed(Object.fromEntries(grouped.map((g) => [g.cat.id, true])))} style={{ fontSize: 11, color: '#2A6FDB', fontWeight: 700, cursor: 'pointer' }}>Collapse all</div>
+          <div onClick={() => setCollapsed({})} style={{ fontSize: 11, color: '#2A6FDB', fontWeight: 700, cursor: 'pointer' }}>Expand all</div>
+        </div>
+      )}
       {loading && <div style={{ padding: 24, textAlign: 'center', color: '#8888A0', fontSize: 13 }}>Loading…</div>}
       {!loading && rows.length === 0 && <div style={{ padding: 40, textAlign: 'center', color: '#8888A0', fontSize: 13 }}>Nothing here.</div>}
-      {rows.map((d) => {
-        const cat = CAT_STYLE[d.category] ?? CAT_STYLE.other
-        const cv = d.currentVersion
-        const openPrimary = (e: ReactMouseEvent) => {
-          e.stopPropagation()
-          if (d.kind === 'link' && d.url) { window.open(d.url, '_blank', 'noopener'); return }
-          if (cv) onView({ id: cv.id, filename: cv.filename, mimeType: cv.mimeType, sizeBytes: cv.sizeBytes, createdAt: cv.createdAt, uploadedByName: cv.uploadedByName, notes: cv.notes })
-          else setSelected(d)
-        }
-        const canOpenViewer = d.kind === 'file' && !!cv
+      {!loading && !grouped && rows.map(renderRow)}
+      {!loading && grouped && grouped.map(({ cat, docs }) => {
+        const isCollapsed = !!collapsed[cat.id]
+        const style = CAT_STYLE[cat.id] ?? CAT_STYLE.other
         return (
-          <div key={d.id} className="docs-grid" onClick={() => setSelected(d)} style={{ padding: '12px 18px', borderBottom: '1px solid #F2F3F9', alignItems: 'center', cursor: 'pointer', background: selected?.id === d.id ? '#F7F8FC' : 'transparent' }}>
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0 }}>
-              <svg viewBox="0 0 24 24" width="18" height="18" style={{ flex: 'none' }}><path d="M6.5 3h8l4 4v14h-12z M14 3v5h4.5" fill="none" stroke="#5C5C74" strokeWidth={1.7} strokeLinejoin="round" /></svg>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', gap: 6, alignItems: 'center' }}>
-                  <span
-                    onClick={openPrimary}
-                    title={canOpenViewer ? 'Open in viewer' : d.kind === 'link' ? 'Open link' : 'Show details'}
-                    style={{ color: '#2A6FDB', cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}
-                  >{d.name}</span>
-                  {d.isCentral && <span style={{ background: '#F4F1FD', color: '#4A3AB8', fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 999, textTransform: 'uppercase' }}>central</span>}
-                  {d.kind === 'link' && <span style={{ background: '#EEF0FA', color: '#4A3AB8', fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 999, textTransform: 'uppercase' }}>link</span>}
+          <div key={cat.id}>
+            <div
+              onClick={() => setCollapsed((s) => ({ ...s, [cat.id]: !isCollapsed }))}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 18px', background: '#F7F8FC', borderBottom: '1px solid #E5E7F0', borderTop: '1px solid #EEF0FA', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 1 }}
+            >
+              <svg viewBox="0 0 24 24" width="11" height="11" style={{ color: '#5C5C74', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0)', transition: 'transform .12s', flex: 'none' }}>
+                <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              <span style={{ background: style.bg, color: style.fg, borderRadius: 6, fontSize: 11, fontWeight: 800, padding: '3px 10px', letterSpacing: '.02em' }}>{cat.label}</span>
+              {cat.th && <span style={{ fontSize: 11.5, color: '#5C5C74' }}>{cat.th}</span>}
+              <span style={{ flex: 1 }} />
+              <span style={{ fontSize: 11, color: '#5C5C74', fontWeight: 600 }}>{docs.length} doc{docs.length === 1 ? '' : 's'}</span>
+            </div>
+            {!isCollapsed && (
+              <>
+                <div className="docs-grid" style={{ padding: '8px 18px', borderBottom: '1px solid #F2F3F9', fontSize: 10, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: '#AAAABA', background: '#FDFDFE' }}>
+                  <div>Name</div><div>Category</div><div>Company</div><div>Services</div><div>v</div><div>Size</div><div>Uploaded</div><div />
                 </div>
-                {d.description && <div style={{ fontSize: 11, color: '#8888A0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.description}</div>}
-              </div>
-            </div>
-            <div><span style={{ background: cat.bg, color: cat.fg, borderRadius: 6, fontSize: 10.5, fontWeight: 700, padding: '3px 8px' }}>{d.category}</span></div>
-            <div style={{ fontSize: 12, color: '#5C5C74', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.customerName ?? '—'}</div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
-              {(d.serviceLines ?? []).length === 0
-                ? <span style={{ color: '#BBBBCB', fontSize: 11 }}>—</span>
-                : (d.serviceLines ?? []).map((s) => {
-                    const st = SERVICE_STYLE[s]
-                    return <span key={s} style={{ background: st.bg, color: st.fg, borderRadius: 5, fontSize: 9.5, fontWeight: 800, padding: '1px 5px' }}>{s}</span>
-                  })}
-            </div>
-            <div style={{ fontSize: 12, color: '#5C5C74' }}>v{cv?.versionNo ?? '—'}</div>
-            <div style={{ fontSize: 12, color: '#5C5C74' }}>{cv ? Math.max(1, Math.round(cv.sizeBytes / 1024)) + ' KB' : '—'}</div>
-            <div style={{ fontSize: 12, color: '#5C5C74' }}>{cv ? new Date(cv.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '—'}</div>
-            <div style={{ display: 'flex', gap: 5, justifyContent: 'flex-end' }}>
-              {cv && d.kind === 'file' && (
-                <div onClick={(e) => { e.stopPropagation(); onView({ id: cv.id, filename: cv.filename, mimeType: cv.mimeType, sizeBytes: cv.sizeBytes, createdAt: cv.createdAt, uploadedByName: cv.uploadedByName, notes: cv.notes }) }} title="Preview" style={miniBtn}>👁</div>
-              )}
-              {cv && <a href={api.documentDownloadUrl(cv.id)} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} style={miniBtn} title="Download">↓</a>}
-              {canWrite && <div onClick={(e) => { e.stopPropagation(); del(d) }} style={{ ...miniBtn, color: '#C0392B' }}>×</div>}
-            </div>
+                {docs.map(renderRow)}
+              </>
+            )}
           </div>
         )
       })}
