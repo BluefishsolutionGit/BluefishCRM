@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import type {
   CompetitorContractDto, CompetitorContractStatus, CompetitorDto,
   ContractAttachmentDto, ContractDashboardDto, ContractDto, ContractStatus, ContractTemplateDto,
@@ -21,14 +22,14 @@ import { icons } from '../lib/icons'
 import { useToast } from '../lib/ToastContext'
 import { useAuth } from '../lib/AuthContext'
 
-type Sub = 'dashboard' | 'repository' | 'calendar' | 'approvals' | 'obligations' | 'competitors'
+type Sub = 'dashboard' | 'repository' | 'calendar' | 'approvals' | 'obligations' | 'opportunities'
 const SUB_DEFS: { id: Sub; label: string; icon: string }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: icons.home },
   { id: 'repository', label: 'Contracts & Agreements', icon: icons.contract },
   { id: 'calendar', label: 'Calendar', icon: icons.cal },
   { id: 'approvals', label: 'Approvals', icon: icons.check },
-  { id: 'obligations', label: 'Obligations', icon: icons.target },
-  { id: 'competitors', label: 'Competitor Tracker', icon: icons.versus },
+  { id: 'obligations', label: 'Follow-ups', icon: icons.target },
+  { id: 'opportunities', label: 'Opportunity Tracker', icon: icons.versus },
 ]
 
 const STATUS_STYLE: Record<ContractStatus, { bg: string; fg: string }> = {
@@ -88,14 +89,29 @@ export default function Contracts() {
   const [sub, setSub] = useState<Sub>('dashboard')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [newFromTemplate, setNewFromTemplate] = useState(false)
+  const [newContractPrefill, setNewContractPrefill] = useState<NewContractPrefill | undefined>()
   const [statusFilters, setStatusFilters] = useState<ContractStatus[]>([])
   const [serviceFilters, setServiceFilters] = useState<ServiceLine[]>([])
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
   useEffect(() => { const t = setTimeout(() => setSearch(searchInput.trim()), 250); return () => clearTimeout(t) }, [searchInput])
   const toast = useToast()
+  const location = useLocation()
+  const navigate = useNavigate()
 
-  const showFilterBar = sub !== 'competitors'
+  // Opening via `navigate('/contracts', { state: { prefillFromOpportunity: {...} } })`
+  // auto-opens the New Contract modal with those values pre-filled, then clears the state
+  // so a tab change / refresh doesn't re-trigger it.
+  useEffect(() => {
+    const prefill = (location.state as { prefillFromOpportunity?: NewContractPrefill } | null)?.prefillFromOpportunity
+    if (!prefill) return
+    setNewContractPrefill(prefill)
+    setNewFromTemplate(true)
+    setSub('repository')
+    navigate(location.pathname, { replace: true, state: null })
+  }, [location.state, location.pathname, navigate])
+
+  const showFilterBar = sub !== 'opportunities'
 
   return (
     <div style={{ height: '100%', display: 'flex', overflow: 'hidden', background: '#F7F8FC' }}>
@@ -137,11 +153,11 @@ export default function Contracts() {
           {sub === 'calendar' && <CalendarTab statusFilters={statusFilters} serviceFilters={serviceFilters} search={search} />}
           {sub === 'approvals' && <ApprovalsTab statusFilters={statusFilters} serviceFilters={serviceFilters} search={search} onToast={toast} />}
           {sub === 'obligations' && <ObligationsTab statusFilters={statusFilters} serviceFilters={serviceFilters} search={search} onToast={toast} />}
-          {sub === 'competitors' && <CompetitorTrackerTab onToast={toast} />}
+          {sub === 'opportunities' && <OpportunityTrackerTab onToast={toast} />}
         </div>
       </div>
 
-      {newFromTemplate && <NewFromTemplateModal onClose={() => setNewFromTemplate(false)} onCreated={(id) => { setNewFromTemplate(false); setSub('repository'); setSelectedId(id) }} />}
+      {newFromTemplate && <NewFromTemplateModal prefill={newContractPrefill} onClose={() => { setNewFromTemplate(false); setNewContractPrefill(undefined) }} onCreated={(id) => { setNewFromTemplate(false); setNewContractPrefill(undefined); setSub('repository'); setSelectedId(id) }} />}
     </div>
   )
 }
@@ -232,16 +248,28 @@ function DashboardTab({ statusFilters, serviceFilters, search, onOpenContract }:
 
   if (!data) return <div style={{ color: '#8888A0' }}>Loading…</div>
 
+  const activePct = data.totalCount > 0 ? Math.round((data.activeCount / data.totalCount) * 100) : 0
+  const funnelOrder: ContractStatus[] = ['Draft', 'Under Review', 'Pending Approval', 'Approved', 'Signed', 'Active']
+  const funnelRows = funnelOrder.map((s) => ({ status: s, count: data.byStatus.find((b) => b.status === s)?.count ?? 0 }))
+  const funnelMax = Math.max(1, ...funnelRows.map((r) => r.count))
+  const trendMax = Math.max(1, ...data.monthlyValueTrend.map((m) => m.value))
+  const thisMonth = data.monthlyValueTrend[data.monthlyValueTrend.length - 1]
+  const totalByType = data.byType.reduce((a, t) => a + t.value, 0)
+  const byTypeSorted = [...data.byType].sort((a, b) => b.value - a.value).slice(0, 4)
+
   const kpis = [
-    { l: 'Total value', v: fmt(data.totalValue), sub: `${data.totalCount} contracts`, g: 'linear-gradient(135deg,#2E6BE6,#1B2F8F)' },
-    { l: 'Active', v: String(data.activeCount), sub: 'In force', g: 'linear-gradient(135deg,#22C9B4,#0E9C7E)' },
-    { l: 'Expiring', v: String(data.expiringCount), sub: '≤ 60 days', g: 'linear-gradient(135deg,#FFB047,#F5641E)' },
-    { l: 'Pending', v: String(data.pendingCount), sub: `Avg ${data.avgApprovalDays}d approval`, g: 'linear-gradient(135deg,#8A5CF6,#5B2C9E)' },
+    { l: 'Total value',       v: fmt(data.totalValue),                       sub: `${data.totalCount} contracts`,            g: 'linear-gradient(135deg,#2E6BE6,#1B2F8F)' },
+    { l: 'Active',            v: String(data.activeCount),                    sub: `${activePct}% of total`,                  g: 'linear-gradient(135deg,#22C9B4,#0E9C7E)' },
+    { l: 'Expiring ≤ 90d',    v: String(data.expiringBuckets.in90.count),     sub: `pool ${fmt(data.expiringBuckets.in90.value)}`, g: 'linear-gradient(135deg,#FFB047,#F5641E)' },
+    { l: 'Pending approval',  v: String(data.pendingCount),                   sub: `avg ${data.avgApprovalDays}d waiting`,    g: 'linear-gradient(135deg,#8A5CF6,#5B2C9E)' },
   ]
 
+  const sectionTitle: CSSProperties = { fontSize: 11, fontWeight: 700, letterSpacing: '.06em', color: '#8888A0', textTransform: 'uppercase', marginBottom: 10 }
+
   return (
-    <>
-      <div className="contract-kpi-row">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Row 1 — KPI tiles */}
+      <div className="contract-kpi-row" style={{ margin: 0 }}>
         {kpis.map((k) => (
           <div key={k.l} style={{ borderRadius: 14, padding: '15px 17px', background: k.g, color: '#fff' }}>
             <div style={{ fontSize: 12, fontWeight: 600, opacity: 0.95 }}>{k.l}</div>
@@ -251,31 +279,183 @@ function DashboardTab({ statusFilters, serviceFilters, search, onOpenContract }:
         ))}
       </div>
 
-      <div style={{ ...card, padding: '16px 18px', marginBottom: 16 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>Contracts by status</div>
-        <div style={{ display: 'flex', borderRadius: 10, overflow: 'hidden' }}>
-          {data.byStatus.filter((s) => s.count > 0).map((s, i) => {
-            const style = STATUS_STYLE[s.status]
-            return (
-              <div key={s.status} style={{ flex: 1, background: style.bg, color: style.fg, padding: '16px 18px', borderRight: i < data.byStatus.length - 1 ? '1px solid #fff' : undefined }}>
-                <div style={{ fontSize: 12, fontWeight: 600, opacity: 0.9 }}>{s.status}</div>
-                <div style={{ fontFamily: "'Space Grotesk'", fontSize: 22, fontWeight: 700, marginTop: 4 }}>{s.count}</div>
+      {/* Row 2 — Funnel + Renewal Radar */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16 }}>
+        {/* Lifecycle Funnel */}
+        <div style={{ ...card, padding: '16px 18px' }}>
+          <div style={sectionTitle}>Contract pipeline</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {funnelRows.map((r) => {
+              const w = Math.max(4, (r.count / funnelMax) * 100)
+              const style = STATUS_STYLE[r.status]
+              return (
+                <div key={r.status} style={{ display: 'grid', gridTemplateColumns: '130px 1fr 40px', gap: 10, alignItems: 'center', fontSize: 12 }}>
+                  <div style={{ color: '#5C5C74', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.status}</div>
+                  <div style={{ height: 20, background: '#F2F3F9', borderRadius: 6, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', background: style.fg, opacity: 0.9, width: `${w}%`, transition: 'width .2s' }} />
+                  </div>
+                  <div style={{ textAlign: 'right', fontFamily: "'IBM Plex Mono', monospace", fontWeight: 700, color: '#1E1E30' }}>{r.count}</div>
+                </div>
+              )
+            })}
+          </div>
+          {data.approvalLongestWait && data.approvalLongestWait.days > 0 && (
+            <div onClick={() => onOpenContract(data.approvalLongestWait!.contractId)} style={{ marginTop: 12, padding: '9px 11px', background: '#FEF3E2', borderRadius: 8, fontSize: 11.5, color: '#8A5C13', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span>⚠</span>
+              <span style={{ flex: 1 }}>Longest wait: <b>{data.approvalLongestWait.days}d</b> — {data.approvalLongestWait.contractNo}</span>
+              <span style={{ color: '#B4650A' }}>›</span>
+            </div>
+          )}
+          <div style={{ marginTop: 12, borderTop: '1px solid #F2F3F9', paddingTop: 12, display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+            {([
+              ['Signed',     data.thisMonthThroughput.signed,     '#0E9C7E'],
+              ['Renewed',    data.thisMonthThroughput.renewed,    '#5B3FC4'],
+              ['Terminated', data.thisMonthThroughput.terminated, '#C0392B'],
+              ['Expired',    data.thisMonthThroughput.expired,    '#8888A0'],
+            ] as const).map(([label, count, color]) => (
+              <div key={label} style={{ flex: 1, textAlign: 'center' }}>
+                <div style={{ fontSize: 10.5, color: '#8888A0', letterSpacing: '.04em', textTransform: 'uppercase' }}>{label}</div>
+                <div style={{ fontFamily: "'Space Grotesk'", fontSize: 18, fontWeight: 700, color, marginTop: 2 }}>{count}</div>
               </div>
-            )
-          })}
+            ))}
+          </div>
+          <div style={{ fontSize: 10, color: '#8888A0', textAlign: 'center', marginTop: 6 }}>This calendar month</div>
+        </div>
+
+        {/* Renewal Radar + Needs Attention */}
+        <div style={{ ...card, padding: '16px 18px' }}>
+          <div style={sectionTitle}>Renewal radar</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 14 }}>
+            {([
+              ['≤ 30 days',  data.expiringBuckets.in30, '#C0392B'],
+              ['≤ 60 days',  data.expiringBuckets.in60, '#D2601A'],
+              ['≤ 90 days',  data.expiringBuckets.in90, '#B4650A'],
+            ] as const).map(([label, b, color]) => {
+              const w = Math.max(4, (b.count / Math.max(1, data.expiringBuckets.in90.count)) * 100)
+              return (
+                <div key={label} style={{ display: 'grid', gridTemplateColumns: '80px 1fr auto', gap: 10, alignItems: 'center', fontSize: 12 }}>
+                  <div style={{ color: '#5C5C74', fontWeight: 600 }}>{label}</div>
+                  <div style={{ height: 18, background: '#F7F8FC', borderRadius: 6, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${w}%`, background: color, opacity: 0.85 }} />
+                  </div>
+                  <div style={{ textAlign: 'right', fontFamily: "'IBM Plex Mono', monospace", fontSize: 11.5 }}>
+                    <b style={{ color: '#1E1E30' }}>{b.count}</b>
+                    <span style={{ color: '#8888A0' }}> · {fmt(b.value)}</span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          <div style={{ borderTop: '1px solid #F2F3F9', paddingTop: 12 }}>
+            <div style={sectionTitle}>Needs attention</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {([
+                ['Pending approval',    data.pendingCount,            '#5B3FC4', `avg ${data.avgApprovalDays}d waiting`],
+                ['Overdue follow-ups',  data.overdueFollowupsCount,   '#C0392B', 'past due date'],
+                ['High-risk contracts', data.riskBreakdown.high,      '#C0392B', 'flagged High'],
+                ['Medium-risk',         data.riskBreakdown.medium,    '#B4650A', 'review when possible'],
+              ] as const).map(([label, count, color, sub]) => (
+                <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, background: count > 0 ? '#F7F8FC' : 'transparent' }}>
+                  <div style={{ width: 10, height: 10, borderRadius: 3, background: count > 0 ? color : '#D7D7E2', flex: 'none' }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12.5, color: count > 0 ? '#1E1E30' : '#8888A0', fontWeight: 600 }}>{label}</div>
+                    <div style={{ fontSize: 10.5, color: '#8888A0' }}>{sub}</div>
+                  </div>
+                  <div style={{ fontFamily: "'Space Grotesk'", fontSize: 18, fontWeight: 700, color: count > 0 ? color : '#D7D7E2' }}>{count}</div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
+      {/* Row 3 — Monthly trend + Top customers / By type */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16 }}>
+        <div style={{ ...card, padding: '16px 18px' }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', marginBottom: 10 }}>
+            <div style={sectionTitle}>Value by month</div>
+            <div style={{ flex: 1 }} />
+            {thisMonth && (
+              <div style={{ fontSize: 11, color: '#8888A0' }}>
+                This month: <b style={{ color: '#1E1E30', fontFamily: "'Space Grotesk'" }}>{fmt(thisMonth.value)}</b>
+                {thisMonth.count > 0 && <> · {thisMonth.count} ctrs</>}
+              </div>
+            )}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 120, paddingTop: 6, paddingBottom: 20, borderBottom: '1px solid #F2F3F9', position: 'relative' }}>
+            {data.monthlyValueTrend.map((m, idx) => {
+              const h = Math.max(2, (m.value / trendMax) * 100)
+              const isCur = idx === data.monthlyValueTrend.length - 1
+              const [, mo] = m.month.split('-')
+              return (
+                <div key={m.month} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }} title={`${m.month}: ${fmt(m.value)} · ${m.count} contract${m.count === 1 ? '' : 's'}`}>
+                  <div style={{ width: '100%', height: `${h}%`, background: isCur ? '#2A6FDB' : '#B6CBF3', borderRadius: '4px 4px 0 0', minHeight: 2 }} />
+                  <div style={{ fontSize: 9.5, color: isCur ? '#2A6FDB' : '#8888A0', fontFamily: "'IBM Plex Mono', monospace", fontWeight: isCur ? 700 : 400 }}>{Number(mo)}</div>
+                </div>
+              )
+            })}
+          </div>
+          <div style={{ fontSize: 10, color: '#8888A0', marginTop: 8 }}>Signed-at (or start-date) · last 12 months</div>
+        </div>
+
+        <div style={{ ...card, padding: '16px 18px' }}>
+          <div style={sectionTitle}>Top customers</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+            {data.topCustomers.length === 0 && <div style={{ color: '#8888A0', fontSize: 12 }}>No customers with contracts yet.</div>}
+            {data.topCustomers.map((c) => {
+              const w = Math.max(4, (c.value / (data.topCustomers[0]?.value || 1)) * 100)
+              return (
+                <div key={c.customerId} style={{ display: 'grid', gridTemplateColumns: '1fr 90px', gap: 10, alignItems: 'center' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 600, color: '#1E1E30', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.customerName}</div>
+                    <div style={{ height: 5, background: '#F2F3F9', borderRadius: 3, overflow: 'hidden', marginTop: 3 }}>
+                      <div style={{ width: `${w}%`, height: '100%', background: '#2A6FDB' }} />
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right', fontFamily: "'IBM Plex Mono', monospace", fontSize: 11.5 }}>
+                    <div style={{ color: '#1E1E30', fontWeight: 700 }}>{fmt(c.value)}</div>
+                    <div style={{ color: '#8888A0', fontSize: 10 }}>{c.count} ctr{c.count === 1 ? '' : 's'}</div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          {byTypeSorted.length > 0 && (
+            <div style={{ borderTop: '1px solid #F2F3F9', marginTop: 12, paddingTop: 12 }}>
+              <div style={sectionTitle}>By type</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                {byTypeSorted.map((t) => {
+                  const pct = totalByType > 0 ? Math.round((t.value / totalByType) * 100) : 0
+                  return (
+                    <div key={t.type} style={{ display: 'grid', gridTemplateColumns: '1fr 50px 70px', gap: 8, alignItems: 'center', fontSize: 11.5 }}>
+                      <div style={{ color: '#3B3B52', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.type}</div>
+                      <div style={{ textAlign: 'right', color: '#5C5C74' }}>{pct}%</div>
+                      <div style={{ textAlign: 'right', fontFamily: "'IBM Plex Mono', monospace", color: '#5C5C74' }}>{fmt(t.value)}</div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Row 4 — Upcoming follow-ups */}
       <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
-        <div style={{ padding: '14px 16px', borderBottom: '1px solid #F2F3F9', fontSize: 13, fontWeight: 700 }}>Upcoming obligations</div>
+        <div style={{ padding: '14px 16px', borderBottom: '1px solid #F2F3F9', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center' }}>
+          Upcoming follow-ups
+          {data.overdueFollowupsCount > 0 && (
+            <span style={{ marginLeft: 10, background: '#FDECEA', color: '#C0392B', fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999 }}>{data.overdueFollowupsCount} overdue</span>
+          )}
+        </div>
         {data.upcomingObligations.map((o) => {
           const overdue = new Date(o.dueDate).getTime() < Date.now()
           return (
             <div key={o.id} onClick={() => onOpenContract(o.contractId)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 16px', borderBottom: '1px solid #F2F3F9', cursor: 'pointer' }}>
               <div style={{ width: 4, borderRadius: 3, background: KIND_COLOR[o.kind] ?? '#5C5C74', alignSelf: 'stretch' }} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.title}</div>
-                <div style={{ fontSize: 11, color: '#8888A0' }}>{o.kind} · {o.contractNo}</div>
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: '#1E1E30', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.customerName}</div>
+                <div style={{ fontSize: 11, color: '#5C5C74', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.title} · {o.kind} · {o.contractNo}</div>
               </div>
               <div style={{ fontSize: 11.5, color: overdue ? '#C0392B' : '#5C5C74', fontWeight: overdue ? 700 : 500 }}>
                 {new Date(o.dueDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
@@ -284,9 +464,9 @@ function DashboardTab({ statusFilters, serviceFilters, search, onOpenContract }:
             </div>
           )
         })}
-        {data.upcomingObligations.length === 0 && <div style={{ padding: 24, textAlign: 'center', color: '#8888A0', fontSize: 13 }}>No upcoming obligations.</div>}
+        {data.upcomingObligations.length === 0 && <div style={{ padding: 24, textAlign: 'center', color: '#8888A0', fontSize: 13 }}>No upcoming follow-ups.</div>}
       </div>
-    </>
+    </div>
   )
 }
 
@@ -344,12 +524,16 @@ function RepositoryTab({ statusFilters, serviceFilters, search, selectedId, onSe
   const renderRow = (c: ContractDto) => {
     const s = STATUS_STYLE[c.status]
     const r = RISK_STYLE[c.risk]
+    const expiringSoon = c.daysLeft != null && c.daysLeft >= 0 && c.daysLeft <= 90
+    const endColor = c.daysLeft == null ? '#3B3B52' : c.daysLeft < 0 ? '#C0392B' : c.daysLeft <= 30 ? '#C0392B' : c.daysLeft <= 90 ? '#B4650A' : '#3B3B52'
     return (
       <div key={c.id} className="contract-repo-grid" onClick={() => onSelect(c.id)} style={{ padding: '13px 18px', borderBottom: '1px solid #F2F3F9', alignItems: 'center', cursor: 'pointer', background: selectedId === c.id ? '#F7F8FC' : 'transparent' }}>
         <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, fontWeight: 500 }}>{c.no}</div>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.customerName}</div>
-          <div style={{ fontSize: 11, color: '#8888A0' }}>{c.startDate ? new Date(c.startDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'} → {c.endDate ? new Date(c.endDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</div>
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: '#1E1E30', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.customerName}</div>
+          {(c.name || c.currentVersion?.title) && (
+            <div style={{ fontSize: 11, color: '#8888A0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name ?? c.currentVersion?.title}</div>
+          )}
         </div>
         <div style={{ fontSize: 11.5, color: '#5C5C74', minWidth: 0 }}>
           <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.type}</div>
@@ -359,11 +543,28 @@ function RepositoryTab({ statusFilters, serviceFilters, search, selectedId, onSe
             </div>
           )}
         </div>
+        <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11.5, color: '#5C5C74' }}>
+          {c.startDate ? new Date(c.startDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+        </div>
+        <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11.5, color: endColor, fontWeight: expiringSoon ? 700 : 500 }}>
+          {c.endDate ? new Date(c.endDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+          {c.daysLeft != null && (
+            <div style={{ fontSize: 10, color: endColor, opacity: 0.85 }}>{c.daysLeft < 0 ? `${-c.daysLeft}d ago` : `${c.daysLeft}d left`}</div>
+          )}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+          <div style={{ width: 22, height: 22, borderRadius: '50%', background: '#EEF3FC', color: '#2A6FDB', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, border: '1px solid #D6E2F7', flex: 'none' }}>{initialsOf(c.ownerName)}</div>
+          <div style={{ fontSize: 11.5, color: '#5C5C74', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.ownerName}</div>
+        </div>
         <div style={{ textAlign: 'right', fontFamily: "'Space Grotesk'", fontSize: 12.5, fontWeight: 600 }}>{c.value ? fmt(c.value) : '—'}</div>
         <div><span style={{ background: s.bg, color: s.fg, borderRadius: 7, fontSize: 11, fontWeight: 700, padding: '3px 9px', whiteSpace: 'nowrap' }}>{c.status}</span></div>
         <div style={{ textAlign: 'right' }}><span style={{ background: r.bg, color: r.fg, borderRadius: 7, fontSize: 11, fontWeight: 700, padding: '3px 9px' }}>{c.risk}</span></div>
       </div>
     )
+  }
+
+  if (selected) {
+    return <ContractDetailPanel contract={selected} onClose={() => onSelect('')} onReload={reload} onToast={onToast} />
   }
 
   return (
@@ -395,10 +596,10 @@ function RepositoryTab({ statusFilters, serviceFilters, search, selectedId, onSe
         </div>
       </div>
 
-      <div className={selected ? 'contract-two-pane with-selected' : 'contract-two-pane'}>
+      <div>
         <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
           <div className="contract-repo-grid" style={{ padding: '11px 18px', borderBottom: '1px solid #E5E7F0', fontSize: 10.5, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#8888A0' }}>
-            <div>Contract #</div><div>Party</div><div>Type</div><div style={{ textAlign: 'right' }}>Value</div><div>Status</div><div style={{ textAlign: 'right' }}>Risk</div>
+            <div>Contract #</div><div>Party</div><div>Type</div><div>Start</div><div>End</div><div>Owner</div><div style={{ textAlign: 'right' }}>Value</div><div>Status</div><div style={{ textAlign: 'right' }}>Risk</div>
           </div>
 
           {loading && <div style={{ padding: 24, textAlign: 'center', color: '#8888A0', fontSize: 13 }}>Loading…</div>}
@@ -449,8 +650,6 @@ function RepositoryTab({ statusFilters, serviceFilters, search, selectedId, onSe
             )
           })}
         </div>
-
-        {selected && <ContractDetailPanel contract={selected} onClose={() => onSelect('')} onReload={reload} onToast={onToast} />}
       </div>
     </>
   )
@@ -460,6 +659,15 @@ function initialsOf(name: string): string {
   const clean = name.replace(/[^\w\s฀-๿&]/g, '').trim()
   const parts = clean.split(/\s+/).slice(0, 2)
   return (parts.map((p) => p[0] ?? '').join('') || '·').slice(0, 3).toUpperCase()
+}
+
+function KV({ label, value, mono }: { label: string; value: ReactNode; mono?: boolean }) {
+  return (
+    <div>
+      <div style={{ fontSize: 10.5, fontWeight: 700, color: '#8888A0', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 3 }}>{label}</div>
+      <div style={{ fontSize: 13, fontWeight: 600, color: '#1E1E30', fontFamily: mono ? "'IBM Plex Mono', monospace" : undefined }}>{value}</div>
+    </div>
+  )
 }
 
 function ContractDetailPanel({ contract, onClose, onReload, onToast }: { contract: ContractDto; onClose: () => void; onReload: () => void; onToast: (m: string) => void }) {
@@ -503,38 +711,75 @@ function ContractDetailPanel({ contract, onClose, onReload, onToast }: { contrac
     try { await api.terminateContract(contract.id, comment); onToast('Terminated'); onReload() } catch (e) { onToast(e instanceof ApiError ? e.message : 'Failed') }
   }
 
+  const statusStyle = STATUS_STYLE[contract.status]
+  const riskStyle = RISK_STYLE[contract.risk]
+  const fmtDate = (iso: string | null) => iso ? new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
+
   return (
-    <div style={{ ...card, overflow: 'hidden', position: 'sticky', top: 20 }}>
-      <div style={{ padding: '14px 18px', borderBottom: '1px solid #F2F3F9', display: 'flex', alignItems: 'center', gap: 10 }}>
-        <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 14, fontWeight: 700, flex: 1 }}>{contract.no}</div>
-        <div onClick={onClose} style={{ cursor: 'pointer', color: '#8888A0', fontSize: 18 }}>×</div>
+    <div>
+      {/* Back + header bar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+        <div onClick={onClose} style={{ ...outlineBtn, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 14, lineHeight: 1 }}>←</span> Back to list
+        </div>
+        <div style={{ flex: 1 }} />
+        <span style={{ background: statusStyle.bg, color: statusStyle.fg, borderRadius: 7, fontSize: 11.5, fontWeight: 700, padding: '4px 10px' }}>{contract.status}</span>
+        <span style={{ background: riskStyle.bg, color: riskStyle.fg, borderRadius: 7, fontSize: 11.5, fontWeight: 700, padding: '4px 10px' }}>Risk · {contract.risk}</span>
       </div>
-      <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 10, fontSize: 12.5 }}>
-        <div style={{ fontSize: 15, fontWeight: 700 }}>{contract.name ?? cv?.title ?? contract.type}</div>
-        <div><b style={{ color: '#8888A0' }}>Type:</b> {contract.type}</div>
-        <div><b style={{ color: '#8888A0' }}>Customer:</b> {contract.customerName}</div>
-        <div><b style={{ color: '#8888A0' }}>Owner:</b> {contract.ownerName}</div>
-        {contract.businessUnit && <div><b style={{ color: '#8888A0' }}>Business unit:</b> {contract.businessUnit}</div>}
+
+      <div style={{ ...card, padding: '18px 22px', marginBottom: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap', marginBottom: 4 }}>
+          <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, fontWeight: 600, color: '#5C5C74' }}>{contract.no}</div>
+          <div style={{ fontFamily: "'Space Grotesk'", fontSize: 20, fontWeight: 700, color: '#1E1E30' }}>{contract.name ?? cv?.title ?? contract.type}</div>
+        </div>
+        <div style={{ fontSize: 12.5, color: '#5C5C74' }}>{contract.customerName}{contract.businessUnit && <> · <span style={{ color: '#8888A0' }}>BU:</span> {contract.businessUnit}</>}</div>
+      </div>
+
+      <div style={{ ...card, padding: '18px 22px', marginBottom: 14 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16 }}>
+          <KV label="Customer" value={contract.customerName} />
+          <KV label="Owner" value={contract.ownerName} />
+          <KV label="Type" value={contract.type} />
+          <KV label="Value" value={contract.value ? '฿' + contract.value.toLocaleString('en-US') : '—'} mono />
+          <KV label="Start date" value={fmtDate(contract.startDate)} mono />
+          <KV label="End date" value={
+            <>
+              {fmtDate(contract.endDate)}
+              {contract.daysLeft != null && (
+                <span style={{ marginLeft: 6, fontSize: 11, color: contract.daysLeft < 0 ? '#C0392B' : contract.daysLeft <= 30 ? '#C0392B' : contract.daysLeft <= 90 ? '#B4650A' : '#8888A0' }}>
+                  ({contract.daysLeft < 0 ? `${-contract.daysLeft}d overdue` : `${contract.daysLeft}d left`})
+                </span>
+              )}
+            </>
+          } mono />
+          {contract.contractTerm && <KV label="Term" value={contract.contractTerm} />}
+          <KV label="Auto-renew" value={<>{contract.autoRenew ? 'Yes' : 'No'}{contract.renewNoticeDays != null && <span style={{ color: '#8888A0' }}> · notice {contract.renewNoticeDays}d</span>}</>} />
+          {contract.signedAt && <KV label="Signed" value={fmtDate(contract.signedAt)} mono />}
+          {contract.terminatedAt && <KV label="Terminated" value={fmtDate(contract.terminatedAt)} mono />}
+        </div>
+
         {(contract.contactPerson || contract.contactEmail || contract.contactTel || contract.contactFax) && (
-          <div>
-            <b style={{ color: '#8888A0' }}>Contact:</b> {contract.contactPerson ?? '—'}
-            {contract.contactEmail && <> · <a href={`mailto:${contract.contactEmail}`} style={{ color: '#2A6FDB', textDecoration: 'none' }}>{contract.contactEmail}</a></>}
-            {contract.contactTel && <> · <span style={{ color: '#5C5C74' }}>Tel</span> <a href={`tel:${contract.contactTel}`} style={{ color: '#2A6FDB', textDecoration: 'none' }}>{contract.contactTel}</a></>}
-            {contract.contactFax && <> · <span style={{ color: '#5C5C74' }}>Fax</span> {contract.contactFax}</>}
-          </div>
-        )}
-        <div><b style={{ color: '#8888A0' }}>Value:</b> {contract.value ? '฿' + contract.value.toLocaleString('en-US') : '—'}</div>
-        <div><b style={{ color: '#8888A0' }}>Period:</b> {contract.startDate ? new Date(contract.startDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'} → {contract.endDate ? new Date(contract.endDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'} {contract.daysLeft != null && <span style={{ color: contract.daysLeft <= 30 ? '#C0392B' : contract.daysLeft <= 90 ? '#B4650A' : '#5C5C74' }}>({contract.daysLeft} days left)</span>}</div>
-        {contract.contractTerm && <div><b style={{ color: '#8888A0' }}>Term:</b> {contract.contractTerm}</div>}
-        <div><b style={{ color: '#8888A0' }}>Auto-renew:</b> {contract.autoRenew ? 'yes' : 'no'}{contract.renewNoticeDays != null && <span style={{ color: '#8888A0' }}> · notice {contract.renewNoticeDays}d</span>}</div>
-        {contract.serviceDescription && (
-          <div>
-            <b style={{ color: '#8888A0' }}>Service description:</b>
-            <div style={{ marginTop: 3, color: '#3B3B52', whiteSpace: 'pre-wrap' }}>{contract.serviceDescription}</div>
+          <div style={{ borderTop: '1px solid #F2F3F9', marginTop: 16, paddingTop: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', color: '#8888A0', textTransform: 'uppercase', marginBottom: 6 }}>Contact</div>
+            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12.5, color: '#3B3B52' }}>
+              {contract.contactPerson && <span><b style={{ color: '#8888A0', fontWeight: 600 }}>Person:</b> {contract.contactPerson}</span>}
+              {contract.contactEmail && <span><b style={{ color: '#8888A0', fontWeight: 600 }}>Email:</b> <a href={`mailto:${contract.contactEmail}`} style={{ color: '#2A6FDB', textDecoration: 'none' }}>{contract.contactEmail}</a></span>}
+              {contract.contactTel && <span><b style={{ color: '#8888A0', fontWeight: 600 }}>Tel:</b> <a href={`tel:${contract.contactTel}`} style={{ color: '#2A6FDB', textDecoration: 'none' }}>{contract.contactTel}</a></span>}
+              {contract.contactFax && <span><b style={{ color: '#8888A0', fontWeight: 600 }}>Fax:</b> {contract.contactFax}</span>}
+            </div>
           </div>
         )}
 
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
+        {contract.serviceDescription && (
+          <div style={{ borderTop: '1px solid #F2F3F9', marginTop: 16, paddingTop: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', color: '#8888A0', textTransform: 'uppercase', marginBottom: 6 }}>Service description</div>
+            <div style={{ color: '#3B3B52', whiteSpace: 'pre-wrap', fontSize: 12.5, lineHeight: 1.55 }}>{contract.serviceDescription}</div>
+          </div>
+        )}
+      </div>
+
+      <div style={{ ...card, padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: 12, fontSize: 12.5 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
           <b style={{ color: '#8888A0', flex: 'none', paddingTop: 2 }}>Services:</b>
           {editingServices ? (
             <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -607,7 +852,7 @@ function ContractDetailPanel({ contract, onClose, onReload, onToast }: { contrac
 
         {contract.obligations.length > 0 && (
           <div style={{ marginTop: 8, borderTop: '1px solid #F2F3F9', paddingTop: 10 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', color: '#8888A0', textTransform: 'uppercase', marginBottom: 6 }}>Obligations ({contract.obligations.length})</div>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', color: '#8888A0', textTransform: 'uppercase', marginBottom: 6 }}>Follow-ups ({contract.obligations.length})</div>
             {contract.obligations.map((o) => {
               const overdue = new Date(o.dueDate).getTime() < Date.now() && o.status !== 'completed'
               return (
@@ -1037,7 +1282,7 @@ function ApprovalsTab({ statusFilters, serviceFilters, search, onToast }: { stat
   )
 }
 
-// ─── Obligations tab (full table) ───
+// ─── Follow-ups tab (full table) ───
 function ObligationsTab({ statusFilters, serviceFilters, search, onToast }: { statusFilters: ContractStatus[]; serviceFilters: ServiceLine[]; search: string; onToast: (m: string) => void }) {
   const [rows, setRows] = useState<ObligationDto[]>([])
   const reload = async () => {
@@ -1055,14 +1300,18 @@ function ObligationsTab({ statusFilters, serviceFilters, search, onToast }: { st
   return (
     <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
       <div style={{ ...oblGrid, padding: '11px 18px', borderBottom: '1px solid #E5E7F0', fontSize: 10.5, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#8888A0' }}>
-        <div>Type</div><div>Title</div><div>Contract</div><div>Due date</div><div>Amount</div><div>Status</div><div />
+        <div>Type</div><div>Customer</div><div>Title</div><div>Contract</div><div>Due date</div><div>Amount</div><div>Status</div><div />
       </div>
+      {rows.length === 0 && (
+        <div style={{ padding: 30, textAlign: 'center', color: '#8888A0', fontSize: 13 }}>No follow-ups match this filter.</div>
+      )}
       {rows.map((o) => {
         const overdue = new Date(o.dueDate).getTime() < Date.now() && o.status !== 'completed'
         return (
           <div key={o.id} style={{ ...oblGrid, padding: '12px 18px', borderBottom: '1px solid #F2F3F9', alignItems: 'center' }}>
             <div><span style={{ background: (KIND_COLOR[o.kind] ?? '#5C5C74') + '1A', color: KIND_COLOR[o.kind] ?? '#5C5C74', borderRadius: 7, fontSize: 11, fontWeight: 700, padding: '3px 9px' }}>{o.kind}</span></div>
-            <div style={{ fontSize: 12.5, fontWeight: 600 }}>{o.title}</div>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: '#1E1E30', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.customerName}</div>
+            <div style={{ fontSize: 12.5, fontWeight: 500, color: '#3B3B52' }}>{o.title}</div>
             <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11.5, color: '#5C5C74' }}>{o.contractNo}</div>
             <div style={{ fontSize: 12, color: overdue ? '#C0392B' : '#3B3B52', fontWeight: overdue ? 700 : 500 }}>{new Date(o.dueDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
             <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12 }}>{o.amount ? '฿' + o.amount.toLocaleString('en-US') : '—'}</div>
@@ -1080,26 +1329,39 @@ function ObligationsTab({ statusFilters, serviceFilters, search, onToast }: { st
 }
 
 // ─── New contract from template modal ───
-function NewFromTemplateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
+export interface NewContractPrefill {
+  opportunityId?: string
+  opportunityTitle?: string
+  customerId?: string
+  value?: number
+  name?: string
+  serviceDescription?: string
+  serviceLines?: ServiceLine[]
+  contactPerson?: string
+  contactEmail?: string
+  contactTel?: string
+}
+
+function NewFromTemplateModal({ onClose, onCreated, prefill }: { onClose: () => void; onCreated: (id: string) => void; prefill?: NewContractPrefill }) {
   const [templates, setTemplates] = useState<ContractTemplateDto[]>([])
   const [customers, setCustomers] = useState<CustomerDto[]>([])
   const [types, setTypes] = useState<ContractTypeDto[]>([])
   const [templateId, setTemplateId] = useState('')
-  const [customerId, setCustomerId] = useState('')
+  const [customerId, setCustomerId] = useState(prefill?.customerId ?? '')
   const [contractType, setContractType] = useState('')
-  const [contractName, setContractName] = useState('')
-  const [serviceDescription, setServiceDescription] = useState('')
+  const [contractName, setContractName] = useState(prefill?.name ?? '')
+  const [serviceDescription, setServiceDescription] = useState(prefill?.serviceDescription ?? '')
   const [businessUnit, setBusinessUnit] = useState('')
-  const [contactPerson, setContactPerson] = useState('')
-  const [contactEmail, setContactEmail] = useState('')
-  const [contactTel, setContactTel] = useState('')
+  const [contactPerson, setContactPerson] = useState(prefill?.contactPerson ?? '')
+  const [contactEmail, setContactEmail] = useState(prefill?.contactEmail ?? '')
+  const [contactTel, setContactTel] = useState(prefill?.contactTel ?? '')
   const [contactFax, setContactFax] = useState('')
   const [contractTerm, setContractTerm] = useState('')
   const [renewNoticeDays, setRenewNoticeDays] = useState<number | ''>(30)
-  const [value, setValue] = useState<number>(0)
+  const [value, setValue] = useState<number>(prefill?.value ?? 0)
   const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10))
   const [endDate, setEndDate] = useState(() => { const d = new Date(); d.setFullYear(d.getFullYear() + 1); return d.toISOString().slice(0, 10) })
-  const [serviceLines, setServiceLines] = useState<ServiceLine[]>([])
+  const [serviceLines, setServiceLines] = useState<ServiceLine[]>(prefill?.serviceLines ?? [])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -1121,6 +1383,7 @@ function NewFromTemplateModal({ onClose, onCreated }: { onClose: () => void; onC
     try {
       const created = await api.createContractFromTemplate({
         templateId, customerId,
+        opportunityId: prefill?.opportunityId,
         value: value || undefined,
         startDate: new Date(startDate).toISOString(),
         endDate: new Date(endDate).toISOString(),
@@ -1150,6 +1413,12 @@ function NewFromTemplateModal({ onClose, onCreated }: { onClose: () => void; onC
             <div style={{ fontFamily: "'Space Grotesk'", fontSize: 18, fontWeight: 700, flex: 1 }}>New contract from template</div>
             <div onClick={onClose} style={{ cursor: 'pointer', fontSize: 20, color: '#8888A0' }}>×</div>
           </div>
+          {prefill?.opportunityId && (
+            <div style={{ padding: '10px 22px', background: '#EEF8F3', borderBottom: '1px solid #D7EEDF', fontSize: 12, color: '#0E6E4E', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 14 }}>↳</span>
+              <span>Converting from won deal{prefill.opportunityTitle ? ': ' : ''}<b>{prefill.opportunityTitle ?? ''}</b> — customer, amount, service, and contact pre-filled.</span>
+            </div>
+          )}
           <div style={{ padding: '18px 22px', overflow: 'auto', flex: 1 }}>
             <SectionLabel>Template & basics</SectionLabel>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 6 }}>
@@ -1280,19 +1549,18 @@ const CONFIDENCE_STYLE: Record<'Low'|'Med'|'High', { bg: string; fg: string }> =
   Med:  { bg: '#FEF3E2', fg: '#B4650A' },
   Low:  { bg: '#FDECEA', fg: '#C0392B' },
 }
-const compGrid: CSSProperties = { display: 'grid', gridTemplateColumns: '1.5fr 150px 1fr 110px 130px 100px 120px 80px 80px', gap: 10, alignItems: 'center' }
+const compGrid: CSSProperties = { display: 'grid', gridTemplateColumns: '170px 1fr 110px 130px 100px 120px 80px 90px', gap: 10, alignItems: 'center' }
 
-function CompetitorTrackerTab({ onToast }: { onToast: (m: string) => void }) {
+function OpportunityTrackerTab({ onToast }: { onToast: (m: string) => void }) {
   const [competitors, setCompetitors] = useState<CompetitorDto[]>([])
   const [contracts, setContracts] = useState<CompetitorContractDto[]>([])
-  const [selectedCompId, setSelectedCompId] = useState<string>('all')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [serviceFilter, setServiceFilter] = useState<ServiceLine | 'all'>('all')
-  const [collapsed, setCollapsed] = useState(false)
+  const [competitorFilter, setCompetitorFilter] = useState<string>('all')
+  const [customerSearch, setCustomerSearch] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [newOpen, setNewOpen] = useState(false)
-  const [addCompOpen, setAddCompOpen] = useState(false)
-  const [editingComp, setEditingComp] = useState<CompetitorDto | null>(null)
+  const [manageOpen, setManageOpen] = useState(false)
   const [editing, setEditing] = useState<CompetitorContractDto | null>(null)
   const { hasPermission } = useAuth()
   const canWrite = hasPermission('competitor:write')
@@ -1303,32 +1571,37 @@ function CompetitorTrackerTab({ onToast }: { onToast: (m: string) => void }) {
       setCompetitors(cs)
       setContracts(cn)
     } catch (e) {
-      onToast(e instanceof ApiError ? e.message : 'Failed to load competitor data')
+      onToast(e instanceof ApiError ? e.message : 'Failed to load opportunity data')
     } finally { setLoading(false) }
   }
   useEffect(() => { refresh() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [])
 
-  const visibleCompetitors = useMemo(() => {
-    if (serviceFilter === 'all') return competitors
-    return competitors.filter((c) => c.serviceLines.includes(serviceFilter))
-  }, [competitors, serviceFilter])
+  const filtered = useMemo(() => {
+    const q = customerSearch.trim().toLowerCase()
+    return contracts.filter((c) => {
+      if (competitorFilter !== 'all' && c.competitorId !== competitorFilter) return false
+      if (statusFilter !== 'all' && c.status !== statusFilter) return false
+      if (serviceFilter !== 'all') {
+        const comp = competitors.find((k) => k.id === c.competitorId)
+        if (!comp?.serviceLines.includes(serviceFilter)) return false
+      }
+      if (q && !c.customerName.toLowerCase().includes(q)) return false
+      return true
+    })
+  }, [contracts, competitors, competitorFilter, statusFilter, serviceFilter, customerSearch])
 
-  // If the current selection is filtered out, reset to All
-  useEffect(() => {
-    if (selectedCompId !== 'all' && !visibleCompetitors.some((c) => c.id === selectedCompId)) {
-      setSelectedCompId('all')
+  const grouped = useMemo(() => {
+    const map = new Map<string, { customerName: string; customerId: string | null; items: CompetitorContractDto[]; totalValue: number; weighted: number }>()
+    for (const c of filtered) {
+      const key = c.customerId || `name:${c.customerName.toLowerCase()}`
+      const g = map.get(key) ?? { customerName: c.customerName, customerId: c.customerId, items: [], totalValue: 0, weighted: 0 }
+      g.items.push(c)
+      g.totalValue += c.dealValue
+      g.weighted += c.dealValue * (c.probability / 100)
+      map.set(key, g)
     }
-  }, [visibleCompetitors, selectedCompId])
-
-  const filtered = useMemo(() => contracts.filter((c) => {
-    if (selectedCompId !== 'all' && c.competitorId !== selectedCompId) return false
-    if (statusFilter !== 'all' && c.status !== statusFilter) return false
-    if (serviceFilter !== 'all') {
-      const comp = competitors.find((k) => k.id === c.competitorId)
-      if (!comp?.serviceLines.includes(serviceFilter)) return false
-    }
-    return true
-  }), [contracts, competitors, selectedCompId, statusFilter, serviceFilter])
+    return Array.from(map.values()).sort((a, b) => a.customerName.localeCompare(b.customerName))
+  }, [filtered])
 
   const totals = useMemo(() => {
     const totalDeals = filtered.reduce((s, c) => s + c.dealValue, 0)
@@ -1336,161 +1609,63 @@ function CompetitorTrackerTab({ onToast }: { onToast: (m: string) => void }) {
     return { count: filtered.length, totalDeals, weighted }
   }, [filtered])
 
-  const selected = selectedCompId === 'all' ? null : competitors.find((c) => c.id === selectedCompId) ?? null
-
   if (loading) return <div style={{ color: '#8888A0' }}>Loading…</div>
 
-  const deleteCompetitor = async (c: CompetitorDto) => {
-    const linked = contracts.filter((k) => k.competitorId === c.id).length
-    const warn = linked > 0 ? `\n\nAlso removes ${linked} tracked contract row(s).` : ''
-    if (!confirm(`Delete competitor "${c.name}"?${warn}`)) return
-    try {
-      await api.deleteCompetitor(c.id)
-      onToast('Competitor deleted')
-      if (selectedCompId === c.id) setSelectedCompId('all')
-      refresh()
-    } catch (e) { onToast(e instanceof ApiError ? e.message : 'Delete failed') }
-  }
-
   return (
-    <div style={{ display: 'flex', gap: 14, alignItems: 'stretch' }}>
-      {/* Left sidebar */}
-      <div style={{
-        ...card, padding: 0, overflow: 'hidden', flex: 'none',
-        width: collapsed ? 54 : 260, transition: 'width .18s ease',
-        display: 'flex', flexDirection: 'column',
-      }}>
-        <div style={{ padding: collapsed ? '10px 6px' : '12px 14px', borderBottom: '1px solid #F2F3F9', display: 'flex', alignItems: 'center', gap: 8 }}>
-          {!collapsed && <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.06em', color: '#5B3FC4', textTransform: 'uppercase', flex: 1 }}>Competitors</div>}
-          <div onClick={() => setCollapsed((v) => !v)} title={collapsed ? 'Expand' : 'Collapse'} style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid #E5E7F0', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#5C5C74', fontSize: 13, marginLeft: collapsed ? 0 : 'auto' }}>
-            {collapsed ? '›' : '‹'}
-          </div>
+    <div>
+      {/* Toolbar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+        <input
+          value={customerSearch}
+          onChange={(e) => setCustomerSearch(e.target.value)}
+          placeholder="Search customer…"
+          style={{ ...selectSm, minWidth: 220, fontFamily: 'inherit' }}
+        />
+        <select value={serviceFilter} onChange={(e) => setServiceFilter(e.target.value as ServiceLine | 'all')} style={selectSm}>
+          <option value="all">All services</option>
+          {SERVICE_LINES.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select value={competitorFilter} onChange={(e) => setCompetitorFilter(e.target.value)} style={selectSm}>
+          <option value="all">All competitors</option>
+          {competitors.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={selectSm}>
+          <option value="all">All statuses</option>
+          {COMP_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <div style={{ flex: 1 }} />
+        <div style={{ fontSize: 12, color: '#5C5C74' }}>
+          <b style={{ color: '#1E1E30' }}>{totals.count}</b> contracts · pool <b style={{ color: '#1E1E30' }}>{fmt(totals.totalDeals)}</b> · weighted <b style={{ color: '#2A6FDB' }}>{fmt(totals.weighted)}</b>
         </div>
-
-        {!collapsed && (
-          <div style={{ padding: '10px 12px 6px', display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-            <div onClick={() => setServiceFilter('all')} style={sideChip(serviceFilter === 'all', null)}>All</div>
-            {SERVICE_LINES.map((s) => (
-              <div key={s} onClick={() => setServiceFilter(s === serviceFilter ? 'all' : s)} style={sideChip(serviceFilter === s, SERVICE_STYLE[s])}>{s}</div>
-            ))}
-          </div>
-        )}
-
-        <div style={{ overflowY: 'auto', flex: 1, padding: '6px 6px 10px' }}>
-          <div onClick={() => setSelectedCompId('all')} style={sideRow(selectedCompId === 'all', collapsed)}>
-            {collapsed ? (
-              <div style={{ width: 30, height: 30, borderRadius: 8, background: '#F2F3F9', color: '#3B3B52', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800 }}>All</div>
-            ) : (
-              <>
-                <div style={{ width: 30, height: 30, borderRadius: 8, background: '#F2F3F9', color: '#3B3B52', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, flex: 'none' }}>ALL</div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12.5, fontWeight: 700 }}>All competitors</div>
-                  <div style={{ fontSize: 10.5, color: '#8888A0' }}>{visibleCompetitors.length} shown · {contracts.length} contracts</div>
-                </div>
-              </>
-            )}
-          </div>
-
-          {visibleCompetitors.map((c) => {
-            const cnCount = contracts.filter((k) => k.competitorId === c.id).length
-            const active = selectedCompId === c.id
-            return (
-              <div key={c.id} onClick={() => setSelectedCompId(active ? 'all' : c.id)} style={sideRow(active, collapsed, c.color)}>
-                {collapsed ? (
-                  <div title={c.name} style={{ width: 30, height: 30, borderRadius: 8, background: c.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10.5, fontWeight: 800 }}>{c.logo}</div>
-                ) : (
-                  <>
-                    <div style={{ width: 30, height: 30, borderRadius: 8, background: c.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10.5, fontWeight: 800, flex: 'none' }}>{c.logo}</div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 12.5, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name}</div>
-                      <div style={{ fontSize: 10.5, color: '#8888A0', display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-                        <span>{cnCount} tracked</span>
-                        {c.serviceLines.slice(0, 3).map((s) => <ServicePill key={s} s={s} sm />)}
-                      </div>
-                    </div>
-                    {canWrite && (
-                      <div style={{ display: 'flex', gap: 4, flex: 'none' }}>
-                        <div onClick={(e) => { e.stopPropagation(); setEditingComp(c) }} title="Edit" style={sideBtn}>✎</div>
-                        <div onClick={(e) => { e.stopPropagation(); deleteCompetitor(c) }} title="Delete" style={{ ...sideBtn, color: '#C0392B' }}>×</div>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            )
-          })}
-
-          {visibleCompetitors.length === 0 && !collapsed && (
-            <div style={{ fontSize: 11.5, color: '#8888A0', padding: '16px 8px', textAlign: 'center' }}>No competitors for this service.</div>
-          )}
-        </div>
-
-        {!collapsed && canWrite && (
-          <div style={{ padding: 10, borderTop: '1px solid #F2F3F9' }}>
-            <div onClick={() => setAddCompOpen(true)} style={{ ...outlineBtn, width: '100%', textAlign: 'center' }}>+ Competitor</div>
-          </div>
-        )}
+        {canWrite && <div onClick={() => setManageOpen(true)} style={outlineBtn}>Manage Competitors</div>}
+        {canWrite && <div onClick={() => setNewOpen(true)} style={primaryBtn}>+ Track contract</div>}
       </div>
 
-      {/* Right pane */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        {selected && (
-          <div style={{ ...card, padding: '14px 16px', marginBottom: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{ width: 40, height: 40, borderRadius: 10, background: selected.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800 }}>{selected.logo}</div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 15, fontWeight: 700 }}>{selected.name}</div>
-                <div style={{ fontSize: 11, color: '#8888A0', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginTop: 2 }}>
-                  {selected.product && <span><b style={{ color: '#5C5C74' }}>Product:</b> {selected.product}</span>}
-                  {selected.serviceLines.map((s) => <ServicePill key={s} s={s} sm />)}
-                </div>
-              </div>
-              {canWrite && (
-                <>
-                  <div onClick={() => setEditingComp(selected)} style={outlineBtn}>Edit</div>
-                  <div onClick={() => deleteCompetitor(selected)} style={{ ...outlineBtn, color: '#C0392B', borderColor: '#F5C7C0' }}>Delete</div>
-                </>
-              )}
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10, marginTop: 12 }}>
-              <MetricCell label="Expiring 90d" value={String(selected.metrics.expiringIn90Days)} tone={selected.metrics.expiringIn90Days > 0 ? 'warn' : 'muted'} />
-              <MetricCell label="In neg." value={String(selected.metrics.inNegotiationVsUs)} tone="ok" />
-              <MetricCell label="Auto renew" value={String(selected.metrics.renewedByThem)} tone={selected.metrics.renewedByThem > 0 ? 'bad' : 'muted'} />
-              <MetricCell label="Pool value" value={fmt(selected.metrics.totalDealValue)} tone="muted" />
+      {/* Customer-grouped cards */}
+      {grouped.length === 0 && (
+        <div style={{ ...card, padding: 30, textAlign: 'center', color: '#8888A0', fontSize: 13 }}>No opportunities match this filter.</div>
+      )}
+      {grouped.map((g) => (
+        <div key={g.customerId ?? `name:${g.customerName}`} style={{ ...card, padding: '14px 16px', marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingBottom: 10, borderBottom: '1px solid #F2F3F9', marginBottom: 10, flexWrap: 'wrap' }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#1E1E30', flex: 1, minWidth: 0 }}>{g.customerName}</div>
+            <div style={{ fontSize: 11.5, color: '#5C5C74' }}>
+              <b style={{ color: '#1E1E30' }}>{g.items.length}</b> contract{g.items.length === 1 ? '' : 's'} ·
+              value <b style={{ color: '#1E1E30' }}>{fmt(g.totalValue)}</b> ·
+              weighted <b style={{ color: '#2A6FDB' }}>{fmt(g.weighted)}</b>
             </div>
           </div>
-        )}
-
-        {/* Filters + actions */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={selectSm}>
-            <option value="all">All statuses</option>
-            {COMP_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
-          <div style={{ flex: 1 }} />
-          <div style={{ fontSize: 12, color: '#5C5C74' }}>
-            <b style={{ color: '#1E1E30' }}>{totals.count}</b> contracts · pool <b style={{ color: '#1E1E30' }}>{fmt(totals.totalDeals)}</b> · weighted <b style={{ color: '#2A6FDB' }}>{fmt(totals.weighted)}</b>
-          </div>
-          {canWrite && <div onClick={() => setNewOpen(true)} style={primaryBtn}>+ Track contract</div>}
-        </div>
-
-        {/* Contract table */}
-        <div style={{ ...card, padding: '14px 16px' }}>
           <div style={{ ...compGrid, fontSize: 11, fontWeight: 700, color: '#8888A0', textTransform: 'uppercase', letterSpacing: '.06em', paddingBottom: 8, borderBottom: '1px solid #E5E7F0' }}>
-            <div>Customer</div><div>Held by</div><div>Service</div><div>Ends</div><div>Status</div><div>Prob</div><div>Value</div><div>Conf</div><div>Owner</div>
+            <div>Held by</div><div>Service</div><div>Ends</div><div>Status</div><div>Prob</div><div>Value</div><div>Conf</div><div>Owner</div>
           </div>
-          {filtered.length === 0 && (
-            <div style={{ padding: 30, textAlign: 'center', color: '#8888A0', fontSize: 13 }}>No competitor contracts match this filter.</div>
-          )}
-          {filtered.map((c) => {
+          {g.items.map((c) => {
             const days = c.daysUntilEnd
             const dayColor = days < 0 ? '#C0392B' : days <= 30 ? '#D2601A' : days <= 90 ? '#B4650A' : '#5C5C74'
             return (
               <div key={c.id} onClick={() => setEditing(c)} style={{ ...compGrid, padding: '11px 0', borderBottom: '1px solid #F1F1F5', fontSize: 12.5, cursor: 'pointer' }}>
-                <div style={{ fontWeight: 700, color: '#1E1E30' }}>{c.customerName}</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <div style={{ width: 22, height: 22, borderRadius: 6, background: c.competitorColor, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10.5, fontWeight: 800 }}>{c.competitorLogo}</div>
-                  <div style={{ color: '#5C5C74' }}>{c.competitorName}</div>
+                  <div style={{ color: '#3B3B52', fontWeight: 600 }}>{c.competitorName}</div>
                 </div>
                 <div style={{ color: '#5C5C74' }}>{c.service}</div>
                 <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11.5, color: dayColor }}>
@@ -1522,28 +1697,23 @@ function CompetitorTrackerTab({ onToast }: { onToast: (m: string) => void }) {
             )
           })}
         </div>
-      </div>
+      ))}
 
       {newOpen && (
         <NewCompetitorContractModal
-          competitors={visibleCompetitors.length ? visibleCompetitors : competitors}
+          competitors={competitors}
           onClose={() => setNewOpen(false)}
           onCreated={() => { setNewOpen(false); onToast('Competitor contract tracked'); refresh() }}
           onToast={onToast}
         />
       )}
-      {addCompOpen && (
-        <CompetitorFormModal
-          onClose={() => setAddCompOpen(false)}
-          onSaved={() => { setAddCompOpen(false); onToast('Competitor added'); refresh() }}
-          onToast={onToast}
-        />
-      )}
-      {editingComp && (
-        <CompetitorFormModal
-          initial={editingComp}
-          onClose={() => setEditingComp(null)}
-          onSaved={() => { setEditingComp(null); onToast('Competitor saved'); refresh() }}
+      {manageOpen && (
+        <ManageCompetitorsModal
+          competitors={competitors}
+          contracts={contracts}
+          canWrite={canWrite}
+          onClose={() => setManageOpen(false)}
+          onChanged={refresh}
           onToast={onToast}
         />
       )}
@@ -1561,38 +1731,6 @@ function CompetitorTrackerTab({ onToast }: { onToast: (m: string) => void }) {
   )
 }
 
-const sideChip = (active: boolean, tone: { bg: string; fg: string } | null): CSSProperties => ({
-  fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 999, cursor: 'pointer',
-  border: `1px solid ${active ? (tone ? tone.fg : '#2A6FDB') : '#E5E7F0'}`,
-  background: active ? (tone ? tone.bg : '#EEF0FA') : '#fff',
-  color: active ? (tone ? tone.fg : '#2A6FDB') : '#5C5C74',
-})
-
-const sideRow = (active: boolean, collapsed: boolean, accent?: string): CSSProperties => ({
-  display: 'flex', alignItems: 'center', gap: 9,
-  padding: collapsed ? '6px 6px' : '8px 10px',
-  borderRadius: 9, cursor: 'pointer',
-  background: active ? '#EEF0FA' : 'transparent',
-  borderLeft: active && accent ? `3px solid ${accent}` : '3px solid transparent',
-  marginBottom: 3,
-  justifyContent: collapsed ? 'center' : 'flex-start',
-})
-
-const sideBtn: CSSProperties = {
-  width: 22, height: 22, borderRadius: 6, border: '1px solid #E5E7F0',
-  background: '#fff', color: '#5C5C74', display: 'flex', alignItems: 'center',
-  justifyContent: 'center', fontSize: 13, cursor: 'pointer',
-}
-
-function MetricCell({ label, value, tone }: { label: string; value: string; tone: 'ok' | 'warn' | 'bad' | 'muted' }) {
-  const c = tone === 'ok' ? '#0E9C7E' : tone === 'warn' ? '#B4650A' : tone === 'bad' ? '#C0392B' : '#5C5C74'
-  return (
-    <div>
-      <div style={{ fontSize: 10, color: '#8888A0', letterSpacing: '.04em' }}>{label}</div>
-      <div style={{ fontFamily: "'Space Grotesk'", fontSize: 15, fontWeight: 700, color: c }}>{value}</div>
-    </div>
-  )
-}
 
 function StatusPill({ status }: { status: CompetitorContractStatus }) {
   const s = COMP_STATUS_STYLE[status]
@@ -1674,6 +1812,111 @@ function CompetitorFormModal({ initial, onClose, onSaved, onToast }: { initial?:
           <button type="submit" disabled={saving || !name.trim()} style={{ ...btnPrimary, opacity: saving || !name.trim() ? 0.5 : 1 }}>{saving ? 'Saving…' : (initial ? 'Save' : 'Add')}</button>
         </div>
       </form>
+    </div>
+  )
+}
+
+function ManageCompetitorsModal({ competitors, contracts, canWrite, onClose, onChanged, onToast }: {
+  competitors: CompetitorDto[]
+  contracts: CompetitorContractDto[]
+  canWrite: boolean
+  onClose: () => void
+  onChanged: () => void
+  onToast: (m: string) => void
+}) {
+  const [search, setSearch] = useState('')
+  const [adding, setAdding] = useState(false)
+  const [editing, setEditing] = useState<CompetitorDto | null>(null)
+
+  const q = search.trim().toLowerCase()
+  const visible = useMemo(() => {
+    const list = q
+      ? competitors.filter((c) => c.name.toLowerCase().includes(q) || (c.product ?? '').toLowerCase().includes(q))
+      : competitors
+    return [...list].sort((a, b) => a.name.localeCompare(b.name))
+  }, [competitors, q])
+
+  const countFor = (id: string) => contracts.filter((k) => k.competitorId === id).length
+
+  const remove = async (c: CompetitorDto) => {
+    const linked = countFor(c.id)
+    const warn = linked > 0 ? `\n\nAlso removes ${linked} tracked contract row(s).` : ''
+    if (!confirm(`Delete competitor "${c.name}"?${warn}`)) return
+    try {
+      await api.deleteCompetitor(c.id)
+      onToast('Competitor deleted')
+      onChanged()
+    } catch (e) { onToast(e instanceof ApiError ? e.message : 'Delete failed') }
+  }
+
+  return (
+    <div style={backdrop} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ ...dialog, maxWidth: 640, padding: 22, maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, flex: 1 }}>Manage competitors</div>
+          <div onClick={onClose} style={{ ...btnGhost, padding: '6px 10px', cursor: 'pointer' }}>Close</div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          <input
+            autoFocus
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search competitors…"
+            style={{ ...inp, flex: 1 }}
+          />
+          {canWrite && (
+            <button type="button" onClick={() => setAdding(true)} style={btnPrimary}>+ Add competitor</button>
+          )}
+        </div>
+
+        <div style={{ fontSize: 11, color: '#8888A0', marginBottom: 6 }}>
+          {visible.length} of {competitors.length} competitor{competitors.length === 1 ? '' : 's'}
+        </div>
+
+        <div style={{ overflowY: 'auto', flex: 1, border: '1px solid #F1F1F5', borderRadius: 10 }}>
+          {visible.length === 0 && (
+            <div style={{ padding: 24, textAlign: 'center', color: '#8888A0', fontSize: 13 }}>
+              {q ? 'No competitors match.' : 'No competitors yet.'}
+            </div>
+          )}
+          {visible.map((c) => (
+            <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderBottom: '1px solid #F2F3F9' }}>
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: c.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, flex: 'none' }}>{c.logo}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#1E1E30' }}>{c.name}</div>
+                <div style={{ fontSize: 11, color: '#8888A0', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginTop: 2 }}>
+                  <span>{countFor(c.id)} tracked</span>
+                  {c.product && <span>· {c.product}</span>}
+                  {c.serviceLines.slice(0, 4).map((s) => <ServicePill key={s} s={s} sm />)}
+                </div>
+              </div>
+              {canWrite && (
+                <div style={{ display: 'flex', gap: 6, flex: 'none' }}>
+                  <div onClick={() => setEditing(c)} style={outlineBtn}>Edit</div>
+                  <div onClick={() => remove(c)} style={{ ...outlineBtn, color: '#C0392B', borderColor: '#F5C7C0' }}>Delete</div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {adding && (
+          <CompetitorFormModal
+            onClose={() => setAdding(false)}
+            onSaved={() => { setAdding(false); onToast('Competitor added'); onChanged() }}
+            onToast={onToast}
+          />
+        )}
+        {editing && (
+          <CompetitorFormModal
+            initial={editing}
+            onClose={() => setEditing(null)}
+            onSaved={() => { setEditing(null); onToast('Competitor saved'); onChanged() }}
+            onToast={onToast}
+          />
+        )}
+      </div>
     </div>
   )
 }
@@ -1872,7 +2115,7 @@ const outlineBtn: CSSProperties = { border: '1px solid #E5E7F0', background: '#f
 const miniBtn: CSSProperties = { border: '1px solid #E5E7F0', background: '#fff', borderRadius: 8, fontSize: 11, fontWeight: 600, padding: '4px 10px', cursor: 'pointer', color: '#3B3B52' }
 const navBtn: CSSProperties = { width: 28, height: 28, border: '1px solid #E5E7F0', background: '#fff', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8888A0', fontSize: 14, cursor: 'pointer' }
 // repoGrid moved to Contracts.css .contract-repo-grid for responsive column drops
-const oblGrid: CSSProperties = { display: 'grid', gridTemplateColumns: '110px 1.6fr 130px 130px 130px 110px 130px', gap: 10 }
+const oblGrid: CSSProperties = { display: 'grid', gridTemplateColumns: '100px 180px 1.4fr 130px 130px 130px 110px 130px', gap: 10 }
 const backdrop: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(30,26,48,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 20 }
 const dialog: CSSProperties = { background: '#fff', width: '100%', borderRadius: 14, boxShadow: '0 30px 80px -30px rgba(30,26,48,.4)' }
 const fieldLabel: CSSProperties = { fontSize: 11.5, fontWeight: 700, color: '#5C5C74', marginBottom: 6 }

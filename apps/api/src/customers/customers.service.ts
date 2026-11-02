@@ -11,7 +11,7 @@ type TagRow = { id: string; name: string; color: string; kind: string; descripti
 type CustomerRow = {
   id: string; code: string; name: string; nameTh: string | null; industry: string; status: string
   ownerId: string; city: string; address: string; taxId: string; phone: string; terms: string
-  openValue: number; wonValue: number; lastActivity: string
+  lastActivity: string
   primaryServiceLines: string[]
   owner: { name: string }
   tags: TagRow[]
@@ -25,6 +25,10 @@ const sanitizeServiceLines = (values: readonly string[] | undefined | null): Ser
   }
   return [...set]
 }
+
+// openValue = sum of open opportunity values; wonValue = sum of Won opportunity values.
+// Kept in sync with dashboards.service.ts.
+const OPEN_STAGES = ['Qualification', 'Proposal', 'Negotiation']
 
 const CUSTOMER_INCLUDE = { owner: true, tags: true } as const
 
@@ -53,7 +57,8 @@ export class CustomersService {
       include: CUSTOMER_INCLUDE,
       orderBy: { code: 'asc' },
     })
-    return rows.map((c) => this.toDto(c))
+    const sums = await this.computeOppSums(rows.map((r) => r.id))
+    return rows.map((c) => this.toDto(c, sums.open.get(c.id) ?? 0, sums.won.get(c.id) ?? 0))
   }
 
   async findOne(id: string, req: Request): Promise<CustomerDto> {
@@ -64,7 +69,8 @@ export class CustomersService {
       include: CUSTOMER_INCLUDE,
     })
     if (!c) throw new NotFoundException(`Customer ${id} not found`)
-    return this.toDto(c)
+    const { open, won } = await this.oppSumsForOne(id)
+    return this.toDto(c, open, won)
   }
 
   async create(input: CreateCustomerDto, ctx: AuditRequestContext): Promise<CustomerDto> {
@@ -78,7 +84,6 @@ export class CustomersService {
         industry: rest.industry, status: rest.status ?? 'Prospect',
         ownerId: rest.ownerId, city: rest.city, address: rest.address, taxId: rest.taxId,
         phone: rest.phone, terms: rest.terms,
-        openValue: rest.openValue ?? 0, wonValue: rest.wonValue ?? 0,
         lastActivity: rest.lastActivity ?? '—',
         primaryServiceLines: sanitizeServiceLines(primaryServiceLines),
         ...(tagIds?.length ? { tags: { connect: tagIds.map((id) => ({ id })) } } : {}),
@@ -89,7 +94,7 @@ export class CustomersService {
       userId: ctx.userId, action: 'customer.create', entity: 'customer', entityId: created.id,
       after: created, ip: ctx.ip, userAgent: ctx.userAgent,
     })
-    return this.toDto(created)
+    return this.toDto(created, 0, 0)
   }
 
   async update(id: string, input: UpdateCustomerDto, ctx: AuditRequestContext): Promise<CustomerDto> {
@@ -101,7 +106,7 @@ export class CustomersService {
       if (clash) throw new ConflictException(`Customer code ${input.code} already exists`)
     }
 
-    const { tagIds, primaryServiceLines, ...rest } = input
+    const { tagIds, primaryServiceLines, openValue: _ov, wonValue: _wv, ...rest } = input
     const updated = await this.prisma.customer.update({
       where: { id },
       data: {
@@ -115,7 +120,42 @@ export class CustomersService {
       userId: ctx.userId, action: 'customer.update', entity: 'customer', entityId: id,
       before, after: updated, ip: ctx.ip, userAgent: ctx.userAgent,
     })
-    return this.toDto(updated)
+    const { open, won } = await this.oppSumsForOne(id)
+    return this.toDto(updated, open, won)
+  }
+
+  private async computeOppSums(customerIds: string[]): Promise<{ open: Map<string, number>; won: Map<string, number> }> {
+    const open = new Map<string, number>()
+    const won = new Map<string, number>()
+    if (customerIds.length === 0) return { open, won }
+    const rows = await this.prisma.opportunity.groupBy({
+      by: ['customerId', 'stage'],
+      where: { customerId: { in: customerIds } },
+      _sum: { value: true },
+    })
+    for (const r of rows) {
+      const sum = r._sum.value ?? 0
+      if (OPEN_STAGES.includes(r.stage)) {
+        open.set(r.customerId, (open.get(r.customerId) ?? 0) + sum)
+      } else if (r.stage === 'Won') {
+        won.set(r.customerId, (won.get(r.customerId) ?? 0) + sum)
+      }
+    }
+    return { open, won }
+  }
+
+  private async oppSumsForOne(customerId: string): Promise<{ open: number; won: number }> {
+    const [openAgg, wonAgg] = await Promise.all([
+      this.prisma.opportunity.aggregate({
+        where: { customerId, stage: { in: OPEN_STAGES } },
+        _sum: { value: true },
+      }),
+      this.prisma.opportunity.aggregate({
+        where: { customerId, stage: 'Won' },
+        _sum: { value: true },
+      }),
+    ])
+    return { open: openAgg._sum.value ?? 0, won: wonAgg._sum.value ?? 0 }
   }
 
   async softDelete(id: string, ctx: AuditRequestContext): Promise<void> {
@@ -128,14 +168,14 @@ export class CustomersService {
     })
   }
 
-  private toDto(row: CustomerRow): CustomerDto {
+  private toDto(row: CustomerRow, openValue: number, wonValue: number): CustomerDto {
     const tags: TagDto[] = row.tags.map((t) => ({ id: t.id, name: t.name, color: t.color, kind: t.kind as TagKind, description: t.description }))
     return {
       id: row.id, code: row.code, name: row.name, nameTh: row.nameTh,
       industry: row.industry, status: row.status as CustomerStatus,
       ownerId: row.ownerId, ownerName: row.owner.name,
       city: row.city, address: row.address, taxId: row.taxId, phone: row.phone, terms: row.terms,
-      openValue: row.openValue, wonValue: row.wonValue, lastActivity: row.lastActivity,
+      openValue, wonValue, lastActivity: row.lastActivity,
       primaryServiceLines: sanitizeServiceLines(row.primaryServiceLines),
       tags,
     }

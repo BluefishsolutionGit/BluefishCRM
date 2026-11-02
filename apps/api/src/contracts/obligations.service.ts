@@ -58,7 +58,7 @@ export class ObligationsService {
 
     const rows = await this.prisma.obligation.findMany({
       where,
-      include: { contract: { select: { no: true } } },
+      include: { contract: { select: { no: true, customerId: true, customer: { select: { name: true } } } } },
       orderBy: { dueDate: 'asc' },
     })
     return rows.map((r) => this.toDto(r))
@@ -74,7 +74,7 @@ export class ObligationsService {
         dueDate: new Date(input.dueDate),
         amount: input.amount ?? null, notes: input.notes ?? null,
       },
-      include: { contract: { select: { no: true } } },
+      include: { contract: { select: { no: true, customerId: true, customer: { select: { name: true } } } } },
     })
     await this.audit.log({ ...ctx, action: 'obligation.create', entity: 'obligation', entityId: row.id, metadata: { contractId } })
     return this.toDto(row)
@@ -85,7 +85,7 @@ export class ObligationsService {
     if (!before) throw new NotFoundException('Obligation not found')
     const row = await this.prisma.obligation.update({
       where: { id }, data: { status: 'completed', completedAt: new Date() },
-      include: { contract: { select: { no: true } } },
+      include: { contract: { select: { no: true, customerId: true, customer: { select: { name: true } } } } },
     })
     await this.audit.log({ ...ctx, action: 'obligation.complete', entity: 'obligation', entityId: id })
     return this.toDto(row)
@@ -101,9 +101,10 @@ export class ObligationsService {
   private toDto = (row: {
     id: string; contractId: string; kind: string; title: string
     dueDate: Date; amount: number | null; status: string; completedAt: Date | null; notes: string | null
-    contract: { no: string }
+    contract: { no: string; customerId: string; customer: { name: string } }
   }): ObligationDto => ({
     id: row.id, contractId: row.contractId, contractNo: row.contract.no,
+    customerId: row.contract.customerId, customerName: row.contract.customer.name,
     kind: row.kind as ObligationKind, title: row.title,
     dueDate: row.dueDate.toISOString(), amount: row.amount,
     status: row.status as 'pending' | 'completed' | 'overdue',

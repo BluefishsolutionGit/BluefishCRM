@@ -497,6 +497,7 @@ export class ContractsService {
       })),
       obligations: row.obligations.map((o): ObligationDto => ({
         id: o.id, contractId: row.id, contractNo: row.no,
+        customerId: row.customerId, customerName: row.customer.name,
         kind: o.kind as ObligationKind, title: o.title,
         dueDate: o.dueDate.toISOString(), amount: o.amount,
         status: o.status as 'pending' | 'completed' | 'overdue',

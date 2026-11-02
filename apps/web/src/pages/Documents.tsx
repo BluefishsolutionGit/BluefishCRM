@@ -31,11 +31,12 @@ const SERVICE_STYLE: Record<ServiceLine, { bg: string; fg: string }> = {
   'AI&RPA': { bg: '#E5F8ED', fg: '#0E6E4E' },
 }
 
-type ViewMode = 'category' | 'company' | 'service'
+type ViewMode = 'category' | 'company' | 'contract' | 'service'
 type SelectionKey =
   | { view: 'category'; value: DocumentCategory | 'all' | '__central' }
-  | { view: 'company';  value: string | 'all' | '__central' }
-  | { view: 'service';  value: ServiceLine | 'all' | '__central' }
+  | { view: 'company';  value: string | 'all' | '__central' | '__nocust' }
+  | { view: 'contract'; value: string | 'all' | '__central' | '__nocontract' }
+  | { view: 'service';  value: ServiceLine | 'all' | '__central' | '__nosvc' }
 
 export default function Documents() {
   const [documents, setDocuments] = useState<DocumentDto[]>([])
@@ -47,6 +48,7 @@ export default function Documents() {
   const [view, setView] = useState<ViewMode>('category')
   const [pick, setPick] = useState<SelectionKey>({ view: 'category', value: 'all' })
   const [q, setQ] = useState('')
+  const [svcFilter, setSvcFilter] = useState<ServiceLine[]>([])
   const toast = useToast()
   const { hasPermission, user } = useAuth()
   const canWrite = hasPermission('customer:write')
@@ -103,6 +105,19 @@ export default function Documents() {
         items.push({ key: id, label: meta.name, sub: meta.code, count: meta.count, onPick: () => setPick({ view, value: id } as SelectionKey), tone: { bg: '#F7F8FC', fg: '#3B3B52' } })
       }
       if (noCust > 0) items.push({ key: '__nocust', label: 'Unlinked', sub: 'Not tied to a company', count: noCust, tone: { bg: '#F2F3F9', fg: '#8888A0' }, onPick: () => setPick({ view, value: '__nocust' } as SelectionKey) })
+    } else if (view === 'contract') {
+      const byCt = new Map<string, { no: string; name: string | null; customer: string | null; count: number }>()
+      let noCt = 0
+      for (const d of scopeDocs) {
+        if (!d.contractId) { noCt++; continue }
+        const cur = byCt.get(d.contractId) ?? { no: d.contractNo ?? '—', name: d.contractName, customer: d.customerName, count: 0 }
+        cur.count++; byCt.set(d.contractId, cur)
+      }
+      for (const [id, meta] of [...byCt.entries()].sort(([, a], [, b]) => a.no.localeCompare(b.no))) {
+        const label = meta.name ? `${meta.no} — ${meta.name}` : meta.no
+        items.push({ key: id, label, sub: meta.customer ?? undefined, count: meta.count, onPick: () => setPick({ view, value: id } as SelectionKey), tone: { bg: '#EEF3FC', fg: '#1F5AC2' } })
+      }
+      if (noCt > 0) items.push({ key: '__nocontract', label: 'No contract', sub: 'Not linked to any contract', count: noCt, tone: { bg: '#F2F3F9', fg: '#8888A0' }, onPick: () => setPick({ view, value: '__nocontract' } as SelectionKey) })
     } else {
       const bySvc = new Map<ServiceLine, number>()
       let noSvc = 0
@@ -123,16 +138,23 @@ export default function Documents() {
   // ── Filtering the right-side list based on picked bucket ───────────────
   const visible = useMemo(() => {
     return documents.filter((d) => {
+      // Service filter chips (cross-cutting — applies to every view mode).
+      // Central/company docs stay visible when no service tag so they're never hidden by the filter.
+      if (svcFilter.length > 0) {
+        const docSvcs = d.serviceLines ?? []
+        if (!docSvcs.some((s) => svcFilter.includes(s))) return false
+      }
       if (pick.view !== view) return true
       const v = pick.value as string
       if (v === 'all') return true
       if (v === '__central') return d.isCentral
       if (view === 'category') return !d.isCentral && d.category === v
       if (view === 'company')  return v === '__nocust' ? (!d.customerId && !d.isCentral) : (d.customerId === v && !d.isCentral)
+      if (view === 'contract') return v === '__nocontract' ? (!d.contractId && !d.isCentral) : (d.contractId === v && !d.isCentral)
       if (view === 'service')  return v === '__nosvc' ? ((d.serviceLines?.length ?? 0) === 0 && !d.isCentral) : (d.serviceLines?.includes(v as ServiceLine) && !d.isCentral)
       return true
     })
-  }, [documents, view, pick])
+  }, [documents, view, pick, svcFilter])
 
   const del = async (d: DocumentDto) => {
     if (!window.confirm(`Delete "${d.name}"? All versions are removed.`)) return
@@ -257,6 +279,31 @@ export default function Documents() {
           {canWrite && <div onClick={() => setUploadOpen('default')} style={primaryBtn}>+ Upload document</div>}
         </div>
 
+        {/* Service filter chips — cross-cutting across all 4 view modes */}
+        <div style={{ padding: '10px 24px', display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid #E5E7F0', background: '#fff', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 10.5, fontWeight: 700, color: '#8888A0', letterSpacing: '.06em', textTransform: 'uppercase', marginRight: 2 }}>Service</span>
+          {availableServices.map((s) => {
+            const on = svcFilter.includes(s)
+            const tone = SERVICE_STYLE[s]
+            return (
+              <div
+                key={s}
+                onClick={() => setSvcFilter((f) => (f.includes(s) ? f.filter((x) => x !== s) : [...f, s]))}
+                style={{
+                  fontSize: 11.5, fontWeight: 700, padding: '4px 10px', borderRadius: 999, cursor: 'pointer',
+                  background: on ? tone.bg : '#fff',
+                  color: on ? tone.fg : '#5C5C74',
+                  border: `1px solid ${on ? tone.fg : '#E5E7F0'}`,
+                }}
+              >{s}</div>
+            )
+          })}
+          {svcFilter.length > 0 && (
+            <div onClick={() => setSvcFilter([])} style={{ fontSize: 11, color: '#2A6FDB', fontWeight: 700, cursor: 'pointer', marginLeft: 4 }}>Clear</div>
+          )}
+          {availableServices.length === 0 && <span style={{ fontSize: 11, color: '#8888A0' }}>No services in your scope.</span>}
+        </div>
+
         {/* Content */}
         <div className={selected ? 'docs-two-pane with-selected' : 'docs-two-pane'} style={{ flex: 1, minHeight: 0 }}>
           <div style={{ overflow: 'auto', padding: '14px 24px 22px' }}>
@@ -297,15 +344,18 @@ export default function Documents() {
 const VIEW_LABEL: Record<ViewMode, string> = {
   category: 'By type',
   company:  'By company',
+  contract: 'By contract',
   service:  'By service',
 }
 
-// Compact SVG paths for the three view modes.
+// Compact SVG paths for the four view modes.
 const VIEW_ICON: Record<ViewMode, string> = {
   // Category → tag-style icon
   category: 'M20 12l-8 8-9-9V3h8l9 9zM6.5 6.5h.01',
   // Company → building icon
   company:  'M4 20V6a2 2 0 012-2h4v16H4zm10-12h4a2 2 0 012 2v10h-6V8zM7 7h.01M7 11h.01M7 15h.01M17 11h.01M17 15h.01',
+  // Contract → document-with-signature icon
+  contract: 'M6 3h9l4 4v14H6V3zm9 0v5h5M9 13h6M9 17h4',
   // Service → layers icon
   service:  'M12 3l9 5-9 5-9-5 9-5zm-9 9l9 5 9-5M3 17l9 5 9-5',
 }
@@ -346,7 +396,7 @@ function ViewSwitcher({ view, onChange }: { view: ViewMode; onChange: (v: ViewMo
           background: '#fff', border: '1px solid #E5E7F0', borderRadius: 10,
           boxShadow: '0 12px 32px rgba(14,31,25,.14)', minWidth: 160, padding: 4, zIndex: 30,
         }}>
-          {(['category', 'company', 'service'] as ViewMode[]).map((id) => (
+          {(['category', 'company', 'contract', 'service'] as ViewMode[]).map((id) => (
             <div key={id} onClick={() => { onChange(id); setOpen(false) }} style={{
               display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 7,
               cursor: 'pointer', fontSize: 12.5, fontWeight: 600,

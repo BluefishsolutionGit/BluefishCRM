@@ -307,6 +307,7 @@ export class DocumentsService {
   private includeAll() {
     return {
       customer: true, uploadedBy: true,
+      contract: { select: { no: true, name: true } },
       currentVersion: { include: { uploadedBy: true, extraction: true } },
       versions: {
         include: { uploadedBy: { select: { name: true } } },
@@ -322,6 +323,7 @@ export class DocumentsService {
     opportunityId: string | null; quotationId: string | null; contractId: string | null
     createdAt: Date; updatedAt: Date
     customer: { name: string; code: string } | null
+    contract: { no: string; name: string | null } | null
     uploadedBy: { name: string }
     currentVersion: null | {
       id: string; versionNo: number; filename: string; mimeType: string; sizeBytes: number
@@ -352,6 +354,7 @@ export class DocumentsService {
       isCentral: row.isCentral,
       customerId: row.customerId, customerName: row.customer?.name ?? null, customerCode: row.customer?.code ?? null,
       opportunityId: row.opportunityId, quotationId: row.quotationId, contractId: row.contractId,
+      contractNo: row.contract?.no ?? null, contractName: row.contract?.name ?? null,
       uploadedByName: row.uploadedBy.name,
       currentVersion,
       versions: row.versions.map((v) => ({

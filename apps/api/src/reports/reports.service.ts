@@ -158,10 +158,31 @@ const REPORTS: ReportDef[] = [
       const where: Record<string, unknown> = { deletedAt: null }
       if (filters.status) where.status = filters.status
       if (filters.industry) where.industry = { contains: filters.industry, mode: 'insensitive' }
-      const rows = (await prisma.customer.findMany({ where, include: { owner: true } })).map((c) => ({
+      const customers = await prisma.customer.findMany({ where, include: { owner: true } })
+      const customerIds = customers.map((c) => c.id)
+      const openByCustomer = new Map<string, number>()
+      const wonByCustomer = new Map<string, number>()
+      if (customerIds.length > 0) {
+        const sums = await prisma.opportunity.groupBy({
+          by: ['customerId', 'stage'],
+          where: { customerId: { in: customerIds } },
+          _sum: { value: true },
+        })
+        for (const r of sums) {
+          const v = r._sum.value ?? 0
+          if (['Qualification', 'Proposal', 'Negotiation'].includes(r.stage)) {
+            openByCustomer.set(r.customerId, (openByCustomer.get(r.customerId) ?? 0) + v)
+          } else if (r.stage === 'Won') {
+            wonByCustomer.set(r.customerId, (wonByCustomer.get(r.customerId) ?? 0) + v)
+          }
+        }
+      }
+      const rows = customers.map((c) => ({
         values: {
           code: c.code, name: c.name, industry: c.industry, status: c.status,
-          owner: c.owner.name, openValue: c.openValue, wonValue: c.wonValue,
+          owner: c.owner.name,
+          openValue: openByCustomer.get(c.id) ?? 0,
+          wonValue: wonByCustomer.get(c.id) ?? 0,
           lastActivity: c.lastActivity,
         },
       }))
