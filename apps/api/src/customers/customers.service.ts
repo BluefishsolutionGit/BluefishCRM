@@ -2,7 +2,7 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { PrismaService } from '../prisma/prisma.service'
 import { AuditService } from '../audit/audit.service'
 import { SERVICE_LINES } from '@bluefish/shared'
-import type { CreateCustomerDto, CustomerDto, CustomerStatus, ServiceLine, TagDto, TagKind, UpdateCustomerDto } from '@bluefish/shared'
+import type { CreateCustomerDto, CustomerDto, CustomerStatus, SalesTeamMemberDto, ServiceLine, TagDto, TagKind, UpdateCustomerDto } from '@bluefish/shared'
 import type { AuditRequestContext } from '../common/request-context'
 import { loadServiceScope, scopeArrayField } from '../common/service-scope'
 import type { Request } from 'express'
@@ -57,8 +57,9 @@ export class CustomersService {
       include: CUSTOMER_INCLUDE,
       orderBy: { code: 'asc' },
     })
-    const sums = await this.computeOppSums(rows.map((r) => r.id))
-    return rows.map((c) => this.toDto(c, sums.open.get(c.id) ?? 0, sums.won.get(c.id) ?? 0))
+    const ids = rows.map((r) => r.id)
+    const [sums, teams] = await Promise.all([this.computeOppSums(ids), this.computeSalesTeams(ids)])
+    return rows.map((c) => this.toDto(c, sums.open.get(c.id) ?? 0, sums.won.get(c.id) ?? 0, teams.get(c.id) ?? []))
   }
 
   async findOne(id: string, req: Request): Promise<CustomerDto> {
@@ -69,8 +70,8 @@ export class CustomersService {
       include: CUSTOMER_INCLUDE,
     })
     if (!c) throw new NotFoundException(`Customer ${id} not found`)
-    const { open, won } = await this.oppSumsForOne(id)
-    return this.toDto(c, open, won)
+    const [{ open, won }, teams] = await Promise.all([this.oppSumsForOne(id), this.computeSalesTeams([id])])
+    return this.toDto(c, open, won, teams.get(id) ?? [])
   }
 
   async create(input: CreateCustomerDto, ctx: AuditRequestContext): Promise<CustomerDto> {
@@ -94,7 +95,7 @@ export class CustomersService {
       userId: ctx.userId, action: 'customer.create', entity: 'customer', entityId: created.id,
       after: created, ip: ctx.ip, userAgent: ctx.userAgent,
     })
-    return this.toDto(created, 0, 0)
+    return this.toDto(created, 0, 0, [])
   }
 
   async update(id: string, input: UpdateCustomerDto, ctx: AuditRequestContext): Promise<CustomerDto> {
@@ -120,8 +121,8 @@ export class CustomersService {
       userId: ctx.userId, action: 'customer.update', entity: 'customer', entityId: id,
       before, after: updated, ip: ctx.ip, userAgent: ctx.userAgent,
     })
-    const { open, won } = await this.oppSumsForOne(id)
-    return this.toDto(updated, open, won)
+    const [{ open, won }, teams] = await Promise.all([this.oppSumsForOne(id), this.computeSalesTeams([id])])
+    return this.toDto(updated, open, won, teams.get(id) ?? [])
   }
 
   private async computeOppSums(customerIds: string[]): Promise<{ open: Map<string, number>; won: Map<string, number> }> {
@@ -142,6 +143,49 @@ export class CustomersService {
       }
     }
     return { open, won }
+  }
+
+  // Roll up distinct opportunity owners per customer with their open/won deal
+  // counts. Sorted by total deals desc so the busiest owner surfaces first.
+  private async computeSalesTeams(customerIds: string[]): Promise<Map<string, SalesTeamMemberDto[]>> {
+    const out = new Map<string, SalesTeamMemberDto[]>()
+    if (customerIds.length === 0) return out
+    const rows = await this.prisma.opportunity.groupBy({
+      by: ['customerId', 'ownerId', 'stage'],
+      where: { customerId: { in: customerIds } },
+      _count: { _all: true },
+    })
+    if (rows.length === 0) return out
+
+    const ownerIds = [...new Set(rows.map((r) => r.ownerId))]
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: ownerIds } },
+      select: { id: true, name: true, department: true },
+    })
+    const userById = new Map(users.map((u) => [u.id, u]))
+
+    // (customerId → ownerId → tallies)
+    const bucket = new Map<string, Map<string, { open: number; won: number }>>()
+    for (const r of rows) {
+      const byOwner = bucket.get(r.customerId) ?? new Map()
+      const tally = byOwner.get(r.ownerId) ?? { open: 0, won: 0 }
+      if (OPEN_STAGES.includes(r.stage)) tally.open += r._count._all
+      else if (r.stage === 'Won') tally.won += r._count._all
+      byOwner.set(r.ownerId, tally)
+      bucket.set(r.customerId, byOwner)
+    }
+
+    for (const [customerId, byOwner] of bucket) {
+      const members: SalesTeamMemberDto[] = []
+      for (const [ownerId, tally] of byOwner) {
+        const u = userById.get(ownerId)
+        if (!u) continue
+        members.push({ userId: u.id, name: u.name, department: u.department, openDeals: tally.open, wonDeals: tally.won })
+      }
+      members.sort((a, b) => (b.openDeals + b.wonDeals) - (a.openDeals + a.wonDeals) || a.name.localeCompare(b.name))
+      out.set(customerId, members)
+    }
+    return out
   }
 
   private async oppSumsForOne(customerId: string): Promise<{ open: number; won: number }> {
@@ -168,7 +212,7 @@ export class CustomersService {
     })
   }
 
-  private toDto(row: CustomerRow, openValue: number, wonValue: number): CustomerDto {
+  private toDto(row: CustomerRow, openValue: number, wonValue: number, salesTeam: SalesTeamMemberDto[]): CustomerDto {
     const tags: TagDto[] = row.tags.map((t) => ({ id: t.id, name: t.name, color: t.color, kind: t.kind as TagKind, description: t.description }))
     return {
       id: row.id, code: row.code, name: row.name, nameTh: row.nameTh,
@@ -177,7 +221,7 @@ export class CustomersService {
       city: row.city, address: row.address, taxId: row.taxId, phone: row.phone, terms: row.terms,
       openValue, wonValue, lastActivity: row.lastActivity,
       primaryServiceLines: sanitizeServiceLines(row.primaryServiceLines),
-      tags,
+      tags, salesTeam,
     }
   }
 }

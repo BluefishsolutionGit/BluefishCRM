@@ -75,6 +75,18 @@ export interface AdminResetPasswordDto {
 
 export type CustomerStatus = 'Active' | 'Prospect' | 'Inactive'
 
+// Sales who actually carry opportunities for this customer — rolled up from
+// distinct Opportunity.owner. The account owner (CustomerDto.ownerId) is the
+// relationship lead; salesTeam reflects who's working deals on the ground,
+// which can span departments.
+export interface SalesTeamMemberDto {
+  userId: string
+  name: string
+  department: string | null
+  openDeals: number
+  wonDeals: number
+}
+
 export interface CustomerDto {
   id: string
   code: string
@@ -94,6 +106,7 @@ export interface CustomerDto {
   lastActivity: string
   primaryServiceLines: ServiceLine[]
   tags: TagDto[]
+  salesTeam: SalesTeamMemberDto[]
 }
 
 export interface ContactDto {
