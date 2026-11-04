@@ -202,15 +202,40 @@ export default function OpportunityDetailModal({ opp, onClose, onChanged, onDele
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 14px' }}>
                 <Field label="Customer" hint="Reassign this deal to a different company">
                   <select disabled={!canWrite} value={form.customerId ?? opp.customerId} onChange={(e) => setForm((f) => ({ ...f, customerId: e.target.value, contactId: null }))} style={inp}>
-                    {/* Sorted alphabetically. Show code inline so operators can spot duplicates. */}
-                    {[...customers].sort((a, b) => a.name.localeCompare(b.name)).map((c) => (
-                      <option key={c.id} value={c.id}>{c.name}{c.code ? ` (${c.code})` : ''}</option>
-                    ))}
+                    {/* Sorted alphabetically. Show code inline so operators can spot duplicates.
+                        Drafts (code starts with DRAFT-) get a ⚑ prefix. The UNASSIGNED singleton
+                        is the shared bucket for opportunities imported without a customer —
+                        pinned visually with a ⚠ prefix so sales can spot it and pick a real one. */}
+                    {[...customers].sort((a, b) => a.name.localeCompare(b.name)).map((c) => {
+                      const isUnassigned = c.code === 'UNASSIGNED'
+                      const isDraft = c.code?.startsWith('DRAFT-')
+                      const prefix = isUnassigned ? '⚠ Pending assignment · ' : isDraft ? '⚑ DRAFT · ' : ''
+                      return <option key={c.id} value={c.id}>{prefix}{c.name}{c.code ? ` (${c.code})` : ''}</option>
+                    })}
                     {/* Guarantee current customer is selectable even if list hasn't loaded yet */}
                     {!customers.some((c) => c.id === opp.customerId) && (
                       <option value={opp.customerId}>{opp.customerName}</option>
                     )}
                   </select>
+                  {(() => {
+                    const selectedId = form.customerId ?? opp.customerId
+                    const selected = customers.find((c) => c.id === selectedId)
+                    if (selected?.code === 'UNASSIGNED') {
+                      return (
+                        <div style={{ fontSize: 11, color: '#C0392B', marginTop: 4, fontWeight: 700 }}>
+                          ⚠ No customer assigned yet — this deal was imported without a Customer Code or Name. Pick a real customer above to move it out of the Unassigned bucket.
+                        </div>
+                      )
+                    }
+                    if (selected?.code?.startsWith('DRAFT-')) {
+                      return (
+                        <div style={{ fontSize: 11, color: '#B4650A', marginTop: 4, fontWeight: 600 }}>
+                          ⚑ Draft customer — placeholder fields (industry, address, tax ID) still need to be filled in from the Customers page.
+                        </div>
+                      )
+                    }
+                    return null
+                  })()}
                 </Field>
                 <Field label="Owner" hint="Sales rep responsible for the deal">
                   <select disabled={!canWrite} value={form.ownerId ?? opp.ownerId} onChange={(e) => set('ownerId', e.target.value)} style={inp}>

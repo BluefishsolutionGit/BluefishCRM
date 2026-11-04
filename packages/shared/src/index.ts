@@ -75,6 +75,18 @@ export interface AdminResetPasswordDto {
 
 export type CustomerStatus = 'Active' | 'Prospect' | 'Inactive'
 
+// Sales who actually carry opportunities for this customer — rolled up from
+// distinct Opportunity.owner. The account owner (CustomerDto.ownerId) is the
+// relationship lead; salesTeam reflects who's working deals on the ground,
+// which can span departments.
+export interface SalesTeamMemberDto {
+  userId: string
+  name: string
+  department: string | null
+  openDeals: number
+  wonDeals: number
+}
+
 export interface CustomerDto {
   id: string
   code: string
@@ -94,6 +106,7 @@ export interface CustomerDto {
   lastActivity: string
   primaryServiceLines: ServiceLine[]
   tags: TagDto[]
+  salesTeam: SalesTeamMemberDto[]
 }
 
 export interface ContactDto {
@@ -242,6 +255,10 @@ export interface ImportResultDto {
   /** Present when the workbook included an optional "contacts" sheet (customers import only). */
   contactsImported?: number
   contactsSkipped?: number
+  /** Opportunities import: customers auto-created from the Customer Name column because no code/name matched an existing customer. These start as drafts (status=Prospect, placeholder fields) and need enrichment later. */
+  draftCustomersCreated?: number
+  /** Opportunities import: rows that had NEITHER code nor name were routed to the shared "— Unassigned —" placeholder customer. Sales needs to assign a real customer via the opportunity modal. */
+  unassignedOpportunities?: number
 }
 
 // ─────── Leads ───────

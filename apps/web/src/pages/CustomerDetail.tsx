@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ChangeEvent, type FormEvent, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import type { ContactDto, CreateContactDto, CustomerDto, DocumentCategory, DocumentDto, OpportunityDto, TagDto, UpdateContactDto } from '@bluefish/shared'
+import type { ContactDto, CreateContactDto, CustomerDto, DocumentCategory, DocumentDto, OpportunityDto, SalesTeamMemberDto, TagDto, UpdateContactDto } from '@bluefish/shared'
 import { DOCUMENT_CATEGORIES } from '@bluefish/shared'
 import { api, ApiError } from '../lib/api'
 import { fmt, initialsOf } from '../data/mockData'
@@ -79,9 +79,10 @@ export default function CustomerDetail() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginTop: 16, borderTop: '1px solid #F2F3F9', paddingTop: 14 }}>
           <div><div style={metaLabel}>Open deals</div><div style={metaValue}>{customer.openValue ? fmt(customer.openValue) : '—'}</div></div>
           <div><div style={metaLabel}>Won YTD</div><div style={metaValue}>{customer.wonValue ? fmt(customer.wonValue) : '—'}</div></div>
-          <div><div style={metaLabel}>Owner</div><div style={{ fontSize: 13.5, fontWeight: 600, marginTop: 5 }}>{customer.ownerName}</div></div>
+          <div><div style={metaLabel}>Account owner</div><div style={{ fontSize: 13.5, fontWeight: 600, marginTop: 5 }}>{customer.ownerName}</div></div>
           <div><div style={metaLabel}>Last activity</div><div style={{ fontSize: 13.5, fontWeight: 600, marginTop: 5 }}>{customer.lastActivity}</div></div>
         </div>
+        <SalesTeamRow accountOwnerId={customer.ownerId} salesTeam={customer.salesTeam} />
       </div>
 
       <div style={{ display: 'flex', gap: 4, marginBottom: 14, borderBottom: '1px solid #E5E7F0' }}>
@@ -476,6 +477,53 @@ function Field({ label, children, required, hint, error }: { label: string; chil
       {children}
       {error && <div style={{ fontSize: 10.5, color: '#C0392B', marginTop: 3, fontWeight: 600 }}>{error}</div>}
       {!error && hint && <div style={{ fontSize: 10.5, color: '#8888A0', marginTop: 3, lineHeight: 1.35 }}>{hint}</div>}
+    </div>
+  )
+}
+
+// Sales who actually carry deals for this customer — derived from distinct
+// opportunity owners. The account owner (shown above) is the relationship
+// lead; this row reveals cross-department sales coverage at a glance.
+function SalesTeamRow({ accountOwnerId, salesTeam }: { accountOwnerId: string; salesTeam: SalesTeamMemberDto[] }) {
+  if (!salesTeam.length) return null
+  return (
+    <div style={{ marginTop: 14, borderTop: '1px solid #F2F3F9', paddingTop: 12 }}>
+      <div style={{ ...metaLabel, marginBottom: 8 }}>Sales team · {salesTeam.length}</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        {salesTeam.map((m) => {
+          const isAccountOwner = m.userId === accountOwnerId
+          const totalDeals = m.openDeals + m.wonDeals
+          const dealsLabel = m.openDeals && m.wonDeals
+            ? `${m.openDeals} open · ${m.wonDeals} won`
+            : m.openDeals
+              ? `${m.openDeals} open`
+              : `${m.wonDeals} won`
+          return (
+            <div key={m.userId} title={`${m.name}${m.department ? ` (${m.department})` : ''} — ${dealsLabel}`} style={{
+              display: 'inline-flex', alignItems: 'center', gap: 8,
+              background: isAccountOwner ? '#E4EDFC' : '#F7F8FC',
+              border: `1px solid ${isAccountOwner ? '#B7CFF3' : '#E5E7F0'}`,
+              borderRadius: 999, padding: '3px 10px 3px 3px',
+            }}>
+              <div style={{
+                width: 24, height: 24, borderRadius: '50%',
+                background: isAccountOwner ? '#2A6FDB' : '#3B3B52',
+                color: '#fff', fontSize: 10.5, fontWeight: 700,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none',
+              }}>{initialsOf(m.name)}</div>
+              <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
+                <span style={{ fontSize: 11.5, fontWeight: 700, color: '#1E1E30' }}>{m.name}</span>
+                <span style={{ fontSize: 10, color: '#5C5C74' }}>
+                  {m.department ?? 'No dept'} · {totalDeals} deal{totalDeals === 1 ? '' : 's'}
+                </span>
+              </div>
+              {isAccountOwner && (
+                <span style={{ fontSize: 9, fontWeight: 800, color: '#2A6FDB', letterSpacing: '.05em', padding: '0 2px' }}>LEAD</span>
+              )}
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }

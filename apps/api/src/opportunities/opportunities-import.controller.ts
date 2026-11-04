@@ -16,9 +16,13 @@ import { SERVICE_LINES } from '@bluefish/shared'
 interface JwtRequest extends Request { user?: { sub: string; email: string; role: string } }
 
 const STAGES: OpportunityStage[] = ['Qualification', 'Proposal', 'Negotiation', 'Won', 'Lost']
+// Customer resolution: match by Code first, then by Name (case-insensitive exact).
+// If neither matches, a DRAFT customer is auto-created from Name so sales can
+// finish enrichment later via the Customers page.
 const COLUMNS: { key: string; header: string; required?: boolean }[] = [
   { key: 'title', header: 'Title', required: true },
-  { key: 'customerCode', header: 'Customer Code', required: true },
+  { key: 'customerCode', header: 'Customer Code' },
+  { key: 'customerName', header: 'Customer Name' },
   // Optional — picks which of the customer's contacts to reach out to for this deal.
   { key: 'contactEmail', header: 'Contact Email' },
   { key: 'ownerEmail', header: 'Owner Email', required: true },
@@ -30,6 +34,16 @@ const COLUMNS: { key: string; header: string; required?: boolean }[] = [
   { key: 'competitor', header: 'Competitor' },
   { key: 'notes', header: 'Notes' },
 ]
+
+const DRAFT_CUSTOMER_PREFIX = 'DRAFT-'
+// Required non-nullable Customer fields the user hasn't given us yet — stamp
+// the em-dash marker that the rest of the app already uses for "to fill in".
+const DRAFT_PLACEHOLDER = '—'
+// Singleton customer that absorbs opportunity rows with NO code and NO name.
+// One row in Customer table, lazy-created on first use. Sales reassigns each
+// opportunity to a real customer later via the opportunity modal.
+const UNASSIGNED_CUSTOMER_CODE = 'UNASSIGNED'
+const UNASSIGNED_CUSTOMER_NAME = '— Unassigned —'
 
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('opportunities')
@@ -46,6 +60,7 @@ export class OpportunitiesImportController {
     sheet.addRow({
       title: 'Factory Automation Phase 3',
       customerCode: 'C-1024',
+      customerName: 'Acme Industrial Co., Ltd.',
       contactEmail: 'somchai@example.com',
       ownerEmail: 'nattaya@bluefishsolution.com',
       stage: 'Proposal',
@@ -55,6 +70,32 @@ export class OpportunitiesImportController {
       serviceOrProduct: '3D',
       competitor: 'AlphaSoft ERP',
       notes: 'Kick-off pending CFO sign-off.',
+    })
+    // Second example: customer code not known yet — row will still import,
+    // and a draft customer gets auto-created from the name for later cleanup.
+    sheet.addRow({
+      title: 'Smart Warehouse Pilot',
+      customerCode: '',
+      customerName: 'New Prospect From Event',
+      ownerEmail: 'nattaya@bluefishsolution.com',
+      stage: 'Qualification',
+      value: 800000,
+      probability: 20,
+      closeDate: '2026-12-01',
+      serviceOrProduct: '3D',
+      notes: 'Met at AutomationExpo — code to be assigned.',
+    })
+    // Third example: neither code nor name filled — row still imports but is
+    // parked under "— Unassigned —". Sales picks the real customer later.
+    sheet.addRow({
+      title: 'Lead From Trade Show — assign later',
+      customerCode: '',
+      customerName: '',
+      ownerEmail: 'nattaya@bluefishsolution.com',
+      stage: 'Qualification',
+      value: 0,
+      probability: 10,
+      notes: 'Pending customer assignment.',
     })
 
     // Add a hidden helper sheet with the valid enum values so users know what
@@ -89,7 +130,7 @@ export class OpportunitiesImportController {
     if (!sheet) throw new HttpException('Empty workbook', HttpStatus.BAD_REQUEST)
 
     const errors: ImportResultDto['errors'] = []
-    let imported = 0, skipped = 0
+    let imported = 0, skipped = 0, draftCustomersCreated = 0, unassignedOpportunities = 0
 
     const headerRow = sheet.getRow(1)
     const headerMap = new Map<string, number>()
@@ -102,17 +143,12 @@ export class OpportunitiesImportController {
     if (missing.length > 0) {
       throw new HttpException(`Missing required columns: ${missing.map((c) => c.header).join(', ')}`, HttpStatus.BAD_REQUEST)
     }
+    // Either column is enough to drive the resolver — and if neither is present
+    // we still accept the file, routing all rows to the Unassigned bucket.
 
     // Cache customer / user lookups so an N-row file doesn't cause N*2 queries
-    const custCache = new Map<string, string>()
-    const getCustomerId = async (code: string): Promise<string | null> => {
-      const norm = code.toUpperCase().trim()
-      if (custCache.has(norm)) return custCache.get(norm)!
-      const c = await this.prisma.customer.findFirst({ where: { code: norm, deletedAt: null } })
-      if (!c) return null
-      custCache.set(norm, c.id)
-      return c.id
-    }
+    const custByCode = new Map<string, string>()
+    const custByName = new Map<string, string>() // lowercased trimmed name → id
     const ownerCache = new Map<string, string>()
     const getOwnerId = async (email: string): Promise<string | null> => {
       const norm = email.toLowerCase().trim()
@@ -121,6 +157,95 @@ export class OpportunitiesImportController {
       if (!u) return null
       ownerCache.set(norm, u.id)
       return u.id
+    }
+
+    // Seed the draft sequence from the highest existing DRAFT-NNNNN so concurrent
+    // imports in the same minute don't clash. Not bullet-proof under high
+    // concurrency; unique index on Customer.code catches the race.
+    let draftSeq = await this.prisma.customer.count({ where: { code: { startsWith: DRAFT_CUSTOMER_PREFIX } } })
+
+    // Lazy getter for the shared "— Unassigned —" singleton. Created on demand
+    // with the first importer as owner (doesn't really matter — it's a bucket,
+    // not a real account). Cached for the duration of this request.
+    let unassignedCustomerId: string | null = null
+    const getUnassignedCustomerId = async (ownerId: string): Promise<string> => {
+      if (unassignedCustomerId) return unassignedCustomerId
+      const existing = await this.prisma.customer.findFirst({ where: { code: UNASSIGNED_CUSTOMER_CODE }, select: { id: true } })
+      if (existing) { unassignedCustomerId = existing.id; return existing.id }
+      const created = await this.prisma.customer.create({
+        data: {
+          code: UNASSIGNED_CUSTOMER_CODE, name: UNASSIGNED_CUSTOMER_NAME, status: 'Prospect',
+          ownerId,
+          industry: DRAFT_PLACEHOLDER, city: DRAFT_PLACEHOLDER, address: DRAFT_PLACEHOLDER,
+          taxId: DRAFT_PLACEHOLDER, phone: DRAFT_PLACEHOLDER, terms: DRAFT_PLACEHOLDER,
+          lastActivity: 'Shared bucket for opportunities awaiting customer assignment',
+        },
+        select: { id: true },
+      })
+      unassignedCustomerId = created.id
+      return created.id
+    }
+
+    // Resolution: code → name exact (case-insensitive) → auto-create draft from name.
+    // If BOTH code and name are empty, the row is routed to the UNASSIGNED singleton
+    // (sales assigns the real customer later via the opportunity modal).
+    const resolveCustomer = async (
+      code: string,
+      name: string,
+      ownerId: string,
+    ): Promise<{ customerId: string; created: boolean; unassigned?: boolean } | { error: string; field: 'customerCode' | 'customerName' }> => {
+      const normCode = code.toUpperCase().trim()
+      if (normCode) {
+        if (custByCode.has(normCode)) return { customerId: custByCode.get(normCode)!, created: false }
+        const c = await this.prisma.customer.findFirst({ where: { code: normCode, deletedAt: null }, select: { id: true } })
+        if (c) { custByCode.set(normCode, c.id); return { customerId: c.id, created: false } }
+        // Code was supplied but doesn't exist — if name is also missing, mistyped
+        // code gets treated as hard error so we don't silently bury the row in
+        // Unassigned. Blank code + blank name is a different intent (see below).
+        if (!name.trim()) return { error: `Unknown customer code "${code}"`, field: 'customerCode' }
+      }
+
+      const normName = name.trim()
+      if (!normName) {
+        // Both code and name blank — the user explicitly deferred the choice.
+        return { customerId: await getUnassignedCustomerId(ownerId), created: false, unassigned: true }
+      }
+      const nameKey = normName.toLowerCase()
+      if (custByName.has(nameKey)) return { customerId: custByName.get(nameKey)!, created: false }
+
+      // Need at least two hits to detect ambiguity, so limit 2 — not findMany-all.
+      const matches = await this.prisma.customer.findMany({
+        where: { name: { equals: normName, mode: 'insensitive' }, deletedAt: null },
+        select: { id: true },
+        take: 2,
+      })
+      if (matches.length === 1) { custByName.set(nameKey, matches[0].id); return { customerId: matches[0].id, created: false } }
+      if (matches.length > 1) return { error: `Multiple customers named "${normName}" — supply Customer Code to disambiguate`, field: 'customerName' }
+
+      // Auto-create draft. Retry a handful of times if the generated code races
+      // with a concurrent import (unique index on Customer.code).
+      for (let attempt = 0; attempt < 5; attempt++) {
+        draftSeq++
+        const draftCode = `${DRAFT_CUSTOMER_PREFIX}${String(draftSeq).padStart(5, '0')}`
+        try {
+          const draft = await this.prisma.customer.create({
+            data: {
+              code: draftCode, name: normName, status: 'Prospect',
+              ownerId, // sales who imported owns the draft
+              industry: DRAFT_PLACEHOLDER, city: DRAFT_PLACEHOLDER, address: DRAFT_PLACEHOLDER,
+              taxId: DRAFT_PLACEHOLDER, phone: DRAFT_PLACEHOLDER, terms: DRAFT_PLACEHOLDER,
+              lastActivity: 'Auto-created from opportunity import',
+            },
+            select: { id: true },
+          })
+          custByName.set(nameKey, draft.id)
+          draftCustomersCreated++
+          return { customerId: draft.id, created: true }
+        } catch {
+          // Likely unique-constraint on code — try next sequence number.
+        }
+      }
+      return { error: `Could not auto-create customer "${normName}"`, field: 'customerName' }
     }
 
     const ctx = auditContext(req)
@@ -150,29 +275,43 @@ export class OpportunitiesImportController {
       }
       if (errors.some((e) => e.row === r)) { skipped++; continue }
 
-      const customerId = await getCustomerId(value('customerCode'))
-      if (!customerId) {
-        errors.push({ row: r, field: 'customerCode', message: `Unknown customer code "${value('customerCode')}"` })
-        skipped++; continue
-      }
-      const contactEmail = value('contactEmail')
-      let contactId: string | undefined
-      if (contactEmail) {
-        const contact = await this.prisma.contact.findFirst({
-          where: { customerId, email: { equals: contactEmail, mode: 'insensitive' } },
-          select: { id: true },
-        })
-        if (!contact) {
-          errors.push({ row: r, field: 'contactEmail', message: `No contact "${contactEmail}" under customer "${value('customerCode')}"` })
-          skipped++; continue
-        }
-        contactId = contact.id
-      }
+      const codeCell = value('customerCode')
+      const nameCell = value('customerName')
 
+      // Owner resolved first — a draft or unassigned-bucket (if auto-created)
+      // inherits this ownerId as its account owner.
       const ownerId = await getOwnerId(value('ownerEmail'))
       if (!ownerId) {
         errors.push({ row: r, field: 'ownerEmail', message: `Unknown owner "${value('ownerEmail')}"` })
         skipped++; continue
+      }
+
+      const resolved = await resolveCustomer(codeCell, nameCell, ownerId)
+      if ('error' in resolved) {
+        errors.push({ row: r, field: resolved.field, message: resolved.error })
+        skipped++; continue
+      }
+      const customerId = resolved.customerId
+      if (resolved.unassigned) unassignedOpportunities++
+
+      const contactEmail = value('contactEmail')
+      let contactId: string | undefined
+      if (contactEmail) {
+        // Drafts / Unassigned bucket have no contacts to match against — silently
+        // skip the contact link rather than fail the whole row.
+        if (resolved.created || resolved.unassigned) {
+          contactId = undefined
+        } else {
+          const contact = await this.prisma.contact.findFirst({
+            where: { customerId, email: { equals: contactEmail, mode: 'insensitive' } },
+            select: { id: true },
+          })
+          if (!contact) {
+            errors.push({ row: r, field: 'contactEmail', message: `No contact "${contactEmail}" under this customer` })
+            skipped++; continue
+          }
+          contactId = contact.id
+        }
       }
 
       const stage = (value('stage') || 'Qualification') as OpportunityStage
@@ -217,7 +356,7 @@ export class OpportunitiesImportController {
       }
     }
 
-    return { imported, skipped, errors }
+    return { imported, skipped, errors, draftCustomersCreated, unassignedOpportunities }
   }
 
   @Get('export')
