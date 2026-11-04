@@ -255,6 +255,10 @@ export interface ImportResultDto {
   /** Present when the workbook included an optional "contacts" sheet (customers import only). */
   contactsImported?: number
   contactsSkipped?: number
+  /** Opportunities import: customers auto-created from the Customer Name column because no code/name matched an existing customer. These start as drafts (status=Prospect, placeholder fields) and need enrichment later. */
+  draftCustomersCreated?: number
+  /** Opportunities import: rows that had NEITHER code nor name were routed to the shared "— Unassigned —" placeholder customer. Sales needs to assign a real customer via the opportunity modal. */
+  unassignedOpportunities?: number
 }
 
 // ─────── Leads ───────

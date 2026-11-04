@@ -264,8 +264,10 @@ export default function Pipeline() {
     setImporting(true)
     try {
       const res = await api.importOpportunities(file)
-      const summary = `Imported ${res.imported} · skipped ${res.skipped}${res.errors.length ? ` · ${res.errors.length} error(s) — check first row` : ''}`
-      toast(summary)
+      const draftNote = res.draftCustomersCreated ? ` · ${res.draftCustomersCreated} draft customer(s) created — enrich in Customers` : ''
+      const unassignedNote = res.unassignedOpportunities ? ` · ${res.unassignedOpportunities} awaiting customer assignment` : ''
+      const errNote = res.errors.length ? ` · ${res.errors.length} error(s) — check first row` : ''
+      toast(`Imported ${res.imported} · skipped ${res.skipped}${draftNote}${unassignedNote}${errNote}`)
       if (res.errors.length > 0 && res.errors[0]) {
         // eslint-disable-next-line no-console
         console.warn('Import errors:', res.errors)
