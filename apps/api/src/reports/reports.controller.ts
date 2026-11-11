@@ -40,7 +40,7 @@ export class ReportsController {
 
   @Get('reports')
   @RequirePermissions(PERMISSIONS.AUDIT_READ)
-  list(): ReportDefinitionDto[] {
+  list(): Promise<ReportDefinitionDto[]> {
     return this.reports.list()
   }
 

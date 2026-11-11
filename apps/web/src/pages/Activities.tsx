@@ -70,13 +70,17 @@ export default function Activities() {
   useEffect(() => { reload() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [range.from.getTime(), range.to.getTime()])
 
   const filtered = useMemo(() => items.filter((a) => {
-    if (ownerFilter !== 'all' && a.ownerId !== ownerFilter) return false
+    // 'mine' is a shortcut for the admin/sales_manager viewer to hide every
+    // sales_rep's activity and see only their own, without having to spot
+    // their name in the owner dropdown (admins aren't even listed there).
+    if (ownerFilter === 'mine') { if (a.ownerId !== user?.id) return false }
+    else if (ownerFilter !== 'all' && a.ownerId !== ownerFilter) return false
     if (serviceFilter !== 'all') {
       if (serviceFilter === 'unassigned') { if (a.opportunityServiceOrProduct) return false }
       else if (a.opportunityServiceOrProduct !== serviceFilter) return false
     }
     return true
-  }), [items, ownerFilter, serviceFilter])
+  }), [items, ownerFilter, serviceFilter, user?.id])
 
   const serviceCounts = useMemo(() => {
     const acc: Record<string, number> = { all: items.length, unassigned: 0 }
@@ -148,6 +152,7 @@ export default function Activities() {
             <div style={{ fontSize: 11.5, fontWeight: 700, color: '#8888A0', letterSpacing: '.06em', textTransform: 'uppercase' }}>Sales</div>
             <select value={ownerFilter} onChange={(e) => setOwnerFilter(e.target.value)} style={selectSm}>
               <option value="all">All owners ({items.length})</option>
+              <option value="mine">— Only mine ({items.filter((a) => a.ownerId === user?.id).length})</option>
               {users.filter((u) => u.role === 'sales_rep' || u.role === 'sales_manager').map((u) => (
                 <option key={u.id} value={u.id}>{u.name} ({items.filter((a) => a.ownerId === u.id).length})</option>
               ))}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { CustomerDto, TagDto } from '@bluefish/shared'
 import { api, ApiError } from '../lib/api'
@@ -20,6 +20,10 @@ function ownerInitials(name: string): string {
   return name.split(/\s+/).slice(0, 2).map((s) => s[0] || '').join('')
 }
 
+// Columns the user can sort by. Service tags + kebab excluded intentionally
+// (no natural scalar comparator). Clicking a header cycles unsorted → asc → desc.
+type SortCol = 'code' | 'name' | 'industry' | 'status' | 'owner' | 'lastActivity' | 'openValue'
+
 export default function Customers() {
   const [query, setQuery] = useState('')
   const [customers, setCustomers] = useState<CustomerDto[]>([])
@@ -29,6 +33,13 @@ export default function Customers() {
   const [editing, setEditing] = useState<CustomerDto | null>(null)
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
   const [importOpen, setImportOpen] = useState(false)
+  // Filters derived from loaded rows — the API supports text-search + tagId but not these fields,
+  // so we filter client-side after the server returns the search-matched set.
+  const [industryFilter, setIndustryFilter] = useState<Set<string>>(new Set())
+  const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set())
+  const [ownerFilter, setOwnerFilter] = useState<Set<string>>(new Set())
+  const [openFilter, setOpenFilter] = useState<'industry' | 'status' | 'owner' | null>(null)
+  const [sort, setSort] = useState<{ col: SortCol; dir: 'asc' | 'desc' } | null>(null)
   const toast = useToast()
   const navigate = useNavigate()
   const { hasPermission } = useAuth()
@@ -75,11 +86,40 @@ export default function Customers() {
     }
   }
 
+  // Unique values for each filter popover — computed from the full loaded set
+  // (NOT the filtered view) so options don't vanish when you refine filters.
+  const industryOptions = useMemo(() => uniqueSorted(customers.map((c) => c.industry)), [customers])
+  const statusOptions = useMemo(() => uniqueSorted(customers.map((c) => c.status)), [customers])
+  const ownerOptions = useMemo(() => uniqueSorted(customers.map((c) => c.ownerName)), [customers])
+
+  const displayed = useMemo(() => {
+    let out = customers
+    if (industryFilter.size) out = out.filter((c) => industryFilter.has(c.industry))
+    if (statusFilter.size) out = out.filter((c) => statusFilter.has(c.status))
+    if (ownerFilter.size) out = out.filter((c) => ownerFilter.has(c.ownerName))
+    if (sort) {
+      const dir = sort.dir === 'asc' ? 1 : -1
+      out = [...out].sort((a, b) => cmpBy(a, b, sort.col) * dir)
+    }
+    return out
+  }, [customers, industryFilter, statusFilter, ownerFilter, sort])
+
+  // 3-state cycle: not sorted → asc → desc → not sorted.
+  const toggleSort = (col: SortCol) => {
+    setSort((prev) => {
+      if (!prev || prev.col !== col) return { col, dir: 'asc' }
+      if (prev.dir === 'asc') return { col, dir: 'desc' }
+      return null
+    })
+  }
+
   return (
     <div style={{ height: '100%', overflow: 'auto', padding: '24px 28px', animation: 'fadeUp .3s ease' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
         <div style={{ fontFamily: "'Space Grotesk'", fontSize: 21, fontWeight: 600 }}>Customers</div>
-        <div style={{ background: '#F2F3F9', borderRadius: 8, fontSize: 12, fontWeight: 600, color: '#5C5C74', padding: '4px 10px' }}>{customers.length} companies</div>
+        <div style={{ background: '#F2F3F9', borderRadius: 8, fontSize: 12, fontWeight: 600, color: '#5C5C74', padding: '4px 10px' }}>
+          {displayed.length} companies{displayed.length !== customers.length ? ` of ${customers.length}` : ''}
+        </div>
         <div style={{ flex: 1 }} />
         <div onClick={() => toast('Exporting to Excel…')} style={outlineBtn}>Export ▾</div>
         {canWrite && <div onClick={() => setImportOpen(true)} style={outlineBtn}>Import Excel</div>}
@@ -93,7 +133,26 @@ export default function Customers() {
           </svg>
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search company, industry…" style={{ border: 'none', background: 'transparent', fontSize: 12.5, flex: 1, outline: 'none' }} />
         </div>
-        {['Industry ▾', 'Status ▾', 'Owner ▾'].map((l) => <div key={l} style={outlineBtn}>{l}</div>)}
+        <FilterDropdown
+          label="Industry" options={industryOptions} selected={industryFilter} onChange={setIndustryFilter}
+          isOpen={openFilter === 'industry'} onToggle={() => setOpenFilter(openFilter === 'industry' ? null : 'industry')}
+          onClose={() => setOpenFilter(null)}
+        />
+        <FilterDropdown
+          label="Status" options={statusOptions} selected={statusFilter} onChange={setStatusFilter}
+          isOpen={openFilter === 'status'} onToggle={() => setOpenFilter(openFilter === 'status' ? null : 'status')}
+          onClose={() => setOpenFilter(null)}
+        />
+        <FilterDropdown
+          label="Owner" options={ownerOptions} selected={ownerFilter} onChange={setOwnerFilter}
+          isOpen={openFilter === 'owner'} onToggle={() => setOpenFilter(openFilter === 'owner' ? null : 'owner')}
+          onClose={() => setOpenFilter(null)}
+        />
+        {(industryFilter.size || statusFilter.size || ownerFilter.size) ? (
+          <div onClick={() => { setIndustryFilter(new Set()); setStatusFilter(new Set()); setOwnerFilter(new Set()) }} style={{ ...outlineBtn, color: '#C0392B' }}>
+            Clear filters
+          </div>
+        ) : null}
         <div style={{ flex: 1 }} />
       </div>
 
@@ -105,13 +164,23 @@ export default function Customers() {
 
       <div style={{ background: '#fff', border: '1px solid #E5E7F0', borderRadius: 14, overflow: 'visible' }}>
         <div className="customers-grid" style={{ padding: '11px 18px', borderBottom: '1px solid #E5E7F0', fontSize: 10.5, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: '#8888A0' }}>
-          <div>Code</div><div>Company</div><div>Industry</div><div>Service tags</div><div>Status</div><div>Owner</div><div>Last activity</div><div style={{ textAlign: 'right' }}>Open value</div><div />
+          <SortHeader col="code" label="Code" sort={sort} onToggle={toggleSort} />
+          <SortHeader col="name" label="Company" sort={sort} onToggle={toggleSort} />
+          <SortHeader col="industry" label="Industry" sort={sort} onToggle={toggleSort} />
+          <div>Service tags</div>
+          <SortHeader col="status" label="Status" sort={sort} onToggle={toggleSort} />
+          <SortHeader col="owner" label="Owner" sort={sort} onToggle={toggleSort} />
+          <SortHeader col="lastActivity" label="Last activity" sort={sort} onToggle={toggleSort} />
+          <SortHeader col="openValue" label="Open value" sort={sort} onToggle={toggleSort} align="right" />
+          <div />
         </div>
         {loading && <div style={{ padding: 24, textAlign: 'center', color: '#8888A0', fontSize: 13 }}>Loading…</div>}
-        {!loading && customers.length === 0 && !error && (
-          <div style={{ padding: 24, textAlign: 'center', color: '#8888A0', fontSize: 13 }}>No customers match this search.</div>
+        {!loading && displayed.length === 0 && !error && (
+          <div style={{ padding: 24, textAlign: 'center', color: '#8888A0', fontSize: 13 }}>
+            {customers.length === 0 ? 'No customers match this search.' : 'No customers match the current filters.'}
+          </div>
         )}
-        {customers.map((c) => (
+        {displayed.map((c) => (
           <div key={c.id} className="customers-grid" style={{ padding: '12px 18px', borderBottom: '1px solid #F2F3F9', alignItems: 'center', position: 'relative' }}>
             <div onClick={() => navigate(`/customers/${c.id}`)} style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, color: '#5C5C74', cursor: 'pointer' }}>{c.code}</div>
             <div onClick={() => navigate(`/customers/${c.id}`)} style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, cursor: 'pointer' }}>
@@ -200,6 +269,126 @@ function hexToRgba(hex: string, alpha: number): string {
   const h = hex.replace('#', '')
   const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16)
   return `rgba(${r},${g},${b},${alpha})`
+}
+
+function uniqueSorted(values: string[]): string[] {
+  return [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b))
+}
+
+// Scalar comparator for each sortable column. Numeric for openValue so "฿2M"
+// doesn't sort before "฿900K"; everything else is locale-aware string compare.
+function cmpBy(a: CustomerDto, b: CustomerDto, col: SortCol): number {
+  switch (col) {
+    case 'code':         return a.code.localeCompare(b.code)
+    case 'name':         return a.name.localeCompare(b.name)
+    case 'industry':     return a.industry.localeCompare(b.industry)
+    case 'status':       return a.status.localeCompare(b.status)
+    case 'owner':        return a.ownerName.localeCompare(b.ownerName)
+    case 'lastActivity': return a.lastActivity.localeCompare(b.lastActivity)
+    case 'openValue':    return (a.openValue ?? 0) - (b.openValue ?? 0)
+  }
+}
+
+function SortHeader({ col, label, sort, onToggle, align }: {
+  col: SortCol; label: string
+  sort: { col: SortCol; dir: 'asc' | 'desc' } | null
+  onToggle: (c: SortCol) => void
+  align?: 'right'
+}) {
+  const active = sort?.col === col
+  const arrow = active ? (sort!.dir === 'asc' ? '▴' : '▾') : ''
+  return (
+    <div
+      onClick={() => onToggle(col)}
+      style={{
+        cursor: 'pointer', userSelect: 'none',
+        display: 'flex', alignItems: 'center', gap: 4,
+        justifyContent: align === 'right' ? 'flex-end' : 'flex-start',
+        color: active ? '#2A6FDB' : '#8888A0',
+      }}
+    >
+      <span>{label}</span>
+      <span style={{ fontSize: 10, opacity: active ? 1 : 0.35 }}>{arrow || '↕'}</span>
+    </div>
+  )
+}
+
+function FilterDropdown({ label, options, selected, onChange, isOpen, onToggle, onClose }: {
+  label: string
+  options: string[]
+  selected: Set<string>
+  onChange: (next: Set<string>) => void
+  isOpen: boolean
+  onToggle: () => void
+  onClose: () => void
+}) {
+  const popRef = useRef<HTMLDivElement>(null)
+
+  // Dismiss on outside click — only while open so we don't attach listeners
+  // for every dropdown on the page.
+  useEffect(() => {
+    if (!isOpen) return
+    const handler = (e: MouseEvent) => {
+      if (popRef.current && !popRef.current.contains(e.target as Node)) onClose()
+    }
+    window.addEventListener('mousedown', handler)
+    return () => window.removeEventListener('mousedown', handler)
+  }, [isOpen, onClose])
+
+  const toggle = (opt: string) => {
+    const next = new Set(selected)
+    if (next.has(opt)) next.delete(opt); else next.add(opt)
+    onChange(next)
+  }
+
+  const summary = selected.size === 0 ? label : `${label} · ${selected.size}`
+  return (
+    <div ref={popRef} style={{ position: 'relative' }}>
+      <div onClick={onToggle} style={{
+        ...outlineBtn,
+        background: selected.size ? '#E4EDFC' : '#fff',
+        color: selected.size ? '#2A6FDB' : '#3B3B52',
+        borderColor: selected.size ? '#B7CFF3' : '#E5E7F0',
+      }}>
+        {summary} ▾
+      </div>
+      {isOpen && (
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 20,
+          background: '#fff', border: '1px solid #E5E7F0', borderRadius: 10,
+          boxShadow: '0 12px 30px rgba(14,31,25,.12)', padding: 6,
+          minWidth: 200, maxHeight: 320, overflow: 'auto',
+        }}>
+          {options.length === 0 && (
+            <div style={{ padding: '8px 10px', fontSize: 12, color: '#8888A0' }}>No values yet</div>
+          )}
+          {options.map((opt) => {
+            const on = selected.has(opt)
+            return (
+              <div key={opt} onClick={() => toggle(opt)} style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                padding: '7px 10px', borderRadius: 7, cursor: 'pointer',
+                fontSize: 12.5, fontWeight: on ? 700 : 500,
+                color: on ? '#2A6FDB' : '#3B3B52',
+                background: on ? '#F3F7FE' : 'transparent',
+              }}>
+                <input type="checkbox" readOnly checked={on} style={{ pointerEvents: 'none' }} />
+                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{opt}</span>
+              </div>
+            )
+          })}
+          {selected.size > 0 && (
+            <div onClick={() => onChange(new Set())} style={{
+              marginTop: 4, padding: '7px 10px', borderTop: '1px solid #F2F3F9',
+              fontSize: 11.5, fontWeight: 700, color: '#C0392B', cursor: 'pointer',
+            }}>
+              Clear {label.toLowerCase()}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 const outlineBtn: CSSProperties = { border: '1px solid #E5E7F0', background: '#fff', borderRadius: 9, padding: '8px 14px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', color: '#3B3B52' }

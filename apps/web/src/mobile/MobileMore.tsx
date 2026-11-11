@@ -165,7 +165,7 @@ export default function MobileMore() {
         <SectionLabel>Log</SectionLabel>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
           <SmallTile icon="+" label="Activity" onClick={() => setLogOpen({})} />
-          <SmallTile icon="🗣" label="Voice" onClick={() => setVoiceLogOpen(true)} />
+          <SmallTile icon="🗣" label="Feedback" onClick={() => setVoiceLogOpen(true)} />
           <SmallTile icon="💬" label="Inbox" onClick={() => navigate('/m/inbox')} />
           <SmallTile icon="📁" label="Docs" onClick={() => navigate('/m/documents')} />
           <SmallTile icon="📄" label="Quotes" onClick={() => navigate('/m/quotations')} />

@@ -52,7 +52,7 @@ export class AgentOrchestrator {
         agentKey, system: systemPrompt, messages: [{ role: 'user', content: userMessage }],
         model, temperature,
       }
-      const out = await this.llm.call(callInput, opts.isDryRun ?? false)
+      const out = await this.llm.call(callInput, opts.isDryRun ?? false, userId)
 
       // Parse the JSON response — the prompts require strict JSON output.
       let parsed: unknown

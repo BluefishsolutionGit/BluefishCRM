@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common'
+import { forwardRef, Inject, Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import Anthropic from '@anthropic-ai/sdk'
+import { UserAiKeysService } from './user-ai-keys.service'
 
 export interface LlmMessage {
   role: 'user' | 'assistant'
@@ -23,6 +24,8 @@ export interface LlmCallOutput {
   tokensOut: number
   costUsd: number
   isDryRun: boolean
+  /** Whose credit this call was charged to — surfaced in the UI so sales can see "charged to your Anthropic account". */
+  usedKeySource?: 'user' | 'company' | 'none'
   fallbackReason?: string
 }
 
@@ -41,26 +44,45 @@ const PRICING: Record<string, { in: number; out: number }> = {
 @Injectable()
 export class LlmClient {
   private readonly logger = new Logger(LlmClient.name)
-  private client: Anthropic | null = null
+  private companyClient: Anthropic | null = null
 
-  constructor(private cfg: ConfigService) {
+  constructor(
+    private cfg: ConfigService,
+    // forwardRef not strictly needed today, but UserAiKeysService could grow
+    // deps that cycle back to llm here — cheap insurance.
+    @Inject(forwardRef(() => UserAiKeysService)) private userKeys: UserAiKeysService,
+  ) {
     const key = cfg.get<string>('ANTHROPIC_API_KEY')
-    if (key) this.client = new Anthropic({ apiKey: key })
+    if (key) this.companyClient = new Anthropic({ apiKey: key })
   }
 
   hasApiKey(): boolean {
-    return this.client !== null
+    return this.companyClient !== null
   }
 
-  async call(input: LlmCallInput, isDryRun = false): Promise<LlmCallOutput> {
+  /**
+   * Resolve which Anthropic client to use for this call. BYOK precedence:
+   * user's personal key → company env key → none (triggers mock).
+   */
+  private async resolveClient(userId: string | undefined): Promise<{ client: Anthropic | null; source: 'user' | 'company' | 'none' }> {
+    if (userId) {
+      const userKey = await this.userKeys.resolveKey(userId, 'anthropic')
+      if (userKey) return { client: new Anthropic({ apiKey: userKey }), source: 'user' }
+    }
+    if (this.companyClient) return { client: this.companyClient, source: 'company' }
+    return { client: null, source: 'none' }
+  }
+
+  async call(input: LlmCallInput, isDryRun = false, userId?: string): Promise<LlmCallOutput> {
     const model = input.model ?? this.cfg.get<string>('AI_DEFAULT_MODEL') ?? 'claude-haiku-4-5-20251001'
-    if (!this.client || isDryRun) {
-      const reason = !this.client ? 'no_api_key' : 'dry_run'
-      return this.mockResponse(input, model, reason, isDryRun)
+    const { client, source } = await this.resolveClient(userId)
+    if (!client || isDryRun) {
+      const reason = !client ? 'no_api_key' : 'dry_run'
+      return { ...this.mockResponse(input, model, reason, isDryRun), usedKeySource: source }
     }
 
     try {
-      const response = await this.client.messages.create({
+      const response = await client.messages.create({
         model,
         max_tokens: input.maxTokens ?? 1200,
         temperature: input.temperature ?? 0.4,
@@ -78,10 +100,10 @@ export class LlmClient {
       const price = PRICING[model] ?? { in: 3, out: 15 }
       const costUsd = (tokensIn / 1_000_000) * price.in + (tokensOut / 1_000_000) * price.out
 
-      return { text, model, tokensIn, tokensOut, costUsd, isDryRun: false }
+      return { text, model, tokensIn, tokensOut, costUsd, isDryRun: false, usedKeySource: source }
     } catch (err) {
       this.logger.error(`LLM call failed, falling back to mock`, err as Error)
-      return this.mockResponse(input, model, 'api_error', false)
+      return { ...this.mockResponse(input, model, 'api_error', false), usedKeySource: source }
     }
   }
 

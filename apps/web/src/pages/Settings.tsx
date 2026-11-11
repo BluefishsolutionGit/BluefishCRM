@@ -2,13 +2,13 @@ import { useCallback, useEffect, useMemo, useState, type CSSProperties, type For
 import { useAuth } from '../lib/AuthContext'
 import { api, ApiError } from '../lib/api'
 import { useToast } from '../lib/ToastContext'
-import type { CalendarAccountDto, ChannelIntegrationDto, CreateUserDto, RoleDto, UpdateUserDto, UserDto } from '@bluefish/shared'
+import type { AiKeyDto, CalendarAccountDto, ChannelIntegrationDto, CreateUserDto, RoleDto, UpdateUserDto, UserDto } from '@bluefish/shared'
 import { SERVICE_LINES } from '@bluefish/shared'
 import MasterData from './MasterData'
 
 const ROLES_WITH_VIEW_ALL = new Set(['admin', 'sales_manager', 'auditor'])
 
-type Tab = 'profile' | 'security' | 'integrations' | 'users' | 'matrix' | 'master-data'
+type Tab = 'profile' | 'security' | 'integrations' | 'ai-keys' | 'users' | 'matrix' | 'master-data'
 
 export default function Settings() {
   const { user, hasPermission } = useAuth()
@@ -20,6 +20,7 @@ export default function Settings() {
     { id: 'profile',      label: 'Profile',         visible: true },
     { id: 'security',     label: 'Security',        visible: true },
     { id: 'integrations', label: 'Integrations',    visible: true },
+    { id: 'ai-keys',      label: 'AI Keys',         visible: true },
     { id: 'users',        label: 'User Management', visible: canManageUsers },
     { id: 'master-data',  label: 'Master Data',     visible: canManageUsers },
     { id: 'matrix',       label: 'Role Matrix',     visible: true },
@@ -104,6 +105,8 @@ export default function Settings() {
           {canManageUsers && <InboxChannelsSection onToast={toast} />}
         </div>
       )}
+
+      {tab === 'ai-keys' && <AiKeysSection onToast={toast} />}
 
       {tab === 'users' && canManageUsers && (
         <UserManagementSection onToast={toast} />
@@ -1258,6 +1261,136 @@ function OcrProviderCard({ onToast }: { onToast: (m: string) => void }) {
 }
 
 const codeInlineStyle: CSSProperties = { background: '#F2F3F9', padding: '1px 5px', borderRadius: 4, fontSize: 12 }
+
+function AiKeysSection({ onToast }: { onToast: (m: string) => void }) {
+  const [rows, setRows] = useState<AiKeyDto[]>([])
+  const [loading, setLoading] = useState(true)
+  const [apiKey, setApiKey] = useState('')
+  const [label, setLabel] = useState('Default')
+  const [saving, setSaving] = useState(false)
+  const [testingId, setTestingId] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const reload = useCallback(async () => {
+    setLoading(true)
+    try { setRows(await api.aiKeys()) }
+    catch (e) { onToast(e instanceof ApiError ? e.message : 'Failed to load') }
+    finally { setLoading(false) }
+  }, [onToast])
+  useEffect(() => { void reload() }, [reload])
+
+  const add = async (e: FormEvent) => {
+    e.preventDefault()
+    setSaving(true); setError(null)
+    try {
+      await api.createAiKey({ provider: 'anthropic', label: label.trim() || 'Default', apiKey: apiKey.trim() })
+      setApiKey(''); setLabel('Default')
+      onToast('Key saved — billing now lands on your account')
+      void reload()
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Save failed')
+    } finally { setSaving(false) }
+  }
+
+  const test = async (id: string) => {
+    setTestingId(id)
+    try {
+      const res = await api.testAiKey(id)
+      onToast(res.ok ? `✓ ${res.message}` : `✗ ${res.message}`)
+      if (res.ok) void reload()
+    } catch (e) { onToast(e instanceof ApiError ? e.message : 'Test failed') }
+    finally { setTestingId(null) }
+  }
+
+  const remove = async (k: AiKeyDto) => {
+    if (!window.confirm(`Delete "${k.label}" (${k.keyPreview})? AI calls will fall back to the company key until you add a new one.`)) return
+    try { await api.deleteAiKey(k.id); onToast('Key deleted'); void reload() }
+    catch (e) { onToast(e instanceof ApiError ? e.message : 'Delete failed') }
+  }
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: 16, alignItems: 'start' }}>
+      <div style={card}>
+        <div style={cardTitle}>Your AI API keys</div>
+        <div style={{ padding: 18 }}>
+          <div style={{ fontSize: 12.5, color: '#5C5C74', marginBottom: 14, lineHeight: 1.5 }}>
+            Paste an Anthropic API key to charge every AI agent run (Lead Hunter, Sales Assistant, …) to your own
+            Anthropic account instead of the company's. Get a key at{' '}
+            <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener" style={{ color: '#2A6FDB', fontWeight: 600 }}>console.anthropic.com</a>.
+            Keys are encrypted at rest and never visible again after save.
+          </div>
+
+          {loading ? (
+            <div style={{ fontSize: 13, color: '#8888A0', padding: '10px 0' }}>Loading…</div>
+          ) : rows.length === 0 ? (
+            <div style={{ fontSize: 13, color: '#8888A0', padding: '14px 0', borderTop: '1px dashed #E5E7F0' }}>
+              No keys yet — your AI runs currently use the company's fallback key.
+            </div>
+          ) : (
+            <table style={tableStyle}>
+              <thead>
+                <tr>
+                  <th style={thStyle}>Label</th>
+                  <th style={thStyle}>Provider</th>
+                  <th style={thStyle}>Key</th>
+                  <th style={thStyle}>Last used</th>
+                  <th style={thStyle} />
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((k) => (
+                  <tr key={k.id}>
+                    <td style={tdStyle}>{k.label}</td>
+                    <td style={tdStyle}>{k.provider}</td>
+                    <td style={{ ...tdStyle, fontFamily: "'IBM Plex Mono', monospace", color: '#5C5C74' }}>sk-ant-…{k.keyPreview}</td>
+                    <td style={{ ...tdStyle, color: '#8888A0' }}>{k.lastUsedAt ? new Date(k.lastUsedAt).toLocaleString() : 'never'}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>
+                      <button type="button" onClick={() => void test(k.id)} disabled={testingId === k.id} style={{ ...linkBtn, marginRight: 12 }}>
+                        {testingId === k.id ? 'Testing…' : 'Test'}
+                      </button>
+                      <button type="button" onClick={() => void remove(k)} style={{ ...linkBtn, color: '#C0392B' }}>Delete</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
+      <div style={card}>
+        <div style={cardTitle}>Add a new key</div>
+        <form onSubmit={add} style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <label>
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: '#5C5C74', marginBottom: 6 }}>Label</div>
+            <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Default" style={{ ...inputStyle, width: '100%' }} />
+            <div style={{ fontSize: 11, color: '#8888A0', marginTop: 4 }}>Freeform — helps you tell multiple keys apart (e.g. "Personal", "Project-X").</div>
+          </label>
+          <label>
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: '#5C5C74', marginBottom: 6 }}>Anthropic API key</div>
+            <input
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="sk-ant-api03-…"
+              autoComplete="off"
+              spellCheck={false}
+              style={{ ...inputStyle, width: '100%', fontFamily: "'IBM Plex Mono', monospace" }}
+            />
+            <div style={{ fontSize: 11, color: '#8888A0', marginTop: 4 }}>
+              Paste the full key — it's encrypted before saving and never returned to the UI again.
+            </div>
+          </label>
+          {error && <div style={errBox}>{error}</div>}
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button type="submit" disabled={saving || apiKey.trim().length < 20} style={{ ...primaryBtn, opacity: saving || apiKey.trim().length < 20 ? 0.5 : 1 }}>
+              {saving ? 'Saving…' : 'Save key'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
 
 /* ═══════════════════════ styles ═══════════════════════ */
 
