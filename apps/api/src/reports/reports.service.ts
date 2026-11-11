@@ -1,10 +1,16 @@
 import { BadRequestException, Injectable } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
 import type { ReportDefinitionDto, ReportKey, ReportResultDto } from '@bluefish/shared'
+import { SERVICE_LINES } from '@bluefish/shared'
 
 interface ReportDef extends ReportDefinitionDto {
   run(prisma: PrismaService, filters: Record<string, string>): Promise<ReportResultDto>
 }
+
+// Filter stubs with empty options — options are injected at list() time from
+// the User table (sales) and the SERVICE_LINES constant (service).
+const SALES_FILTER = { key: 'sales', label: 'Sales', type: 'select' as const }
+const SERVICE_FILTER = { key: 'service', label: 'Service / Product', type: 'select' as const }
 
 const REPORTS: ReportDef[] = [
   {
@@ -25,6 +31,8 @@ const REPORTS: ReportDef[] = [
       { key: 'from', label: 'From', type: 'date' },
       { key: 'to', label: 'To', type: 'date' },
       { key: 'source', label: 'Source', type: 'string' },
+      SALES_FILTER,
+      SERVICE_FILTER,
     ],
     async run(prisma, filters) {
       const where: Record<string, unknown> = {}
@@ -32,6 +40,8 @@ const REPORTS: ReportDef[] = [
         where.createdAt = { gte: filters.from ? new Date(filters.from) : undefined, lte: filters.to ? new Date(filters.to) : undefined }
       }
       if (filters.source) where.source = filters.source
+      if (filters.sales) where.owner = { name: filters.sales }
+      if (filters.service) where.serviceOrProduct = filters.service
 
       const leads = await prisma.lead.findMany({
         where, include: { owner: true }, orderBy: { createdAt: 'desc' },
@@ -71,6 +81,7 @@ const REPORTS: ReportDef[] = [
       { key: 'from', label: 'From', type: 'date' },
       { key: 'to', label: 'To', type: 'date' },
       { key: 'type', label: 'Type', type: 'select', options: ['meeting', 'call', 'visit', 'demo', 'task', 'follow_up', 'email'] },
+      SALES_FILTER,
     ],
     async run(prisma, filters) {
       const where: Record<string, unknown> = {}
@@ -78,6 +89,7 @@ const REPORTS: ReportDef[] = [
         where.scheduledAt = { gte: filters.from ? new Date(filters.from) : undefined, lte: filters.to ? new Date(filters.to) : undefined }
       }
       if (filters.type) where.type = filters.type
+      if (filters.sales) where.owner = { name: filters.sales }
 
       const items = await prisma.activity.findMany({
         where, include: { owner: true, customer: true }, orderBy: { scheduledAt: 'asc' },
@@ -114,10 +126,14 @@ const REPORTS: ReportDef[] = [
     ],
     filters: [
       { key: 'stage', label: 'Stage', type: 'select', options: ['Qualification', 'Proposal', 'Negotiation', 'Won', 'Lost'] },
+      SALES_FILTER,
+      SERVICE_FILTER,
     ],
     async run(prisma, filters) {
       const where: Record<string, unknown> = {}
       if (filters.stage) where.stage = filters.stage
+      if (filters.sales) where.owner = { name: filters.sales }
+      if (filters.service) where.serviceOrProduct = filters.service
       const opps = await prisma.opportunity.findMany({
         where, include: { owner: true, customer: true }, orderBy: { value: 'desc' },
       })
@@ -153,11 +169,15 @@ const REPORTS: ReportDef[] = [
     filters: [
       { key: 'status', label: 'Status', type: 'select', options: ['Active', 'Prospect', 'Inactive'] },
       { key: 'industry', label: 'Industry', type: 'string' },
+      SALES_FILTER,
+      SERVICE_FILTER,
     ],
     async run(prisma, filters) {
       const where: Record<string, unknown> = { deletedAt: null }
       if (filters.status) where.status = filters.status
       if (filters.industry) where.industry = { contains: filters.industry, mode: 'insensitive' }
+      if (filters.sales) where.owner = { name: filters.sales }
+      if (filters.service) where.primaryServiceLines = { has: filters.service }
       const customers = await prisma.customer.findMany({ where, include: { owner: true } })
       const customerIds = customers.map((c) => c.id)
       const openByCustomer = new Map<string, number>()
@@ -213,11 +233,15 @@ const REPORTS: ReportDef[] = [
     filters: [
       { key: 'status', label: 'Status', type: 'string' },
       { key: 'risk', label: 'Risk', type: 'select', options: ['Low', 'Med', 'High'] },
+      SALES_FILTER,
+      SERVICE_FILTER,
     ],
     async run(prisma, filters) {
       const where: Record<string, unknown> = {}
       if (filters.status) where.status = filters.status
       if (filters.risk) where.risk = filters.risk
+      if (filters.sales) where.owner = { name: filters.sales }
+      if (filters.service) where.serviceLines = { has: filters.service }
       const contracts = await prisma.contract.findMany({ where, include: { customer: true }, orderBy: { endDate: 'asc' } })
       const rows = contracts.map((c) => ({
         values: {
@@ -241,8 +265,25 @@ const REPORTS: ReportDef[] = [
 export class ReportsService {
   constructor(private prisma: PrismaService) {}
 
-  list(): ReportDefinitionDto[] {
-    return REPORTS.map(({ run: _run, ...def }) => def)
+  async list(): Promise<ReportDefinitionDto[]> {
+    // Dynamic option lists for the Sales and Service filters — fetched at
+    // request time so new users / service lines show up without a redeploy.
+    const users = await this.prisma.user.findMany({
+      where: { isActive: true },
+      select: { name: true },
+      orderBy: { name: 'asc' },
+    })
+    const salesOptions = [...new Set(users.map((u) => u.name))]
+    const serviceOptions = [...SERVICE_LINES]
+
+    return REPORTS.map(({ run: _run, ...def }) => ({
+      ...def,
+      filters: def.filters.map((f) => {
+        if (f.key === 'sales') return { ...f, options: salesOptions }
+        if (f.key === 'service') return { ...f, options: serviceOptions }
+        return f
+      }),
+    }))
   }
 
   findDef(key: ReportKey): ReportDef {
