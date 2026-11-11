@@ -44,7 +44,7 @@ export default function CustomerVoicePanel({ customerId, customerName, canWrite,
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <div style={{ fontFamily: "'Space Grotesk'", fontSize: 15, fontWeight: 700 }}>
-          Customer voice
+          Customer feedback
         </div>
         <div style={{ fontSize: 12, color: '#8888A0' }}>
           {rows.length} record{rows.length === 1 ? '' : 's'}

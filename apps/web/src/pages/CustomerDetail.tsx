@@ -10,13 +10,14 @@ import { useAuth } from '../lib/AuthContext'
 import VoiceInputButton from '../components/VoiceInputButton'
 import DocumentViewer, { type ViewableVersion } from '../components/DocumentViewer'
 import CustomerVoicePanel from '../components/CustomerVoicePanel'
+import CustomerFormModal from '../components/CustomerFormModal'
 
 type Tab = 'overview' | 'contacts' | 'docs' | 'voice'
 const TABS: [Tab, string][] = [
   ['overview', 'Overview'],
   ['contacts', 'Contacts'],
   ['docs', 'Documents'],
-  ['voice', 'Voice'],
+  ['voice', 'Feedback'],
 ]
 
 export default function CustomerDetail() {
@@ -26,9 +27,11 @@ export default function CustomerDetail() {
   const [contacts, setContacts] = useState<ContactDto[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [editOpen, setEditOpen] = useState(false)
   const toast = useToast()
   const { hasPermission } = useAuth()
   const canWriteContact = hasPermission('contact:write')
+  const canWriteCustomer = hasPermission('customer:write')
 
   const reload = async () => {
     if (!id) return
@@ -73,8 +76,18 @@ export default function CustomerDetail() {
               <span style={{ background: '#F2F3F9', borderRadius: 6, fontSize: 11, fontWeight: 600, padding: '3px 8px', color: '#3B3B52' }}>{customer.city}</span>
               <span style={statusStyle(customer.status)}>{customer.status}</span>
             </div>
-            <CustomerTagsRow customer={customer} onChanged={reload} canWrite={hasPermission('customer:write')} onToast={toast} />
+            <CustomerTagsRow customer={customer} onChanged={reload} canWrite={canWriteCustomer} onToast={toast} />
           </div>
+          {canWriteCustomer && (
+            <button
+              type="button"
+              onClick={() => setEditOpen(true)}
+              style={{ background: '#fff', color: '#3B3B52', border: '1px solid #E5E7F0', borderRadius: 9, padding: '7px 14px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', flex: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+            >
+              <svg viewBox="0 0 24 24" width="13" height="13"><path d="M4 20h4l10-10-4-4-10 10v4z M14 6l4 4" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" /></svg>
+              Edit
+            </button>
+          )}
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginTop: 16, borderTop: '1px solid #F2F3F9', paddingTop: 14 }}>
           <div><div style={metaLabel}>Open deals</div><div style={metaValue}>{customer.openValue ? fmt(customer.openValue) : '—'}</div></div>
@@ -141,10 +154,17 @@ export default function CustomerDetail() {
         <CustomerVoicePanel
           customerId={customer.id}
           customerName={customer.name}
-          canWrite={hasPermission('customer:write')}
+          canWrite={canWriteCustomer}
           onToast={toast}
         />
       )}
+
+      <CustomerFormModal
+        open={editOpen}
+        initial={customer}
+        onClose={() => setEditOpen(false)}
+        onSaved={(saved) => { setCustomer(saved); toast(`Customer ${saved.code} updated`); setEditOpen(false) }}
+      />
     </div>
   )
 }
