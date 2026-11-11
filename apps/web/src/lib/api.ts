@@ -677,6 +677,14 @@ export const api = {
     request<import('@bluefish/shared').AiResultDto>(`/ai/review-queue/${id}/review`, { method: 'POST', body: JSON.stringify({ decision, comment }) }),
   aiCost: () => request<import('@bluefish/shared').AiCostSummaryDto>('/ai/cost-summary'),
 
+  // ─────── BYOK: per-user AI provider keys ───────
+  aiKeys: () => request<import('@bluefish/shared').AiKeyDto[]>('/me/ai-keys'),
+  createAiKey: (body: import('@bluefish/shared').CreateAiKeyDto) =>
+    request<import('@bluefish/shared').AiKeyDto>('/me/ai-keys', { method: 'POST', body: JSON.stringify(body) }),
+  deleteAiKey: (id: string) => request<void>(`/me/ai-keys/${id}`, { method: 'DELETE' }),
+  testAiKey: (id: string) =>
+    request<import('@bluefish/shared').TestAiKeyResultDto>(`/me/ai-keys/${id}/test`, { method: 'POST' }),
+
   // ─────── Channel integrations (Inbox config) ───────
   channelIntegrations: () =>
     request<import('@bluefish/shared').ChannelIntegrationDto[]>('/integrations/channels'),

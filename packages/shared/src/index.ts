@@ -1061,6 +1061,32 @@ export interface AiCostSummaryDto {
   byDay: Array<{ date: string; runs: number; costUsd: number }>
 }
 
+// Per-user BYOK: the user's own Anthropic / OpenAI / Gemini credentials.
+// Only the metadata is ever returned — the key itself never leaves the server
+// after creation, so the DTO can't leak it to the UI.
+export type AiKeyProvider = 'anthropic'
+
+export interface AiKeyDto {
+  id: string
+  provider: AiKeyProvider
+  label: string
+  createdAt: string
+  lastUsedAt: string | null
+  /** Last 4 chars of the plaintext key, for the user to recognize which one is which. */
+  keyPreview: string
+}
+
+export interface CreateAiKeyDto {
+  provider: AiKeyProvider
+  label?: string
+  apiKey: string
+}
+
+export interface TestAiKeyResultDto {
+  ok: boolean
+  message: string
+}
+
 // ─────── Dashboards & Reports ───────
 
 export interface ExecutiveDashboardDto {

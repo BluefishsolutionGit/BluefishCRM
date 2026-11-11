@@ -61,6 +61,26 @@ model User {
   competitorContracts CompetitorContract[]
   channelIntegrationsCreated ChannelIntegration[]
   customerVoices      CustomerVoice[]
+  aiKeys              UserAiKey[]
+}
+
+/// Per-user BYOK API credentials for AI providers. `encryptedKey` is
+/// `base64(iv||tag||ciphertext)` via encryptSecret() in integrations/crypto.ts.
+/// When a user has a key for a provider, LlmClient uses that instead of the
+/// company-wide ANTHROPIC_API_KEY env var — so the cost lands on the user.
+model UserAiKey {
+  id            String    @id @default(cuid())
+  userId        String
+  provider      String    // 'anthropic' for now; 'openai' / 'google' later
+  label         String    @default("Default")
+  encryptedKey  String
+  createdAt     DateTime  @default(now())
+  lastUsedAt    DateTime?
+
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider, label])
+  @@index([userId])
 }
 
 model Customer {
